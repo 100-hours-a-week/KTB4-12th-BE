@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +30,8 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = exception.getErrorCode();
         String traceId = resolveTraceId();
 
+        log.warn("Business exception occurred. traceId={}, code={}", traceId, errorCode.code());
+
         return ResponseEntity
             .status(errorCode.status())
             .body(ErrorResponse.of(errorCode, exception.getMessage(), traceId));
@@ -55,13 +56,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleConstraintViolationException(
         ConstraintViolationException exception
     ) {
-        List<ErrorResponse.ValidationDetail> details = exception.getConstraintViolations()
-            .stream()
-            .map(this::toValidationDetail)
-            .sorted(Comparator.comparing(ErrorResponse.ValidationDetail::field))
-            .toList();
-
-        return invalidRequest(details);
+        return invalidRequest(List.of());
     }
 
     @ExceptionHandler({
@@ -89,6 +84,8 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = ErrorCode.INVALID_REQUEST;
         String traceId = resolveTraceId();
 
+        log.warn("Invalid request. traceId={}, detailCount={}", traceId, details.size());
+
         return ResponseEntity
             .status(errorCode.status())
             .body(ErrorResponse.of(errorCode, errorCode.message(), traceId, details));
@@ -100,18 +97,6 @@ public class GlobalExceptionHandler {
             : ValidationErrorReason.INVALID_FORMAT;
 
         return new ErrorResponse.ValidationDetail(fieldError.getField(), reason);
-    }
-
-    private ErrorResponse.ValidationDetail toValidationDetail(ConstraintViolation<?> violation) {
-        String propertyPath = violation.getPropertyPath().toString();
-        int separatorIndex = propertyPath.lastIndexOf('.');
-        String field = separatorIndex >= 0 ? propertyPath.substring(separatorIndex + 1) : propertyPath;
-        String constraint = violation.getConstraintDescriptor().getAnnotation().annotationType().getSimpleName();
-        ValidationErrorReason reason = REQUIRED_CONSTRAINTS.contains(constraint)
-            ? ValidationErrorReason.REQUIRED
-            : ValidationErrorReason.INVALID_FORMAT;
-
-        return new ErrorResponse.ValidationDetail(field, reason);
     }
 
     private String resolveTraceId() {
