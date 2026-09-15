@@ -2,7 +2,6 @@ package com.gift.gift.global.exception;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import jakarta.validation.ConstraintViolationException;
@@ -16,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import com.gift.gift.global.response.ApiResponse;
@@ -25,7 +25,6 @@ import com.gift.gift.global.response.ApiResponse;
 public class GlobalExceptionHandler {
 
     private static final String TRACE_ID_KEY = "traceId";
-    private static final Set<String> REQUIRED_CONSTRAINTS = Set.of("NotBlank", "NotEmpty", "NotNull");
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException exception) {
@@ -46,6 +45,7 @@ public class GlobalExceptionHandler {
         List<ApiResponse.ValidationDetail> details = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()
+                .filter(this::shouldIncludeValidationDetail)
                 .map(this::toValidationDetail)
                 .distinct()
                 .sorted(Comparator.comparing(ApiResponse.ValidationDetail::field))
@@ -58,6 +58,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleConstraintViolationException(
             ConstraintViolationException exception
     ) {
+        return invalidRequest(List.of());
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleHandlerMethodValidationException(
+            HandlerMethodValidationException exception
+    ) {
+        if (exception.isForReturnValue()) {
+            return handleUnexpectedException(exception);
+        }
+
         return invalidRequest(List.of());
     }
 
@@ -82,6 +93,22 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(errorCode, errorCode.message(), traceId));
     }
 
+    private boolean shouldIncludeValidationDetail(FieldError fieldError) {
+        if (fieldError.isBindingFailure()) {
+            return false;
+        }
+
+        String message = fieldError.getDefaultMessage();
+
+        for (ValidationErrorReason reason : ValidationErrorReason.values()) {
+            if (reason.name().equals(message)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private ResponseEntity<ApiResponse<Void>> invalidRequest(List<ApiResponse.ValidationDetail> details) {
         ErrorCode errorCode = ErrorCode.INVALID_REQUEST;
         String traceId = resolveTraceId();
@@ -94,11 +121,39 @@ public class GlobalExceptionHandler {
     }
 
     private ApiResponse.ValidationDetail toValidationDetail(FieldError fieldError) {
-        ValidationErrorReason reason = REQUIRED_CONSTRAINTS.contains(fieldError.getCode())
-                ? ValidationErrorReason.REQUIRED
-                : ValidationErrorReason.INVALID_FORMAT;
+        return new ApiResponse.ValidationDetail(
+                fieldError.getField(),
+                resolveValidationReason(fieldError)
+        );
+    }
 
-        return new ApiResponse.ValidationDetail(fieldError.getField(), reason);
+    private ValidationErrorReason resolveValidationReason(FieldError fieldError) {
+        // DTO에서 명시한 reason이 있으면 우선 적용
+        String message = fieldError.getDefaultMessage();
+
+        for (ValidationErrorReason reason : ValidationErrorReason.values()) {
+            if (reason.name().equals(message)) {
+                return reason;
+            }
+        }
+
+        // reason을 명시하지 않은 경우 제약 종류에 따라 기본 매핑
+        String constraint = fieldError.getCode();
+
+        if (constraint == null) {
+            return ValidationErrorReason.INVALID_FORMAT;
+        }
+
+        return switch (constraint) {
+            case "NotBlank", "NotEmpty", "NotNull" ->
+                    ValidationErrorReason.REQUIRED;
+
+            case "Min", "Max", "DecimalMin", "DecimalMax",
+                 "Positive", "PositiveOrZero", "Negative", "NegativeOrZero" ->
+                    ValidationErrorReason.OUT_OF_RANGE;
+
+            default -> ValidationErrorReason.INVALID_FORMAT;
+        };
     }
 
     private String resolveTraceId() {
