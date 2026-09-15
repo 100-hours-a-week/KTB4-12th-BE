@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if ! ./gradlew build; then
+    echo "Gradle build failed. Commit aborted." >&2
+    exit 1
+fi
+
+exit 0
