@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import com.gift.gift.global.response.ApiResponse;
+
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -26,83 +28,83 @@ public class GlobalExceptionHandler {
     private static final Set<String> REQUIRED_CONSTRAINTS = Set.of("NotBlank", "NotEmpty", "NotNull");
 
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException exception) {
+    public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException exception) {
         ErrorCode errorCode = exception.getErrorCode();
         String traceId = resolveTraceId();
 
         log.warn("Business exception occurred. traceId={}, code={}", traceId, errorCode.code());
 
         return ResponseEntity
-            .status(errorCode.status())
-            .body(ErrorResponse.of(errorCode, exception.getMessage(), traceId));
+                .status(errorCode.status())
+                .body(ApiResponse.error(errorCode, exception.getMessage(), traceId));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleMethodArgumentNotValidException(
-        MethodArgumentNotValidException exception
+    public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValidException(
+            MethodArgumentNotValidException exception
     ) {
-        List<ErrorResponse.ValidationDetail> details = exception.getBindingResult()
-            .getFieldErrors()
-            .stream()
-            .map(this::toValidationDetail)
-            .distinct()
-            .sorted(Comparator.comparing(ErrorResponse.ValidationDetail::field))
-            .toList();
+        List<ApiResponse.ValidationDetail> details = exception.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(this::toValidationDetail)
+                .distinct()
+                .sorted(Comparator.comparing(ApiResponse.ValidationDetail::field))
+                .toList();
 
         return invalidRequest(details);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ErrorResponse> handleConstraintViolationException(
-        ConstraintViolationException exception
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolationException(
+            ConstraintViolationException exception
     ) {
         return invalidRequest(List.of());
     }
 
     @ExceptionHandler({
-        HttpMessageNotReadableException.class,
-        MissingServletRequestParameterException.class,
-        MethodArgumentTypeMismatchException.class
+            HttpMessageNotReadableException.class,
+            MissingServletRequestParameterException.class,
+            MethodArgumentTypeMismatchException.class
     })
-    public ResponseEntity<ErrorResponse> handleInvalidRequest(Exception exception) {
+    public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(Exception exception) {
         return invalidRequest(List.of());
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleUnexpectedException(Exception exception) {
+    public ResponseEntity<ApiResponse<Void>> handleUnexpectedException(Exception exception) {
         String traceId = resolveTraceId();
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
 
         log.error("Unexpected error occurred. traceId={}", traceId, exception);
 
         return ResponseEntity
-            .status(errorCode.status())
-            .body(ErrorResponse.of(errorCode, errorCode.message(), traceId));
+                .status(errorCode.status())
+                .body(ApiResponse.error(errorCode, errorCode.message(), traceId));
     }
 
-    private ResponseEntity<ErrorResponse> invalidRequest(List<ErrorResponse.ValidationDetail> details) {
+    private ResponseEntity<ApiResponse<Void>> invalidRequest(List<ApiResponse.ValidationDetail> details) {
         ErrorCode errorCode = ErrorCode.INVALID_REQUEST;
         String traceId = resolveTraceId();
 
         log.warn("Invalid request. traceId={}, detailCount={}", traceId, details.size());
 
         return ResponseEntity
-            .status(errorCode.status())
-            .body(ErrorResponse.of(errorCode, errorCode.message(), traceId, details));
+                .status(errorCode.status())
+                .body(ApiResponse.error(errorCode, errorCode.message(), traceId, details));
     }
 
-    private ErrorResponse.ValidationDetail toValidationDetail(FieldError fieldError) {
+    private ApiResponse.ValidationDetail toValidationDetail(FieldError fieldError) {
         ValidationErrorReason reason = REQUIRED_CONSTRAINTS.contains(fieldError.getCode())
-            ? ValidationErrorReason.REQUIRED
-            : ValidationErrorReason.INVALID_FORMAT;
+                ? ValidationErrorReason.REQUIRED
+                : ValidationErrorReason.INVALID_FORMAT;
 
-        return new ErrorResponse.ValidationDetail(fieldError.getField(), reason);
+        return new ApiResponse.ValidationDetail(fieldError.getField(), reason);
     }
 
     private String resolveTraceId() {
         String traceId = MDC.get(TRACE_ID_KEY);
         return traceId != null && !traceId.isBlank()
-            ? traceId
-            : UUID.randomUUID().toString().replace("-", "");
+                ? traceId
+                : UUID.randomUUID().toString().replace("-", "");
     }
 }
