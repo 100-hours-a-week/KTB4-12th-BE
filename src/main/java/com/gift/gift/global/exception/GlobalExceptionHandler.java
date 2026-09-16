@@ -123,37 +123,8 @@ public class GlobalExceptionHandler {
     private ApiResponse.ValidationDetail toValidationDetail(FieldError fieldError) {
         return new ApiResponse.ValidationDetail(
                 fieldError.getField(),
-                resolveValidationReason(fieldError)
+                ValidationErrorReason.valueOf(fieldError.getDefaultMessage())
         );
-    }
-
-    private ValidationErrorReason resolveValidationReason(FieldError fieldError) {
-        // DTO에서 명시한 reason이 있으면 우선 적용
-        String message = fieldError.getDefaultMessage();
-
-        for (ValidationErrorReason reason : ValidationErrorReason.values()) {
-            if (reason.name().equals(message)) {
-                return reason;
-            }
-        }
-
-        // reason을 명시하지 않은 경우 제약 종류에 따라 기본 매핑
-        String constraint = fieldError.getCode();
-
-        if (constraint == null) {
-            return ValidationErrorReason.INVALID_FORMAT;
-        }
-
-        return switch (constraint) {
-            case "NotBlank", "NotEmpty", "NotNull" ->
-                    ValidationErrorReason.REQUIRED;
-
-            case "Min", "Max", "DecimalMin", "DecimalMax",
-                 "Positive", "PositiveOrZero", "Negative", "NegativeOrZero" ->
-                    ValidationErrorReason.OUT_OF_RANGE;
-
-            default -> ValidationErrorReason.INVALID_FORMAT;
-        };
     }
 
     private String resolveTraceId() {

@@ -9,7 +9,6 @@ public enum ValidationErrorReason {
     TOO_LONG,
     DUPLICATE_CATEGORY_ID,
     OUT_OF_RANGE,
-    INVALID_CURSOR,
     MAX_LENGTH_EXCEEDED,
     INVALID_VALUE
 }
