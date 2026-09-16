@@ -862,18 +862,13 @@ Gift gift = giftService.createGift(
 
 # 30. Import
 
-Wildcard Import를 사용하지 않는다.
+동일 패키지에서 일반 클래스를 5개 이상 사용하거나 동일 클래스에서 static 멤버를 3개 이상 사용하는 경우
+Wildcard Import를 허용한다.
 
 ```java
-// 금지
+// 허용
 import java.util.*;
-```
-
-사용하는 클래스만 명시한다.
-
-```java
-import java.util.List;
-import java.util.Optional;
+import static org.assertj.core.api.Assertions.*;
 ```
 
 Import는 Formatter 또는 IDE 기준으로 정렬한다.
