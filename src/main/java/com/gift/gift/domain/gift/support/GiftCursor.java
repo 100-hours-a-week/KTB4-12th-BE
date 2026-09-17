@@ -2,14 +2,18 @@ package com.gift.gift.domain.gift.support;
 
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import com.gift.gift.global.pagination.InvalidCursorException;
+
 public record GiftCursor(
-        LocalDateTime lastCompletedAt,
-        Long lastId
+        @JsonProperty("completed_at") LocalDateTime lastCompletedAt,
+        @JsonProperty("id") Long lastId
 ) {
 
     public GiftCursor {
         if (lastCompletedAt == null || lastId == null || lastId <= 0) {
-            throw new IllegalArgumentException("커서의 완료 시각과 선물 ID는 필수입니다.");
+            throw new InvalidCursorException();
         }
     }
 }

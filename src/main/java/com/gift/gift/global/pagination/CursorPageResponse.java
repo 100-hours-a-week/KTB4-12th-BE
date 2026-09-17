@@ -1,4 +1,4 @@
-package com.gift.gift.domain.gift.dto.response;
+package com.gift.gift.global.pagination;
 
 import java.util.List;
 
