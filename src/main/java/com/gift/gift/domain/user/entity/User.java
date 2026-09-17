@@ -63,7 +63,7 @@ public class User extends BaseTimeEntity {
     @Pattern(
             regexp = "^[가-힣A-Za-z](?:[가-힣A-Za-z ]*[가-힣A-Za-z])?$"
     )
-    @Column(name = "name", nullable = false, length = 100)
+    @Column(name = "name", nullable = false, length = 30)
     private String name;
 
     @NotNull

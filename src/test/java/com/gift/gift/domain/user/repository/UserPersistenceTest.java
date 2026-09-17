@@ -217,8 +217,8 @@ class UserPersistenceTest {
     @DisplayName("같은 회원은 서로 다른 약관에 각각 동의를 저장할 수 있다")
     void saveConsent_allowsDifferentTermsForSameUser() {
         User user = userRepository.saveAndFlush(newUser(uniqueEmail()));
-        Term first = termRepository.saveAndFlush(newTerm(uniqueTermCode(), "1"));
-        Term second = termRepository.saveAndFlush(newTerm(uniqueTermCode(), "1"));
+        Term first = termRepository.saveAndFlush(newTerm(uniqueTermCode(), 1));
+        Term second = termRepository.saveAndFlush(newTerm(uniqueTermCode(), 1));
         Long firstConsentId = termConsentRepository.saveAndFlush(new TermConsent(user, first, true)).getId();
         Long secondConsentId = termConsentRepository.saveAndFlush(new TermConsent(user, second, false)).getId();
         entityManager.clear();
@@ -245,7 +245,7 @@ class UserPersistenceTest {
     void mysql_rejectsNullForRequiredColumns(String table, String column) {
         Long rowId = switch (table) {
             case "users" -> userRepository.saveAndFlush(newUser(uniqueEmail())).getId();
-            case "terms" -> termRepository.saveAndFlush(newTerm(uniqueTermCode(), "1")).getId();
+            case "terms" -> termRepository.saveAndFlush(newTerm(uniqueTermCode(), 1)).getId();
             case "term_consents" -> newPersistedConsent().getId();
             default -> throw new IllegalArgumentException("Unknown test table");
         };
@@ -286,7 +286,7 @@ class UserPersistenceTest {
 
     private TermConsent newPersistedConsent() {
         User user = userRepository.saveAndFlush(newUser(uniqueEmail()));
-        Term term = termRepository.saveAndFlush(newTerm(uniqueTermCode(), "1"));
+        Term term = termRepository.saveAndFlush(newTerm(uniqueTermCode(), 1));
         return termConsentRepository.saveAndFlush(new TermConsent(user, term, true));
     }
 
@@ -296,7 +296,7 @@ class UserPersistenceTest {
         String termCode = uniqueTermCode();
 
         Term saved = termRepository.saveAndFlush(
-                newTerm(termCode, "1.0.0")
+                newTerm(termCode, 1)
         );
 
         Long termId = saved.getId();
@@ -306,7 +306,7 @@ class UserPersistenceTest {
         Term found = termRepository.findById(termId).orElseThrow();
 
         assertEquals(termCode, found.getTermCode());
-        assertEquals("1.0.0", found.getVersion());
+        assertEquals(1, found.getVersion());
         assertEquals("테스트 약관", found.getTitle());
         assertEquals("테스트 약관 본문", found.getContent());
         assertTrue(found.isRequired());
@@ -320,12 +320,12 @@ class UserPersistenceTest {
     void saveTerm_rejectsDuplicateCodeAndVersion() {
         String termCode = uniqueTermCode();
 
-        termRepository.saveAndFlush(newTerm(termCode, "1.0.0"));
+        termRepository.saveAndFlush(newTerm(termCode, 1));
 
         assertThrows(
                 DataIntegrityViolationException.class,
                 () -> termRepository.saveAndFlush(
-                        newTerm(termCode, "1.0.0")
+                        newTerm(termCode, 1)
                 )
         );
     }
@@ -336,11 +336,11 @@ class UserPersistenceTest {
         String termCode = uniqueTermCode();
 
         Term first = termRepository.saveAndFlush(
-                newTerm(termCode, "1.0.0")
+                newTerm(termCode, 1)
         );
 
         Term second = termRepository.saveAndFlush(
-                newTerm(termCode, "2.0.0")
+                newTerm(termCode, 2)
         );
 
         Long firstId = first.getId();
@@ -353,8 +353,8 @@ class UserPersistenceTest {
 
         assertEquals(termCode, firstFound.getTermCode());
         assertEquals(termCode, secondFound.getTermCode());
-        assertEquals("1.0.0", firstFound.getVersion());
-        assertEquals("2.0.0", secondFound.getVersion());
+        assertEquals(1, firstFound.getVersion());
+        assertEquals(2, secondFound.getVersion());
         assertFalse(firstId.equals(secondId));
     }
 
@@ -364,7 +364,7 @@ class UserPersistenceTest {
         User user = userRepository.saveAndFlush(newUser(uniqueEmail()));
 
         Term term = termRepository.saveAndFlush(
-                newTerm(uniqueTermCode(), "1.0.0")
+                newTerm(uniqueTermCode(), 1)
         );
 
         TermConsent saved = termConsentRepository.saveAndFlush(
@@ -383,7 +383,7 @@ class UserPersistenceTest {
 
         assertEquals(userId, found.getUser().getId());
         assertEquals(termId, found.getTerm().getId());
-        assertEquals("1.0.0", found.getTerm().getVersion());
+        assertEquals(1, found.getTerm().getVersion());
         assertTrue(found.isAgreed());
 
         assertNotNull(found.getCreatedAt());
@@ -396,7 +396,7 @@ class UserPersistenceTest {
         User user = userRepository.saveAndFlush(newUser(uniqueEmail()));
 
         Term term = termRepository.saveAndFlush(
-                newTerm(uniqueTermCode(), "1.0.0")
+                newTerm(uniqueTermCode(), 1)
         );
 
         termConsentRepository.saveAndFlush(
@@ -420,7 +420,7 @@ class UserPersistenceTest {
         );
     }
 
-    private Term newTerm(String termCode, String version) {
+    private Term newTerm(String termCode, int version) {
         return new Term(
                 termCode,
                 version,

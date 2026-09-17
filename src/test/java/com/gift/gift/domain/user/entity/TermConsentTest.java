@@ -12,7 +12,7 @@ class TermConsentTest {
     @Test
     @DisplayName("약관 동의는 null 회원을 참조할 수 없다")
     void create_rejectsNullUser() {
-        Term term = new Term("CODE", "1", "제목", "본문", true);
+        Term term = new Term("CODE", 1, "제목", "본문", true);
 
         assertThrows(NullPointerException.class, () -> new TermConsent(null, term, true));
     }

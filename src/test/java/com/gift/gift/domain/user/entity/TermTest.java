@@ -34,10 +34,10 @@ class TermTest {
 
     static Stream<Arguments> invalidTerms() {
         return Stream.of(null, "", "   ").flatMap(blank -> Stream.of(
-                Arguments.of(new Term(blank, "1", "제목", "본문", true), "termCode"),
-                Arguments.of(new Term("CODE", blank, "제목", "본문", true), "version"),
-                Arguments.of(new Term("CODE", "1", blank, "본문", true), "title"),
-                Arguments.of(new Term("CODE", "1", "제목", blank, true), "content")
+                Arguments.of(new Term(blank, 1, "제목", "본문", true), "termCode"),
+                Arguments.of(new Term("CODE", -1, "제목", "본문", true), "version"),
+                Arguments.of(new Term("CODE", 1, blank, "본문", true), "title"),
+                Arguments.of(new Term("CODE", 1, "제목", blank, true), "content")
         ));
     }
 
@@ -50,9 +50,8 @@ class TermTest {
 
     static Stream<Arguments> oversizedTerms() {
         return Stream.of(
-                Arguments.of(new Term("C".repeat(51), "1", "제목", "본문", true), "termCode"),
-                Arguments.of(new Term("CODE", "1".repeat(21), "제목", "본문", true), "version"),
-                Arguments.of(new Term("CODE", "1", "가".repeat(201), "본문", true), "title")
+                Arguments.of(new Term("C".repeat(51),  1, "제목", "본문", true), "termCode"),
+                Arguments.of(new Term("CODE", 1, "가".repeat(201), "본문", true), "title")
         );
     }
 
@@ -66,7 +65,7 @@ class TermTest {
     @Test
     @DisplayName("약관 코드·버전·제목의 최대 길이 경계값은 허용한다")
     void validate_acceptsMaximumLengths() {
-        Term term = new Term("C".repeat(50), "1".repeat(20), "가".repeat(200), "본문", true);
+        Term term = new Term("C".repeat(50), 1, "가".repeat(200), "본문", true);
 
         assertTrue(validator.validate(term).isEmpty());
     }
