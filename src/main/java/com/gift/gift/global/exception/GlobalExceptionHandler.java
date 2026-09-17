@@ -93,6 +93,31 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(errorCode, errorCode.message(), traceId));
     }
 
+    @ExceptionHandler(RequestValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleRequestValidationException(
+            RequestValidationException exception
+    ) {
+        ErrorCode errorCode = exception.getErrorCode();
+        String traceId = resolveTraceId();
+
+        log.warn(
+                "Request validation failed. traceId={}, code={}",
+                traceId,
+                errorCode.code()
+        );
+
+        return ResponseEntity
+                .status(errorCode.status())
+                .body(
+                        ApiResponse.error(
+                                errorCode,
+                                exception.getMessage(),
+                                traceId
+                        )
+                );
+    }
+
+
     private boolean shouldIncludeValidationDetail(FieldError fieldError) {
         if (fieldError.isBindingFailure()) {
             return false;
