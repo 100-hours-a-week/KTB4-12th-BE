@@ -1,0 +1,11 @@
+.git
+.github
+.gradle
+.idea
+.env
+.env.*
+build
+logs
+src/test
+*.log
+*.tmp
