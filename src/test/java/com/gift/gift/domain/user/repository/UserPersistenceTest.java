@@ -7,11 +7,17 @@ import java.util.UUID;
 import jakarta.persistence.EntityManager;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.auditing.AuditingHandler;
+import org.springframework.data.auditing.CurrentDateTimeProvider;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @Transactional
 class UserPersistenceTest {
 
@@ -43,6 +49,17 @@ class UserPersistenceTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private AuditingHandler auditingHandler;
+
+    @AfterEach
+    void restoreAuditClock() {
+        auditingHandler.setDateTimeProvider(CurrentDateTimeProvider.INSTANCE);
+    }
 
     @BeforeAll
     static void initializePasswordHash() {
@@ -134,6 +151,9 @@ class UserPersistenceTest {
     @Test
     @DisplayName("온보딩 상태 변경 후 생성 시각은 유지되고 수정 시각이 기록된다")
     void updateUser_preservesCreatedAtAndRecordsUpdatedAt() {
+        LocalDateTime createdTime = LocalDateTime.of(2026, 1, 1, 12, 0);
+        LocalDateTime modifiedTime = createdTime.plusMinutes(1);
+        auditingHandler.setDateTimeProvider(() -> java.util.Optional.of(createdTime));
         User saved = userRepository.saveAndFlush(newUser(uniqueEmail()));
         Long userId = saved.getId();
 
@@ -143,6 +163,10 @@ class UserPersistenceTest {
 
         LocalDateTime originalCreatedAt = user.getCreatedAt();
         LocalDateTime originalUpdatedAt = user.getUpdatedAt();
+
+        assertEquals(createdTime, originalCreatedAt);
+        assertEquals(createdTime, originalUpdatedAt);
+        auditingHandler.setDateTimeProvider(() -> java.util.Optional.of(modifiedTime));
 
         assertTrue(user.completeOnboarding());
 
@@ -154,7 +178,116 @@ class UserPersistenceTest {
         assertFalse(updated.isFirstLogin());
         assertEquals(originalCreatedAt, updated.getCreatedAt());
         assertNotNull(updated.getUpdatedAt());
-        assertFalse(updated.getUpdatedAt().isBefore(originalUpdatedAt));
+        assertEquals(modifiedTime, updated.getUpdatedAt());
+        assertTrue(updated.getUpdatedAt().isAfter(originalUpdatedAt));
+    }
+
+    @Test
+    @DisplayName("상태 변경 없이 flush하면 수정 시각도 유지된다")
+    void flushUser_preservesUpdatedAtWhenUnchanged() {
+        LocalDateTime initialTime = LocalDateTime.of(2026, 1, 1, 12, 0);
+        auditingHandler.setDateTimeProvider(() -> java.util.Optional.of(initialTime));
+        User saved = userRepository.saveAndFlush(newUser(uniqueEmail()));
+        Long userId = saved.getId();
+        entityManager.clear();
+        userRepository.findById(userId).orElseThrow();
+        auditingHandler.setDateTimeProvider(() -> java.util.Optional.of(initialTime.plusMinutes(1)));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        assertEquals(initialTime, userRepository.findById(userId).orElseThrow().getUpdatedAt());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"DELETED,false", "ACTIVE,true", "DELETED,true"})
+    @DisplayName("활성 회원 조회는 삭제 상태 또는 삭제 시각이 있는 회원을 제외한다")
+    void findActiveUser_excludesDeletedUsers(String status, boolean deleted) {
+        User saved = userRepository.saveAndFlush(newUser(uniqueEmail()));
+        Long userId = saved.getId();
+        jdbcTemplate.update("UPDATE users SET status = ?, deleted_at = ? WHERE id = ?",
+                status, deleted ? LocalDateTime.of(2026, 1, 1, 12, 0) : null, userId);
+        entityManager.clear();
+
+        assertTrue(userRepository.findByIdAndStatusAndDeletedAtIsNull(userId, UserStatus.ACTIVE).isEmpty());
+        assertFalse(userRepository.findById(userId).orElseThrow().isActive());
+    }
+
+    @Test
+    @DisplayName("같은 회원은 서로 다른 약관에 각각 동의를 저장할 수 있다")
+    void saveConsent_allowsDifferentTermsForSameUser() {
+        User user = userRepository.saveAndFlush(newUser(uniqueEmail()));
+        Term first = termRepository.saveAndFlush(newTerm(uniqueTermCode(), "1"));
+        Term second = termRepository.saveAndFlush(newTerm(uniqueTermCode(), "1"));
+        Long firstConsentId = termConsentRepository.saveAndFlush(new TermConsent(user, first, true)).getId();
+        Long secondConsentId = termConsentRepository.saveAndFlush(new TermConsent(user, second, false)).getId();
+        entityManager.clear();
+
+        TermConsent firstFound = termConsentRepository.findById(firstConsentId).orElseThrow();
+        TermConsent secondFound = termConsentRepository.findById(secondConsentId).orElseThrow();
+        assertEquals(user.getId(), firstFound.getUser().getId());
+        assertEquals(user.getId(), secondFound.getUser().getId());
+        assertEquals(first.getId(), firstFound.getTerm().getId());
+        assertEquals(second.getId(), secondFound.getTerm().getId());
+        assertTrue(firstFound.isAgreed());
+        assertFalse(secondFound.isAgreed());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "users,email", "users,password", "users,name", "users,birth", "users,status",
+            "users,is_birthday_public", "users,is_first_login", "users,created_at", "users,updated_at",
+            "terms,term_code", "terms,version", "terms,title", "terms,content", "terms,is_required",
+            "terms,created_at", "terms,updated_at", "term_consents,user_id", "term_consents,term_id",
+            "term_consents,is_agreed", "term_consents,created_at", "term_consents,updated_at"
+    })
+    @DisplayName("실제 MySQL 필수 컬럼은 NOT NULL이며 직접 SQL로도 null 변경을 거부한다")
+    void mysql_rejectsNullForRequiredColumns(String table, String column) {
+        Long rowId = switch (table) {
+            case "users" -> userRepository.saveAndFlush(newUser(uniqueEmail())).getId();
+            case "terms" -> termRepository.saveAndFlush(newTerm(uniqueTermCode(), "1")).getId();
+            case "term_consents" -> newPersistedConsent().getId();
+            default -> throw new IllegalArgumentException("Unknown test table");
+        };
+        String nullable = jdbcTemplate.queryForObject("""
+                SELECT IS_NULLABLE FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+                """, String.class, table, column);
+        assertEquals("NO", nullable);
+
+        // 테이블·컬럼은 위의 고정 테스트 목록만 사용하며 JPA Validation을 우회해 DB 제약을 검증한다.
+        assertThrows(DataIntegrityViolationException.class,
+                () -> jdbcTemplate.update("UPDATE " + table + " SET " + column + " = NULL WHERE id = ?", rowId));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"user_id,users", "term_id,terms"})
+    @DisplayName("실제 MySQL FK는 올바른 부모를 참조하고 존재하지 않는 부모 ID를 거부한다")
+    void mysql_rejectsNonexistentConsentParent(String column, String parentTable) {
+        TermConsent consent = newPersistedConsent();
+        String referencedTable = jdbcTemplate.queryForObject("""
+                SELECT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'term_consents'
+                  AND COLUMN_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+                """, String.class, column);
+        assertEquals(parentTable, referencedTable);
+        assertEquals("id", jdbcTemplate.queryForObject("""
+                SELECT REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'term_consents'
+                  AND COLUMN_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+                """, String.class, column));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + parentTable + " WHERE id = ?", Integer.class, Long.MIN_VALUE));
+
+        assertThrows(DataIntegrityViolationException.class,
+                () -> jdbcTemplate.update("UPDATE term_consents SET " + column + " = ? WHERE id = ?",
+                        Long.MIN_VALUE, consent.getId()));
+    }
+
+    private TermConsent newPersistedConsent() {
+        User user = userRepository.saveAndFlush(newUser(uniqueEmail()));
+        Term term = termRepository.saveAndFlush(newTerm(uniqueTermCode(), "1"));
+        return termConsentRepository.saveAndFlush(new TermConsent(user, term, true));
     }
 
     @Test

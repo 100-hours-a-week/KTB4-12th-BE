@@ -10,6 +10,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -105,5 +107,36 @@ class UserTest {
                 name,
                 LocalDate.of(2000, 1, 1)
         );
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"not-an-email", "user@", "@example.com", ""})
+    @DisplayName("잘못된 이메일은 email 필드 검증에서 거부한다")
+    void validate_rejectsInvalidEmail(String email) {
+        assertInvalidField(newUser(email, passwordHash, "김선물"), "email");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   ", "123", "김선물1", "김@선물", "!"})
+    @DisplayName("빈 이름과 숫자 또는 특수문자가 포함된 이름은 거부한다")
+    void validate_rejectsInvalidName(String name) {
+        assertInvalidField(newUser("user@example.com", passwordHash, name), "name");
+    }
+
+    @Test
+    @DisplayName("생년월일이 null이면 birth 필드 검증에서 거부한다")
+    void validate_rejectsNullBirth() {
+        assertInvalidField(new User("user@example.com", passwordHash, "김선물", null), "birth");
+    }
+
+    @Test
+    @DisplayName("최대 길이인 30자 이름은 저장 가능한 회원 값이다")
+    void validate_acceptsNameAtMaximumLength() {
+        assertTrue(validator.validate(newUser("user@example.com", passwordHash, "가".repeat(30))).isEmpty());
+    }
+
+    private void assertInvalidField(User user, String field) {
+        assertTrue(validator.validate(user).stream()
+                .anyMatch(violation -> violation.getPropertyPath().toString().equals(field)));
     }
 }
