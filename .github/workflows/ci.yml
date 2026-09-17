@@ -115,12 +115,39 @@ jobs:
             seonjalal-be:ci
 
           HOST_PORT="$(docker port "$APP_CONTAINER" 8080/tcp | sed 's/.*://')"
-          curl --fail --silent --show-error \
-            --retry 30 \
-            --retry-all-errors \
-            --retry-connrefused \
-            --retry-delay 2 \
-            "http://127.0.0.1:${HOST_PORT}/actuator/health" > /dev/null
+          if ! HEALTH_RESPONSE="$(
+            curl --fail-with-body --silent --show-error \
+              --retry 30 \
+              --retry-all-errors \
+              --retry-connrefused \
+              --retry-delay 2 \
+              "http://127.0.0.1:${HOST_PORT}/actuator/health"
+          )"; then
+            echo "$HEALTH_RESPONSE"
+            exit 1
+          fi
+
+          echo "$HEALTH_RESPONSE"
+          grep --quiet --extended-regexp \
+            '"status"[[:space:]]*:[[:space:]]*"UP"' \
+            <<< "$HEALTH_RESPONSE"
+
+      - name: Print validation logs
+        if: failure()
+        shell: bash
+        run: |
+          APP_CONTAINER="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          if docker inspect "$APP_CONTAINER" > /dev/null 2>&1; then
+            echo "Backend container logs:"
+            docker logs "$APP_CONTAINER" || true
+          fi
+
+          if docker inspect "$MYSQL_CONTAINER" > /dev/null 2>&1; then
+            echo "MySQL container logs:"
+            docker logs "$MYSQL_CONTAINER" || true
+          fi
 
       - name: Clean up validation resources
         if: always()
