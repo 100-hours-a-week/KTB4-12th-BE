@@ -58,6 +58,46 @@ class GiftRequestValidationTest {
     }
 
     @Test
+    @DisplayName("선물 사전 검증 요청의 수량이 10개를 초과하면 OUT_OF_RANGE 오류가 발생한다")
+    void preflightRequest_fails_whenQuantityExceedsMaximum() {
+        GiftPreflightRequest request = new GiftPreflightRequest(1L, 2L, 11);
+
+        Set<ConstraintViolation<GiftPreflightRequest>> violations = validator.validate(request);
+
+        assertThat(violations)
+                .singleElement()
+                .satisfies(violation -> {
+                    assertThat(violation.getPropertyPath().toString()).isEqualTo("quantity");
+                    assertThat(violation.getMessage()).isEqualTo(ValidationErrorReason.Message.OUT_OF_RANGE);
+                });
+    }
+
+    @Test
+    @DisplayName("선물 생성 요청의 수량이 10개를 초과하면 OUT_OF_RANGE 오류가 발생한다")
+    void createRequest_fails_whenQuantityExceedsMaximum() {
+        GiftCreateRequest request = new GiftCreateRequest(1L, 2L, 11, BigDecimal.ZERO);
+
+        Set<ConstraintViolation<GiftCreateRequest>> violations = validator.validate(request);
+
+        assertThat(violations)
+                .singleElement()
+                .satisfies(violation -> {
+                    assertThat(violation.getPropertyPath().toString()).isEqualTo("quantity");
+                    assertThat(violation.getMessage()).isEqualTo(ValidationErrorReason.Message.OUT_OF_RANGE);
+                });
+    }
+
+    @Test
+    @DisplayName("선물 요청의 수량이 최대 수량 10개이면 검증에 성공한다")
+    void giftRequests_succeed_whenQuantityEqualsMaximum() {
+        GiftPreflightRequest preflightRequest = new GiftPreflightRequest(1L, 2L, 10);
+        GiftCreateRequest createRequest = new GiftCreateRequest(1L, 2L, 10, BigDecimal.ZERO);
+
+        assertThat(validator.validate(preflightRequest)).isEmpty();
+        assertThat(validator.validate(createRequest)).isEmpty();
+    }
+
+    @Test
     @DisplayName("예상 상품 가격에 소수점이 있으면 INVALID_FORMAT 오류가 발생한다")
     void createRequest_fails_whenExpectedUnitPriceHasFraction() {
         GiftCreateRequest request = new GiftCreateRequest(1L, 2L, 1, new BigDecimal("1000.50"));

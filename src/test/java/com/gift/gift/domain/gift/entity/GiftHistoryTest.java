@@ -71,7 +71,7 @@ class GiftHistoryTest {
                         "sender_id <> recipient_id",
                         "quantity >= 1",
                         "product_price_snapshot >= 0",
-                        "status = 'COMPLETED'"
+                        "status IN ('PROCESSING', 'COMPLETED', 'FAILED')"
                 );
         assertThat(GiftHistory.class.getDeclaredField("status").getAnnotation(ColumnDefault.class).value())
                 .isEqualTo("'COMPLETED'");
