@@ -1111,6 +1111,26 @@ CHORE
 
 민감한 정보나 실제 Secret을 Issue에 작성하지 않는다.
 
+## Issue 메타데이터
+
+Issue를 생성할 때 본문만 작성하지 않고 다음 메타데이터도 함께 설정하고, 생성 후 실제 반영 여부를 확인한다.
+
+- **Project**: 해당 구현 Issue의 상위 Wiki 기능 Issue가 속한 GitHub Project를 우선 사용한다.
+    - Project의 Auto-add 규칙으로 이미 등록되었다면 중복으로 추가하지 않고 등록 상태만 확인한다.
+    - 상위 Issue가 없거나 여러 Project 중 어느 것을 사용해야 하는지 불명확하면 임의로 선택하지 않고 사용자에게 확인한다.
+- **Type**: Issue 제목의 Prefix와 작업 목적에 맞는 GitHub Issue Type을 설정한다.
+    - `FEAT` → `Feature`
+    - `FIX` → `Bug`
+    - `REFACTOR`, `TEST`, `DOCS`, `CHORE` → `Task`
+    - 저장소 또는 Organization에서 실제로 제공하는 Type 이름이 위 이름과 다르면 제공되는 Type을 기준으로 대응한다.
+    - 대응 관계가 불명확하거나 필요한 Type이 없으면 임의로 생성하거나 선택하지 않고 사용자에게 알린다.
+- **Assignee**: 사용자가 담당자를 지정하지 않았다면 Issue를 생성하는 현재 인증 GitHub 사용자(`@me`)를 할당한다.
+    - 사용자가 담당자를 명시했다면 해당 사용자를 우선한다.
+    - 요청 없이 다른 팀원을 담당자로 지정하지 않는다.
+
+GitHub CLI로 Project를 설정하려면 `project` 권한이 필요하다. 권한 부족으로 Project 또는 Type을 조회·설정할 수
+없으면 Issue 생성 자체를 실패로 처리하지 말고, 설정하지 못한 메타데이터와 필요한 권한을 완료 보고에 명시한다.
+
 ## Issue 완료
 
 작업 Branch의 구현을 완료한 뒤 develop을 대상으로 PR을 생성한다.
@@ -1268,6 +1288,15 @@ PR 유형
 ```
 
 하나의 PR에 서로 관련 없는 여러 기능을 포함하지 않는다.
+
+## PR Assignee
+
+PR을 생성할 때 Assignee도 함께 지정하고, 생성 후 실제 반영 여부를 확인한다.
+
+- 사용자가 담당자를 지정하지 않았다면 PR을 생성하는 현재 인증 GitHub 사용자(`@me`)를 할당한다.
+- 사용자가 담당자를 명시했다면 해당 사용자를 우선한다.
+- Reviewer와 Assignee는 서로 다른 역할이므로, Reviewer 지정만으로 Assignee 설정을 대신하지 않는다.
+- 요청 없이 다른 팀원을 Assignee로 지정하지 않는다.
 
 ---
 
