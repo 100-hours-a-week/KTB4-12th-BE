@@ -1001,7 +1001,7 @@ Issue 내용은 한글로 작성한다.
 기본 작업 관리 구조:
 
 ```text
-Issue 1개
+구현 Issue 1개
     ↓
 작업 Branch 1개
     ↓
@@ -1009,6 +1009,8 @@ Issue 1개
     ↓
 Pull Request 1개
 ```
+
+여기서 구현 Issue는 실제 코드를 변경하는 저장소에 생성된 가장 세부적인 작업 Issue를 의미한다.
 
 Issue는 독립적으로 구현하고 검증할 수 있는 작업 단위로 작성한다.
 
@@ -1155,6 +1157,9 @@ fix/#14-gift-duplicate
 
 기존 Branch 전략이 존재하면 기존 전략을 우선한다.
 
+여러 저장소가 참여하는 기능에서는 현재 코드 저장소의 구현 Issue 번호를 Branch 이름에 사용한다.
+Wiki의 상위 기능 Issue 번호를 대신 사용하지 않는다.
+
 ---
 
 # 38. Commit
@@ -1190,6 +1195,59 @@ chore: Gradle 설정 변경
 # 39. Pull Request
 
 PR 내용은 한글로 작성한다.
+
+## 여러 저장소의 Issue 계층
+
+여러 저장소가 함께 구현하는 기능은 다음 구조로 관리한다.
+
+```text
+KTB4-12th-wiki #106  받은 선물 목록 기능
+├── KTB4-12th-BE #24  받은 선물 목록 API 구현
+└── KTB4-12th-FE #31  받은 선물 목록 화면 구현
+```
+
+- `KTB4-12th-wiki` Issue는 기능 명세, 사용자 시나리오, 전체 완료 조건을 관리하는 상위 Issue로 사용한다.
+- `KTB4-12th-BE` Issue는 독립적으로 구현하고 검증할 수 있는 백엔드 작업 단위로 작성한다.
+- `KTB4-12th-FE` Issue는 독립적으로 구현하고 검증할 수 있는 프론트엔드 작업 단위로 작성한다.
+- BE와 FE의 구현 Issue는 해당 Wiki 기능 Issue의 하위 Issue로 연결한다.
+- 상위 Issue와 하위 Issue에 동일한 구현 체크리스트를 중복해서 작성하지 않는다.
+
+작업과 PR을 준비할 때 다음 순서로 Issue를 확인한다.
+
+1. Wiki Issue 목록에서 현재 변경사항이 속한 상위 기능 Issue를 찾는다.
+2. 현재 코드 저장소에서 해당 기능의 가장 세부적인 구현 Issue를 찾는다.
+3. 구현 Issue가 Wiki 기능 Issue의 하위 Issue로 연결되어 있는지 확인한다.
+4. Issue 제목만으로 판단하지 않고 본문, 구현 범위, 완료 조건을 실제 변경사항과 대조한다.
+
+Wiki Issue 목록:
+
+```text
+https://github.com/100-hours-a-week/KTB4-12th-wiki/issues
+```
+
+적합한 구현 Issue가 없거나 부모·하위 관계가 불명확하면 임의로 다른 Issue를 사용하지 않는다.
+사용자에게 필요한 Issue와 연결 관계를 알리고 확인한다. 사용자가 명시적으로 요청하지 않는 한 Agent가
+Issue를 생성하거나 기존 Issue의 부모·하위 관계를 변경하지 않는다.
+
+## PR의 Issue 참조
+
+PR의 `관련 이슈 또는 문서` 항목에는 현재 저장소의 세부 구현 Issue와 Wiki의 상위 기능 Issue를 모두
+작성한다.
+
+```text
+Refs #24
+Refs 100-hours-a-week/KTB4-12th-wiki#106
+```
+
+현재 저장소의 구현 Issue는 `#이슈번호`로 작성할 수 있다. 다른 저장소의 Wiki Issue는 반드시
+`100-hours-a-week/KTB4-12th-wiki#이슈번호`처럼 저장소 전체 경로를 작성한다.
+
+PR이 서로 다른 여러 구현 Issue의 범위를 포함한다면 먼저 PR 분리가 가능한지 검토한다. 하나의 기능 흐름이라
+분리하기 어렵다면 관련 구현 Issue를 각각 작성하고 공통 상위 Wiki Issue도 함께 작성한다.
+
+`develop` 대상 기능 PR에는 기본적으로 `Refs`를 사용한다. 기본 Branch에 병합되는 최종 PR에서 구현 Issue를
+자동 종료해야 한다면 `Closes #구현이슈번호`를 사용한다. Wiki 상위 Issue는 BE와 FE를 포함한 모든 하위 Issue의
+완료 조건을 충족한 뒤 종료하며, 하나의 구현 PR에서 바로 종료하지 않는다.
 
 PR에는 최소한 다음 내용을 포함한다.
 
