@@ -1,5 +1,7 @@
 package com.gift.gift.domain.user.entity;
 
+import java.time.LocalDateTime;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -8,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import lombok.AccessLevel;
@@ -39,10 +42,9 @@ public class Term extends BaseTimeEntity {
     @Column(name = "term_code", nullable = false, length = 50, updatable = false)
     private String termCode;
 
-    @NotBlank
-    @Size(max = 20)
-    @Column(name = "version", nullable = false, length = 20, updatable = false)
-    private String version;
+    @Positive
+    @Column(name = "version", nullable = false, updatable = false)
+    private int version;
 
     @NotBlank
     @Size(max = 200)
@@ -56,9 +58,12 @@ public class Term extends BaseTimeEntity {
     @Column(name = "is_required", nullable = false, updatable = false)
     private boolean isRequired;
 
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     public Term(
             String termCode,
-            String version,
+            int version,
             String title,
             String content,
             boolean isRequired
