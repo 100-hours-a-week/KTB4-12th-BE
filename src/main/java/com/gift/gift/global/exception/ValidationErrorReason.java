@@ -10,5 +10,21 @@ public enum ValidationErrorReason {
     DUPLICATE_CATEGORY_ID,
     OUT_OF_RANGE,
     MAX_LENGTH_EXCEEDED,
-    INVALID_VALUE
+    INVALID_VALUE;
+
+    public static final class Message {
+
+        public static final String INVALID_FORMAT = "INVALID_FORMAT";
+        public static final String AGE_REQUIREMENT_NOT_MET = "AGE_REQUIREMENT_NOT_MET";
+        public static final String REQUIRED = "REQUIRED";
+        public static final String TOO_SHORT = "TOO_SHORT";
+        public static final String TOO_LONG = "TOO_LONG";
+        public static final String DUPLICATE_CATEGORY_ID = "DUPLICATE_CATEGORY_ID";
+        public static final String OUT_OF_RANGE = "OUT_OF_RANGE";
+        public static final String MAX_LENGTH_EXCEEDED = "MAX_LENGTH_EXCEEDED";
+        public static final String INVALID_VALUE = "INVALID_VALUE";
+
+        private Message() {
+        }
+    }
 }
