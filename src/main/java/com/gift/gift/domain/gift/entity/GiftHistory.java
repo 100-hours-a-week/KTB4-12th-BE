@@ -35,8 +35,8 @@ import com.gift.gift.global.common.BaseTimeEntity;
                 constraint = "product_price_snapshot >= 0"
         ),
         @CheckConstraint(
-                name = "chk_gift_histories_status_completed",
-                constraint = "status = 'COMPLETED'"
+                name = "chk_gift_histories_status",
+                constraint = "status IN ('PROCESSING', 'COMPLETED', 'FAILED')"
         )
 })
 @Getter
