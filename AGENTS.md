@@ -1115,9 +1115,9 @@ CHORE
 
 Issue를 생성할 때 본문만 작성하지 않고 다음 메타데이터도 함께 설정하고, 생성 후 실제 반영 여부를 확인한다.
 
-- **Project**: 해당 구현 Issue의 상위 Wiki 기능 Issue가 속한 GitHub Project를 우선 사용한다.
+- **Project**: 이 저장소에서 생성하는 모든 Issue를 Organization Project인 `KTB4-12th-project`에 등록한다.
     - Project의 Auto-add 규칙으로 이미 등록되었다면 중복으로 추가하지 않고 등록 상태만 확인한다.
-    - 상위 Issue가 없거나 여러 Project 중 어느 것을 사용해야 하는지 불명확하면 임의로 선택하지 않고 사용자에게 확인한다.
+    - Auto-add 대상이 아니거나 자동 등록되지 않았다면 `KTB4-12th-project`에 수동으로 추가한다.
 - **Type**: Issue 제목의 Prefix와 작업 목적에 맞는 GitHub Issue Type을 설정한다.
     - `FEAT` → `Feature`
     - `FIX` → `Bug`
