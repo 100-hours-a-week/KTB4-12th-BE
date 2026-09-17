@@ -3,10 +3,15 @@ package com.gift.gift.domain.gift.entity;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.UUID;
+
+import jakarta.persistence.CheckConstraint;
+import jakarta.persistence.Table;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.hibernate.annotations.ColumnDefault;
 
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
@@ -51,5 +56,24 @@ class GiftHistoryTest {
         assertThat(giftHistory.getStatus()).isEqualTo(GiftStatus.COMPLETED);
         assertThat(giftHistory.getCompletedAt()).isAfterOrEqualTo(beforeCreation);
         assertThat(giftHistory.getIdempotencyKey()).isEqualTo(idempotencyKey);
+    }
+
+    @Test
+    @DisplayName("선물 이력은 ERD의 유일성·체크·기본값 제약을 선언한다")
+    void giftHistory_declaresDatabaseConstraints() throws NoSuchFieldException {
+        Table table = GiftHistory.class.getAnnotation(Table.class);
+
+        assertThat(table.uniqueConstraints())
+                .extracting(uniqueConstraint -> uniqueConstraint.name())
+                .containsExactly("uk_gift_histories_sender_idempotency");
+        assertThat(Arrays.stream(table.check()).map(CheckConstraint::constraint))
+                .containsExactlyInAnyOrder(
+                        "sender_id <> recipient_id",
+                        "quantity >= 1",
+                        "product_price_snapshot >= 0",
+                        "status = 'COMPLETED'"
+                );
+        assertThat(GiftHistory.class.getDeclaredField("status").getAnnotation(ColumnDefault.class).value())
+                .isEqualTo("'COMPLETED'");
     }
 }
