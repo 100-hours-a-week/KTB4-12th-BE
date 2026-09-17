@@ -1,0 +1,240 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: peterj0117/seonjalal-be
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DB_URL: jdbc:mysql://127.0.0.1:3306/gift_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_USERNAME: gift_test
+      DB_PASSWORD: gift_test_password
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: gift_test
+          MYSQL_USER: gift_test
+          MYSQL_PASSWORD: gift_test_password
+          MYSQL_ROOT_PASSWORD: root_test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=root_test_password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon test
+
+      - name: Build executable JAR
+        run: ./gradlew --no-daemon bootJar
+
+      - name: Build Docker image
+        run: docker build --tag seonjalal-be:ci .
+
+      - name: Run containers and smoke test
+        shell: bash
+        run: |
+          NETWORK="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          APP_CONTAINER="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          docker network create "$NETWORK"
+          docker run --detach \
+            --name "$MYSQL_CONTAINER" \
+            --network "$NETWORK" \
+            --network-alias mysql \
+            --env MYSQL_DATABASE=gift_smoke \
+            --env MYSQL_USER=gift_smoke \
+            --env MYSQL_PASSWORD=gift_smoke_password \
+            --env MYSQL_ROOT_PASSWORD=root_smoke_password \
+            --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=root_smoke_password" \
+            --health-interval=5s \
+            --health-timeout=5s \
+            --health-retries=20 \
+            mysql:8.4
+
+          for attempt in {1..30}; do
+            STATUS="$(docker inspect --format '{{.State.Health.Status}}' "$MYSQL_CONTAINER")"
+            if [ "$STATUS" = healthy ]; then
+              break
+            fi
+            if [ "$STATUS" = unhealthy ]; then
+              docker logs "$MYSQL_CONTAINER"
+              exit 1
+            fi
+            echo "Waiting for MySQL health check (${attempt}/30)..."
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$MYSQL_CONTAINER")" = healthy
+
+          docker run --detach \
+            --name "$APP_CONTAINER" \
+            --network "$NETWORK" \
+            --publish 127.0.0.1::8080 \
+            --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
+            --env DB_USERNAME=gift_smoke \
+            --env DB_PASSWORD=gift_smoke_password \
+            seonjalal-be:ci
+
+          HOST_PORT="$(docker port "$APP_CONTAINER" 8080/tcp | sed 's/.*://')"
+          if ! HEALTH_RESPONSE="$(
+            curl --fail-with-body --silent --show-error \
+              --retry 30 \
+              --retry-all-errors \
+              --retry-connrefused \
+              --retry-delay 2 \
+              "http://127.0.0.1:${HOST_PORT}/actuator/health"
+          )"; then
+            echo "$HEALTH_RESPONSE"
+            exit 1
+          fi
+
+          echo "$HEALTH_RESPONSE"
+          grep --quiet --extended-regexp \
+            '"status"[[:space:]]*:[[:space:]]*"UP"' \
+            <<< "$HEALTH_RESPONSE"
+
+      - name: Print validation logs
+        if: failure()
+        shell: bash
+        run: |
+          APP_CONTAINER="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          if docker inspect "$APP_CONTAINER" > /dev/null 2>&1; then
+            echo "Backend container logs:"
+            docker logs "$APP_CONTAINER" || true
+          fi
+
+          if docker inspect "$MYSQL_CONTAINER" > /dev/null 2>&1; then
+            echo "MySQL container logs:"
+            docker logs "$MYSQL_CONTAINER" || true
+          fi
+
+      - name: Clean up validation resources
+        if: always()
+        shell: bash
+        run: |
+          docker rm --force \
+            "seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            2>/dev/null || true
+          docker network rm "seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" 2>/dev/null || true
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    concurrency:
+      group: ${{ github.workflow }}-publish
+      cancel-in-progress: false
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "VERSION must use semantic version format: $VERSION" >&2
+            exit 1
+          fi
+          if git rev-parse --quiet --verify "refs/tags/v${VERSION}" > /dev/null; then
+            echo "Git tag v${VERSION} already exists." >&2
+            exit 1
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Ensure Docker version tag is unused
+        shell: bash
+        run: |
+          IMAGE="${IMAGE_NAME}:${{ steps.version.outputs.value }}"
+          if INSPECT_OUTPUT="$(docker buildx imagetools inspect "$IMAGE" 2>&1)"; then
+            echo "Docker image tag already exists: $IMAGE" >&2
+            exit 1
+          fi
+          if ! grep --extended-regexp --ignore-case 'not found|manifest unknown' <<< "$INSPECT_OUTPUT" > /dev/null; then
+            echo "Could not verify Docker image tag availability: $INSPECT_OUTPUT" >&2
+            exit 1
+          fi
+
+      - name: Build and push version image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create and push Git tag
+        shell: bash
+        run: |
+          git tag "v${{ steps.version.outputs.value }}" "$GITHUB_SHA"
+          git push origin "v${{ steps.version.outputs.value }}"
