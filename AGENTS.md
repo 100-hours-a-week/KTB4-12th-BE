@@ -1216,6 +1216,12 @@ chore: Gradle 설정 변경
 
 PR 내용은 한글로 작성한다.
 
+## PR Base Branch
+
+- PR의 Base Branch는 반드시 `develop`으로 지정한다.
+- 사용자가 현재 요청에서 명시적으로 `main`을 Base Branch로 지정해 달라고 요청한 경우에만 `main`을 사용한다.
+- 최종 배포, 릴리스, 기본 Branch 병합 등의 상황을 Agent가 임의로 추론해 `main`을 선택하지 않는다.
+
 ## 여러 저장소의 Issue 계층
 
 여러 저장소가 함께 구현하는 기능은 다음 구조로 관리한다.
