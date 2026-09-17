@@ -306,7 +306,7 @@ class UserPersistenceTest {
         Term found = termRepository.findById(termId).orElseThrow();
 
         assertEquals(termCode, found.getTermCode());
-        assertEquals("1.0.0", found.getVersion());
+        assertEquals(1, found.getVersion());
         assertEquals("테스트 약관", found.getTitle());
         assertEquals("테스트 약관 본문", found.getContent());
         assertTrue(found.isRequired());
@@ -353,8 +353,8 @@ class UserPersistenceTest {
 
         assertEquals(termCode, firstFound.getTermCode());
         assertEquals(termCode, secondFound.getTermCode());
-        assertEquals("1.0.0", firstFound.getVersion());
-        assertEquals("2.0.0", secondFound.getVersion());
+        assertEquals(1, firstFound.getVersion());
+        assertEquals(2, secondFound.getVersion());
         assertFalse(firstId.equals(secondId));
     }
 
@@ -383,7 +383,7 @@ class UserPersistenceTest {
 
         assertEquals(userId, found.getUser().getId());
         assertEquals(termId, found.getTerm().getId());
-        assertEquals("1.0.0", found.getTerm().getVersion());
+        assertEquals(1, found.getTerm().getVersion());
         assertTrue(found.isAgreed());
 
         assertNotNull(found.getCreatedAt());
