@@ -2,36 +2,27 @@ package com.gift.gift.domain.product.entity;
 
 import java.time.LocalDateTime;
 
-import com.gift.gift.global.common.BaseTimeEntity;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import com.gift.gift.global.common.BaseTimeEntity;
+
 @Entity
 @Table(
-        name = "product_images"
-//        uniqueConstraints = {
-//                @UniqueConstraint(
-//                        name = "uk_product_images_product_sort_order",
-//                        columnNames = {"product_id", "sort_order"}
-//                ),
-//                @UniqueConstraint(
-//                        name = "uk_product_images_object_key",
-//                        columnNames = "object_key"
-//                )
-//        }
+        name = "product_images",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_product_images_product_sort_order",
+                        columnNames = {"product_id", "sort_order"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_product_images_object_key",
+                        columnNames = "object_key"
+                )
+        }
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
