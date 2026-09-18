@@ -27,8 +27,12 @@ public class SecurityConfig {
                         HttpMethod.POST,
                         "/auth/email-availability",
                         "/auth/signup"
-                )
-                .permitAll()
+                ).permitAll()
+                .requestMatchers(
+                        HttpMethod.GET,
+                        "/actuator/health",
+                        "/actuator/health/**"
+                ).permitAll()
                 .anyRequest()
                 .authenticated()
         );
