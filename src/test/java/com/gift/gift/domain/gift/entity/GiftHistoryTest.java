@@ -8,19 +8,47 @@ import java.util.UUID;
 
 import jakarta.persistence.CheckConstraint;
 import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.ColumnDefault;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.hibernate.annotations.ColumnDefault;
 
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 class GiftHistoryTest {
+
+    @Test
+    @DisplayName("선물 이력은 필수 연관 객체가 없으면 생성할 수 없다")
+    void giftHistory_rejectsNullRequiredAssociations() {
+        User sender = createUser("sender@example.com", "보낸사람", LocalDate.of(1990, 1, 1));
+        User recipient = createUser("recipient@example.com", "받는사람", LocalDate.of(1991, 1, 1));
+        Product product = createProduct();
+
+        assertThatNullPointerException()
+                .isThrownBy(() -> createGiftHistory(null, recipient, product))
+                .withMessage("sender must not be null");
+        assertThatNullPointerException()
+                .isThrownBy(() -> createGiftHistory(sender, null, product))
+                .withMessage("recipient must not be null");
+        assertThatNullPointerException()
+                .isThrownBy(() -> createGiftHistory(sender, recipient, null))
+                .withMessage("product must not be null");
+    }
+
+    @Test
+    @DisplayName("선물 이력은 발신자·수신자·상품 외래 키 이름을 명시한다")
+    void giftHistory_declaresForeignKeyNames() throws NoSuchFieldException {
+        assertThat(joinColumn("sender").foreignKey().name()).isEqualTo("fk_gift_histories_sender");
+        assertThat(joinColumn("recipient").foreignKey().name()).isEqualTo("fk_gift_histories_recipient");
+        assertThat(joinColumn("product").foreignKey().name()).isEqualTo("fk_gift_histories_product");
+    }
 
     @Test
     @DisplayName("선물 이력은 생성 즉시 완료 상태와 완료 시각을 가진다")
@@ -93,5 +121,39 @@ class GiftHistoryTest {
                         "sender_id, completed_at DESC, id DESC",
                         "recipient_id, completed_at DESC, id DESC"
                 );
+    }
+
+    private User createUser(String email, String nickname, LocalDate birthDate) {
+        return new User(email, "password", nickname, birthDate);
+    }
+
+    private Product createProduct() {
+        Category rootCategory = new Category("대분류", null);
+        Category leafCategory = new Category("소분류", rootCategory);
+        return new Product(
+                leafCategory,
+                "선물 상품",
+                "선물 브랜드",
+                null,
+                BigDecimal.valueOf(10_000),
+                10
+        );
+    }
+
+    private GiftHistory createGiftHistory(User sender, User recipient, Product product) {
+        return new GiftHistory(
+                sender,
+                recipient,
+                product,
+                1,
+                BigDecimal.valueOf(10_000),
+                "선물 상품",
+                UUID.randomUUID(),
+                "a".repeat(64)
+        );
+    }
+
+    private JoinColumn joinColumn(String fieldName) throws NoSuchFieldException {
+        return GiftHistory.class.getDeclaredField(fieldName).getAnnotation(JoinColumn.class);
     }
 }

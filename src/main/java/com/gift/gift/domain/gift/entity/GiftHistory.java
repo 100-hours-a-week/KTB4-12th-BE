@@ -2,6 +2,7 @@ package com.gift.gift.domain.gift.entity;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 import jakarta.persistence.*;
@@ -57,15 +58,27 @@ public class GiftHistory extends BaseTimeEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "sender_id", nullable = false)
+    @JoinColumn(
+            name = "sender_id",
+            nullable = false,
+            foreignKey = @ForeignKey(name = "fk_gift_histories_sender")
+    )
     private User sender;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "recipient_id", nullable = false)
+    @JoinColumn(
+            name = "recipient_id",
+            nullable = false,
+            foreignKey = @ForeignKey(name = "fk_gift_histories_recipient")
+    )
     private User recipient;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "product_id", nullable = false)
+    @JoinColumn(
+            name = "product_id",
+            nullable = false,
+            foreignKey = @ForeignKey(name = "fk_gift_histories_product")
+    )
     private Product product;
 
     @Column(nullable = false)
@@ -96,9 +109,9 @@ public class GiftHistory extends BaseTimeEntity {
 
     public GiftHistory(User sender, User recipient, Product product, Integer quantity, BigDecimal productPriceSnapshot,
                        String productNameSnapshot, UUID idempotencyKey, String requestFingerprint) {
-        this.sender = sender;
-        this.recipient = recipient;
-        this.product = product;
+        this.sender = Objects.requireNonNull(sender, "sender must not be null");
+        this.recipient = Objects.requireNonNull(recipient, "recipient must not be null");
+        this.product = Objects.requireNonNull(product, "product must not be null");
         this.quantity = quantity;
         this.productPriceSnapshot = productPriceSnapshot;
         this.productNameSnapshot = productNameSnapshot;
