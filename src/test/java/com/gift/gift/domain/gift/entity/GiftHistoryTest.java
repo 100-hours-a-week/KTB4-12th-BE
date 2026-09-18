@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.UUID;
 
 import jakarta.persistence.CheckConstraint;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 import org.junit.jupiter.api.DisplayName;
@@ -75,5 +76,22 @@ class GiftHistoryTest {
                 );
         assertThat(GiftHistory.class.getDeclaredField("status").getAnnotation(ColumnDefault.class).value())
                 .isEqualTo("'COMPLETED'");
+    }
+
+    @Test
+    @DisplayName("선물 이력은 보낸·받은 목록 커서 조회용 복합 인덱스를 선언한다")
+    void giftHistory_declaresCursorQueryIndexes() {
+        Table table = GiftHistory.class.getAnnotation(Table.class);
+
+        assertThat(Arrays.stream(table.indexes()).map(Index::name))
+                .containsExactly(
+                        "idx_gift_histories_sender_completed",
+                        "idx_gift_histories_recipient_completed"
+                );
+        assertThat(Arrays.stream(table.indexes()).map(Index::columnList))
+                .containsExactly(
+                        "sender_id, completed_at DESC, id DESC",
+                        "recipient_id, completed_at DESC, id DESC"
+                );
     }
 }
