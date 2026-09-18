@@ -16,6 +16,11 @@ spring:
         format_sql: true
     show-sql: true
 
+storage:
+  s3:
+    region: ${AWS_REGION}
+    bucket: ${PRODUCT_IMAGE_BUCKET}
+
 management:
   endpoints:
     web:
