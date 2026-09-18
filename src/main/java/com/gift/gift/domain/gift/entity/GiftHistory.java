@@ -21,6 +21,15 @@ import com.gift.gift.global.common.BaseTimeEntity;
                 name = "uk_gift_histories_sender_idempotency",
                 columnNames = {"sender_id", "idempotency_key"}
         )
+}, indexes = {
+        @Index(
+                name = "idx_gift_histories_sender_completed",
+                columnList = "sender_id, completed_at DESC, id DESC"
+        ),
+        @Index(
+                name = "idx_gift_histories_recipient_completed",
+                columnList = "recipient_id, completed_at DESC, id DESC"
+        )
 }, check = {
         @CheckConstraint(
                 name = "chk_gift_histories_distinct_users",
