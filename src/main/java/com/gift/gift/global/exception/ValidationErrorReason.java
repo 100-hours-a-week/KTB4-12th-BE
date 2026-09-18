@@ -10,6 +10,7 @@ public enum ValidationErrorReason {
     DUPLICATE_CATEGORY_ID,
     OUT_OF_RANGE,
     MAX_LENGTH_EXCEEDED,
+    DUPLICATE_TERM_ID,
     INVALID_VALUE;
 
     public static final class Message {
@@ -23,6 +24,7 @@ public enum ValidationErrorReason {
         public static final String OUT_OF_RANGE = "OUT_OF_RANGE";
         public static final String MAX_LENGTH_EXCEEDED = "MAX_LENGTH_EXCEEDED";
         public static final String INVALID_VALUE = "INVALID_VALUE";
+        public static final String DUPLICATE_TERM_ID = "DUPLICATE_TERM_ID";
 
         private Message() {
         }
