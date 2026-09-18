@@ -20,6 +20,7 @@ import com.gift.gift.domain.user.entity.Term;
 import com.gift.gift.domain.user.entity.TermConsent;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.exception.SignupPolicyViolationException;
+import com.gift.gift.domain.user.exception.SignupTermsConfigurationException;
 import com.gift.gift.domain.user.repository.TermConsentRepository;
 import com.gift.gift.domain.user.repository.TermRepository;
 import com.gift.gift.domain.user.repository.UserRepository;
@@ -45,6 +46,10 @@ public class SignupService {
         validateBirthPolicy(birth);
 
         List<Term> requiredTerms = termRepository.findCurrentRequiredTerms();
+
+        if (requiredTerms.isEmpty()) {
+            throw new SignupTermsConfigurationException();
+        }
 
         validateTermConsents(requiredTerms, request.termConsents());
 
