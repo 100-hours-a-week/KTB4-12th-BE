@@ -34,6 +34,8 @@ jobs:
       DB_URL: jdbc:mysql://127.0.0.1:3306/gift_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       DB_USERNAME: gift_test
       DB_PASSWORD: gift_test_password
+      AWS_REGION: ap-northeast-2
+      PRODUCT_IMAGE_BUCKET: ci-test-product-images
     services:
       mysql:
         image: mysql:8.4
@@ -118,6 +120,8 @@ jobs:
             --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
             --env DB_USERNAME=gift_smoke \
             --env DB_PASSWORD=gift_smoke_password \
+            --env AWS_REGION \
+            --env PRODUCT_IMAGE_BUCKET \
             seonjalal-be:ci
 
           HOST_PORT="$(docker port "$APP_CONTAINER" 8080/tcp | sed 's/.*://')"
