@@ -21,6 +21,14 @@ storage:
     region: ${AWS_REGION}
     bucket: ${PRODUCT_IMAGE_BUCKET}
 
+app:
+  security:
+    jwt:
+      secret-base64: ${JWT_SECRET_BASE64}
+      issuer: ${JWT_ISSUER}
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
 management:
   endpoints:
     web:

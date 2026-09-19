@@ -1,16 +1,11 @@
 package com.gift.gift.domain.user.service;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -21,7 +16,6 @@ import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
 import com.gift.gift.domain.user.entity.Term;
 import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.exception.SignupPolicyViolationException;
 import com.gift.gift.domain.user.exception.SignupTermsConfigurationException;
 import com.gift.gift.domain.user.repository.TermConsentRepository;
 import com.gift.gift.domain.user.repository.TermRepository;
@@ -56,48 +50,13 @@ class SignupServiceTest {
 
     @BeforeEach
     void setUp() {
-        Clock clock = Clock.fixed(
-                Instant.parse("2026-09-18T03:00:00Z"),
-                ZoneId.of("Asia/Seoul")
-        );
-
         service = new SignupService(
                 userRepository, termRepository, consentRepository,
-                passwordEncoder, clock
+                passwordEncoder
         );
 
         term = new Term("TERMS", 3, "제목", "본문", true);
         ReflectionTestUtils.setField(term, "id", 1L);
-    }
-
-    @ParameterizedTest
-    @CsvSource({
-            "2026-09-19, OUT_OF_RANGE",
-            "1906-09-17, OUT_OF_RANGE",
-            "2012-09-19, AGE_REQUIREMENT_NOT_MET"
-    })
-    @DisplayName("가입 정책 위반은 전용 예외에 필드 상세를 담는다")
-    void signup_rejectsBirthPolicyViolation(String birth, String reason) {
-        SignupPolicyViolationException exception = assertThrows(
-                SignupPolicyViolationException.class,
-                () -> service.signup(request(birth, 3, true))
-        );
-
-        assertEquals("birth", exception.getDetails().getFirst().field());
-        assertEquals(reason, exception.getDetails().getFirst().reason().name());
-
-        verifyNoInteractions(
-                userRepository, termRepository, consentRepository, passwordEncoder
-        );
-    }
-
-    @ParameterizedTest
-    @CsvSource({"2012-09-18", "1906-09-18"})
-    @DisplayName("정확히 만 14세와 120년 경계는 허용한다")
-    void signup_acceptsBirthPolicyBoundary(String birth) {
-        stubSuccessfulPersistence();
-
-        assertEquals(10L, service.signup(request(birth, 3, true)).userId());
     }
 
     @Test

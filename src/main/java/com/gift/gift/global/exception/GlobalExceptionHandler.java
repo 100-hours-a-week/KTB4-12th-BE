@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-import com.gift.gift.domain.user.exception.SignupPolicyViolationException;
 import com.gift.gift.global.response.ApiResponse;
 
 @Slf4j
@@ -42,13 +41,6 @@ public class GlobalExceptionHandler {
                 .toList();
 
         return requestError(ErrorCode.INVALID_REQUEST, details);
-    }
-
-    @ExceptionHandler(SignupPolicyViolationException.class)
-    public ResponseEntity<ApiResponse<Void>> handleSignupPolicyViolationException(
-            SignupPolicyViolationException exception
-    ) {
-        return requestError(ErrorCode.INVALID_REQUEST, exception.getDetails());
     }
 
     @ExceptionHandler(RequestValidationException.class)
