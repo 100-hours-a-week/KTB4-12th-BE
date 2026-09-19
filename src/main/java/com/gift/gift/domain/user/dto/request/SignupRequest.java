@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Size;
 
 import com.gift.gift.domain.user.support.EmailNormalizer;
 import com.gift.gift.domain.user.validation.UniqueTermConsentIds;
-import com.gift.gift.domain.user.validation.ValidBirthDate;
+import com.gift.gift.domain.user.validation.ValidSignupBirth;
 import com.gift.gift.global.exception.ValidationErrorReason;
 
 public record SignupRequest(
@@ -27,7 +27,7 @@ public record SignupRequest(
         String name,
 
         @NotBlank(message = ValidationErrorReason.Message.REQUIRED)
-        @ValidBirthDate
+        @ValidSignupBirth
         String birth,
 
         @NotBlank(message = ValidationErrorReason.Message.REQUIRED)

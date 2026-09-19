@@ -43,8 +43,6 @@ public class SignupService {
     public SignupResponse signup(SignupRequest request) {
         LocalDate birth = LocalDate.parse(request.birth());
 
-        validateBirthPolicy(birth);
-
         List<Term> requiredTerms = termRepository.findCurrentRequiredTerms();
 
         if (requiredTerms.isEmpty()) {
