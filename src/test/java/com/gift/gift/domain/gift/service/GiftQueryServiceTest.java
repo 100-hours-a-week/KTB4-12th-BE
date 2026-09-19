@@ -135,25 +135,33 @@ class GiftQueryServiceTest {
     }
 
     @Test
-    @DisplayName("보낸 선물 상세가 없으면 GIFT_NOT_FOUND가 발생한다")
+    @DisplayName("보낸 선물 상세가 없으면 보낸 선물 전용 메시지로 GIFT_NOT_FOUND가 발생한다")
     void getSentGiftDetail_throwsGiftNotFound_whenGiftDoesNotExist() {
         when(giftQueryRepository.findSentGiftDetail(10L, 1L)).thenReturn(Optional.empty());
 
-        assertGiftNotFound(() -> giftQueryService.getSentGiftDetail(1L, 10L));
+        assertGiftNotFound(
+                () -> giftQueryService.getSentGiftDetail(1L, 10L),
+                "보낸 선물 내역을 찾을 수 없습니다."
+        );
     }
 
     @Test
-    @DisplayName("받은 선물 상세가 없으면 GIFT_NOT_FOUND가 발생한다")
+    @DisplayName("받은 선물 상세가 없으면 받은 선물 전용 메시지로 GIFT_NOT_FOUND가 발생한다")
     void getReceivedGiftDetail_throwsGiftNotFound_whenGiftDoesNotExist() {
         when(giftQueryRepository.findReceivedGiftDetail(10L, 1L)).thenReturn(Optional.empty());
 
-        assertGiftNotFound(() -> giftQueryService.getReceivedGiftDetail(1L, 10L));
+        assertGiftNotFound(
+                () -> giftQueryService.getReceivedGiftDetail(1L, 10L),
+                "받은 선물 내역을 찾을 수 없습니다."
+        );
     }
 
-    private void assertGiftNotFound(Runnable action) {
+    private void assertGiftNotFound(Runnable action, String message) {
         assertThatThrownBy(action::run)
-                .isInstanceOfSatisfying(GiftException.class, exception ->
-                        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.GIFT_NOT_FOUND));
+                .isInstanceOfSatisfying(GiftException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.GIFT_NOT_FOUND);
+                    assertThat(exception.getMessage()).isEqualTo(message);
+                });
     }
 
     private GiftQueryRow row() {
