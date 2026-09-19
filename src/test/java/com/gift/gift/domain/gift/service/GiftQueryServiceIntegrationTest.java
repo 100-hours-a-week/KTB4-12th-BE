@@ -15,9 +15,18 @@ import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import com.gift.gift.domain.gift.dto.response.ReceivedGiftListItem;
 import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
@@ -36,6 +45,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 @Transactional
 class GiftQueryServiceIntegrationTest {
+
+    @TestConfiguration
+    static class PresignerTestConfig {
+
+        // Presigned URL 서명은 로컬 계산이라 값은 무관하지만, 자격 증명이 없는 CI에서는 기본 체인이 실패한다.
+        @Bean
+        @Primary
+        S3Presigner testS3Presigner(@Value("${storage.s3.region}") String region) {
+            return S3Presigner.builder()
+                    .region(Region.of(region))
+                    .credentialsProvider(StaticCredentialsProvider.create(
+                            AwsBasicCredentials.create("test-access-key", "test-secret-key")
+                    ))
+                    .build();
+        }
+    }
 
     @Autowired
     private GiftQueryService giftQueryService;
