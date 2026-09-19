@@ -24,6 +24,7 @@ import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
+import com.gift.gift.domain.product.entity.ProductImage;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.global.pagination.CursorPageResponse;
 
@@ -71,6 +72,8 @@ class GiftQueryServiceIntegrationTest {
                 .containsExactlyElementsOf(fixture.giftIds().subList(0, 20));
         assertThat(firstSentPage.pagination().hasNext()).isTrue();
         assertThat(firstSentPage.pagination().nextCursor()).isNotBlank();
+        assertThat(firstSentPage.items()).allSatisfy(item ->
+                assertThat(item.product().thumbnailUrl()).isNull());
         assertThat(lastSentPage.items()).extracting(SentGiftListItem::giftId)
                 .containsExactly(fixture.giftIds().getLast());
         assertThat(lastSentPage.pagination().hasNext()).isFalse();
@@ -87,8 +90,8 @@ class GiftQueryServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("보낸·받은 선물 목록 조회 쿼리 수는 데이터 수와 무관하게 한 번이다")
-    void getGifts_executesOneQueryRegardlessOfItemCount() {
+    @DisplayName("보낸·받은 선물 목록 조회 쿼리 수는 데이터 수와 무관하게 두 번이다")
+    void getGifts_executesTwoQueriesRegardlessOfItemCount() {
         PageFixture singleGiftFixture = persistPageFixture(1);
         PageFixture fullPageFixture = persistPageFixture(21);
         Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
@@ -109,10 +112,48 @@ class GiftQueryServiceIntegrationTest {
         giftQueryService.getReceivedGifts(fullPageFixture.recipientId(), null);
         long fullReceivedPageQueryCount = statistics.getPrepareStatementCount();
 
-        assertThat(singleSentGiftQueryCount).isEqualTo(1);
-        assertThat(fullSentPageQueryCount).isEqualTo(1);
-        assertThat(singleReceivedGiftQueryCount).isEqualTo(1);
-        assertThat(fullReceivedPageQueryCount).isEqualTo(1);
+        assertThat(singleSentGiftQueryCount).isEqualTo(2);
+        assertThat(fullSentPageQueryCount).isEqualTo(2);
+        assertThat(singleReceivedGiftQueryCount).isEqualTo(2);
+        assertThat(fullReceivedPageQueryCount).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("대표 이미지는 정렬 우선순위로 선택하고 삭제 이미지는 제외하되 삭제 상품의 이미지는 유지한다")
+    void getGifts_appliesProductRepresentativeImagePolicy() {
+        PageFixture fixture = persistPageFixture(1);
+        Product product = entityManager.find(Product.class, fixture.productId());
+        String suffix = UUID.randomUUID().toString();
+        ProductImage primaryImage = new ProductImage(product, "products/" + suffix + "/primary.jpg", 1);
+        ProductImage fallbackImage = new ProductImage(product, "products/" + suffix + "/fallback.jpg", 2);
+        entityManager.persist(primaryImage);
+        entityManager.persist(fallbackImage);
+        entityManager.flush();
+        entityManager.clear();
+
+        CursorPageResponse<SentGiftListItem> sentPage = giftQueryService.getSentGifts(fixture.senderId(), null);
+
+        assertThat(sentPage.items().getFirst().product().thumbnailUrl())
+                .contains("primary.jpg");
+
+        jdbcTemplate.update(
+                "UPDATE product_images SET deleted_at = ? WHERE id = ?",
+                LocalDateTime.of(2026, 9, 18, 12, 0),
+                primaryImage.getId()
+        );
+        jdbcTemplate.update(
+                "UPDATE products SET deleted_at = ? WHERE id = ?",
+                LocalDateTime.of(2026, 9, 18, 12, 0),
+                fixture.productId()
+        );
+        entityManager.clear();
+
+        String receivedImageUrl = giftQueryService.getReceivedGiftDetail(
+                fixture.recipientId(),
+                fixture.giftIds().getFirst()
+        ).product().imageUrl();
+
+        assertThat(receivedImageUrl).contains("fallback.jpg");
     }
 
     @Test
@@ -180,7 +221,7 @@ class GiftQueryServiceIntegrationTest {
         List<Long> giftIds = giftHistories.stream().map(GiftHistory::getId).toList();
         entityManager.clear();
 
-        return new PageFixture(sender.getId(), recipient.getId(), giftIds);
+        return new PageFixture(sender.getId(), recipient.getId(), product.getId(), giftIds);
     }
 
     private Long persistUserWithoutGift() {
@@ -205,6 +246,7 @@ class GiftQueryServiceIntegrationTest {
     private record PageFixture(
             Long senderId,
             Long recipientId,
+            Long productId,
             List<Long> giftIds
     ) {
     }
