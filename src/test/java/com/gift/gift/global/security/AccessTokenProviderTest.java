@@ -39,7 +39,7 @@ class AccessTokenProviderTest {
         properties = new JwtProperties(
                 Base64.getEncoder()
                         .encodeToString(new byte[32]),
-                "test-issuer"
+                "https://test-issuer.example"
         );
 
         clock = Clock.fixed(now, ZoneOffset.UTC);
@@ -63,7 +63,7 @@ class AccessTokenProviderTest {
         Jwt jwt = decoder.decode(issued.value());
 
         assertEquals("1", jwt.getSubject());
-        assertEquals("test-issuer", jwt.getIssuer().toString());
+        assertEquals("https://test-issuer.example", jwt.getIssuer().toString());
         assertEquals(now, jwt.getIssuedAt());
         assertEquals(now.plusSeconds(3600), jwt.getExpiresAt());
 

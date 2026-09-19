@@ -1,6 +1,5 @@
 package com.gift.gift.domain.user.service;
 
-import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -19,15 +18,12 @@ import com.gift.gift.domain.user.dto.response.SignupResponse;
 import com.gift.gift.domain.user.entity.Term;
 import com.gift.gift.domain.user.entity.TermConsent;
 import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.exception.SignupPolicyViolationException;
 import com.gift.gift.domain.user.exception.SignupTermsConfigurationException;
 import com.gift.gift.domain.user.repository.TermConsentRepository;
 import com.gift.gift.domain.user.repository.TermRepository;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
-import com.gift.gift.global.exception.ValidationDetail;
-import com.gift.gift.global.exception.ValidationErrorReason;
 
 @Service
 @RequiredArgsConstructor
@@ -37,7 +33,6 @@ public class SignupService {
     private final TermRepository termRepository;
     private final TermConsentRepository termConsentRepository;
     private final PasswordEncoder passwordEncoder;
-    private final Clock clock;
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
@@ -73,29 +68,6 @@ public class SignupService {
         termConsentRepository.saveAllAndFlush(consents);
 
         return SignupResponse.from(savedUser);
-    }
-
-    private void validateBirthPolicy(LocalDate birth) {
-        LocalDate today = LocalDate.now(clock);
-
-        if (birth.isAfter(today)
-                || birth.isBefore(today.minusYears(120))) {
-            throw birthPolicyViolation(ValidationErrorReason.OUT_OF_RANGE);
-        }
-
-        if (birth.isAfter(today.minusYears(14))) {
-            throw birthPolicyViolation(
-                    ValidationErrorReason.AGE_REQUIREMENT_NOT_MET
-            );
-        }
-    }
-
-    private SignupPolicyViolationException birthPolicyViolation(
-            ValidationErrorReason reason
-    ) {
-        return new SignupPolicyViolationException(
-                List.of(new ValidationDetail("birth", reason))
-        );
     }
 
     private void validateTermConsents(
