@@ -73,14 +73,20 @@ public class GiftQueryService {
 
     public GiftSentDetailResponse getSentGiftDetail(Long userId, Long giftId) {
         GiftQueryRow row = giftQueryRepository.findSentGiftDetail(giftId, userId)
-                .orElseThrow(() -> new GiftException(ErrorCode.GIFT_NOT_FOUND));
+                .orElseThrow(() -> new GiftException(
+                        ErrorCode.GIFT_NOT_FOUND,
+                        "보낸 선물 내역을 찾을 수 없습니다."
+                ));
 
         return responseMapper.toSentDetail(row, loadImageUrls(List.of(row)).get(row.productId()));
     }
 
     public GiftReceivedDetailResponse getReceivedGiftDetail(Long userId, Long giftId) {
         GiftQueryRow row = giftQueryRepository.findReceivedGiftDetail(giftId, userId)
-                .orElseThrow(() -> new GiftException(ErrorCode.GIFT_NOT_FOUND));
+                .orElseThrow(() -> new GiftException(
+                        ErrorCode.GIFT_NOT_FOUND,
+                        "받은 선물 내역을 찾을 수 없습니다."
+                ));
 
         return responseMapper.toReceivedDetail(row, loadImageUrls(List.of(row)).get(row.productId()));
     }
