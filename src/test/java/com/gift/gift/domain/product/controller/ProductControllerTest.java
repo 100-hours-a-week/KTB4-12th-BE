@@ -150,6 +150,46 @@ class ProductControllerTest {
                 .containsExactly(11L, 12L);
     }
 
+    @Test
+    @DisplayName("단일 categoryIds 값을 카테고리 ID 목록으로 바인딩한다")
+    void getProducts_bindsSingleCategoryId() throws Exception {
+        when(productQueryService.getProducts(any()))
+                .thenReturn(productListResponse(ProductSort.POPULAR, null, false));
+
+        mockMvc.perform(get("/products")
+                        .param("categoryIds", "31"))
+                .andExpect(status().isOk());
+
+        assertThat(captureRequest().categoryIds()).containsExactly(31L);
+    }
+
+    @Test
+    @DisplayName("반복된 categoryIds 값을 카테고리 ID 목록으로 바인딩한다")
+    void getProducts_bindsRepeatedCategoryIds() throws Exception {
+        when(productQueryService.getProducts(any()))
+                .thenReturn(productListResponse(ProductSort.POPULAR, null, false));
+
+        mockMvc.perform(get("/products")
+                        .param("categoryIds", "11", "12"))
+                .andExpect(status().isOk());
+
+        assertThat(captureRequest().categoryIds()).containsExactly(11L, 12L);
+    }
+
+    @Test
+    @DisplayName("단수 categoryId는 무시되어 카테고리 필터로 전달되지 않는다")
+    void getProducts_ignoresSingularCategoryId() throws Exception {
+        when(productQueryService.getProducts(any()))
+                .thenReturn(productListResponse(ProductSort.POPULAR, null, false));
+
+        mockMvc.perform(get("/products")
+                        .param("categoryId", "31,53"))
+                .andExpect(status().isOk());
+
+        // 성공 응답만으로 필터 적용을 판단하지 않고 Service 전달값을 확인한다.
+        assertThat(captureRequest().categoryIds()).isNull();
+    }
+
     @ParameterizedTest
     @EnumSource(ProductSort.class)
     @DisplayName("허용된 정렬 조건을 상품 목록 요청에 적용한다")
