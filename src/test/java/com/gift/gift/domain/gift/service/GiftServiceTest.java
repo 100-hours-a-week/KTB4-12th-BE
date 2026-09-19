@@ -1,5 +1,6 @@
 package com.gift.gift.domain.gift.service;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -7,25 +8,155 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.gift.gift.domain.friend.service.FriendQueryService;
+import com.gift.gift.domain.gift.dto.request.GiftPreflightRequest;
+import com.gift.gift.domain.gift.dto.response.GiftPreflightResponse;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
+import com.gift.gift.domain.product.entity.Product;
+import com.gift.gift.domain.product.repository.ProductRepository;
+import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.domain.user.entity.UserStatus;
+import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class GiftServiceTest {
 
     private GiftHistoryRepository giftHistoryRepository;
+    private UserRepository userRepository;
+    private FriendQueryService friendQueryService;
+    private ProductRepository productRepository;
     private GiftService giftService;
 
     @BeforeEach
     void setUp() {
         giftHistoryRepository = mock(GiftHistoryRepository.class);
-        giftService = new GiftService(giftHistoryRepository);
+        userRepository = mock(UserRepository.class);
+        friendQueryService = mock(FriendQueryService.class);
+        productRepository = mock(ProductRepository.class);
+        giftService = new GiftService(
+                giftHistoryRepository,
+                userRepository,
+                friendQueryService,
+                productRepository
+        );
+    }
+
+    @Test
+    @DisplayName("사전 검증 성공 시 수신자·상품·가격·최대 주문 수량을 반환한다")
+    void preflight_returnsCalculatedResponse_whenConditionsAreValid() {
+        Long senderId = 1L;
+        Long recipientId = 2L;
+        Long productId = 3L;
+        User recipient = mock(User.class);
+        Product product = mock(Product.class);
+        GiftPreflightRequest request = new GiftPreflightRequest(productId, recipientId, 2);
+
+        when(userRepository.findByIdAndStatusAndDeletedAtIsNull(recipientId, UserStatus.ACTIVE))
+                .thenReturn(Optional.of(recipient));
+        when(friendQueryService.areFriends(senderId, recipientId)).thenReturn(true);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(recipient.getId()).thenReturn(recipientId);
+        when(recipient.getName()).thenReturn("수신자");
+        when(product.isDeleted()).thenReturn(false);
+        when(product.getId()).thenReturn(productId);
+        when(product.getPrice()).thenReturn(BigDecimal.valueOf(32_000));
+        when(product.getQuantity()).thenReturn(15);
+
+        GiftPreflightResponse response = giftService.preflight(senderId, request);
+
+        assertThat(response.recipient())
+                .isEqualTo(new GiftPreflightResponse.Recipient(recipientId, "수신자"));
+        assertThat(response.product()).isEqualTo(new GiftPreflightResponse.Product(
+                productId,
+                BigDecimal.valueOf(32_000),
+                2,
+                BigDecimal.valueOf(64_000),
+                10
+        ));
+        assertThat(response.preferenceWarning()).isNull();
+
+        var order = inOrder(userRepository, friendQueryService, productRepository);
+        order.verify(userRepository).findByIdAndStatusAndDeletedAtIsNull(recipientId, UserStatus.ACTIVE);
+        order.verify(friendQueryService).areFriends(senderId, recipientId);
+        order.verify(productRepository).findById(productId);
+    }
+
+    @Test
+    @DisplayName("자기 자신에게 선물하면 INVALID_REQUEST가 발생하고 조회하지 않는다")
+    void preflight_throwsInvalidRequest_whenSendingToSelf() {
+        GiftPreflightRequest request = new GiftPreflightRequest(3L, 1L, 1);
+
+        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.INVALID_REQUEST);
+
+        verifyNoInteractions(userRepository, friendQueryService, productRepository);
+    }
+
+    @Test
+    @DisplayName("활성 수신자가 없으면 RECIPIENT_NOT_FOUND가 발생한다")
+    void preflight_throwsRecipientNotFound_whenRecipientIsNotActive() {
+        GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 1);
+        when(userRepository.findByIdAndStatusAndDeletedAtIsNull(2L, UserStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.RECIPIENT_NOT_FOUND);
+
+        verifyNoInteractions(friendQueryService, productRepository);
+    }
+
+    @Test
+    @DisplayName("수신자가 친구가 아니면 RECIPIENT_NOT_FRIEND가 발생한다")
+    void preflight_throwsRecipientNotFriend_whenRelationshipDoesNotExist() {
+        GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 1);
+        User recipient = mock(User.class);
+        when(recipient.getId()).thenReturn(2L);
+        when(userRepository.findByIdAndStatusAndDeletedAtIsNull(2L, UserStatus.ACTIVE))
+                .thenReturn(Optional.of(recipient));
+        when(friendQueryService.areFriends(1L, 2L)).thenReturn(false);
+
+        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.RECIPIENT_NOT_FRIEND);
+
+        verifyNoInteractions(productRepository);
+    }
+
+    @Test
+    @DisplayName("상품이 없으면 PRODUCT_NOT_FOUND가 발생한다")
+    void preflight_throwsProductNotFound_whenProductDoesNotExist() {
+        GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 1);
+        stubValidRecipientAndFriend();
+        when(productRepository.findById(3L)).thenReturn(Optional.empty());
+
+        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.PRODUCT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("삭제된 상품이면 PRODUCT_NOT_FOUND가 발생한다")
+    void preflight_throwsProductNotFound_whenProductIsDeleted() {
+        GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 1);
+        Product product = mock(Product.class);
+        stubValidRecipientAndFriend();
+        when(productRepository.findById(3L)).thenReturn(Optional.of(product));
+        when(product.isDeleted()).thenReturn(true);
+
+        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.PRODUCT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("상품 재고가 요청 수량보다 적으면 INSUFFICIENT_STOCK이 발생한다")
+    void preflight_throwsInsufficientStock_whenQuantityExceedsStock() {
+        GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 3);
+        Product product = mock(Product.class);
+        stubValidRecipientAndFriend();
+        when(productRepository.findById(3L)).thenReturn(Optional.of(product));
+        when(product.isDeleted()).thenReturn(false);
+        when(product.getQuantity()).thenReturn(2);
+
+        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.INSUFFICIENT_STOCK);
     }
 
     @Test
@@ -70,5 +201,19 @@ class GiftServiceTest {
         assertThatThrownBy(() -> giftService.findExistingGift(senderId, idempotencyKey, "b".repeat(64)))
                 .isInstanceOfSatisfying(GiftException.class, exception ->
                         assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.IDEMPOTENCY_KEY_CONFLICT));
+    }
+
+    private void stubValidRecipientAndFriend() {
+        User recipient = mock(User.class);
+        when(recipient.getId()).thenReturn(2L);
+        when(userRepository.findByIdAndStatusAndDeletedAtIsNull(2L, UserStatus.ACTIVE))
+                .thenReturn(Optional.of(recipient));
+        when(friendQueryService.areFriends(1L, 2L)).thenReturn(true);
+    }
+
+    private void assertGiftError(Runnable action, ErrorCode expectedErrorCode) {
+        assertThatThrownBy(action::run)
+                .isInstanceOfSatisfying(GiftException.class, exception ->
+                        assertThat(exception.getErrorCode()).isEqualTo(expectedErrorCode));
     }
 }

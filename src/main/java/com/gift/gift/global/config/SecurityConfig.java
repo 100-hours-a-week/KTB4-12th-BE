@@ -67,9 +67,9 @@ public class SecurityConfig {
                 .requestMatchers(
                         HttpMethod.GET,
                         "/actuator/health",
-                        "/actuator/health/**"
-                )
-                .permitAll()
+                        "/actuator/health/**",
+                        "/products"
+                ).permitAll()
                 .anyRequest()
                 .authenticated()
         );
