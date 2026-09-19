@@ -31,7 +31,8 @@ public class SecurityConfig {
                 .requestMatchers(
                         HttpMethod.GET,
                         "/actuator/health",
-                        "/actuator/health/**"
+                        "/actuator/health/**",
+                        "/products"
                 ).permitAll()
                 .anyRequest()
                 .authenticated()
