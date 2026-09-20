@@ -43,4 +43,19 @@ public interface ProductImageRepository
     List<ProductImageProjection> findActiveImagesForThumbnails(
             @Param("productIds") Collection<Long> productIds
     );
+
+    @Query("""
+        SELECT i
+        FROM ProductImage i
+        WHERE i.product.id = :productId
+          AND i.deletedAt IS NULL
+        ORDER BY
+            CASE WHEN i.sortOrder IS NULL THEN 1 ELSE 0 END ASC,
+            i.sortOrder ASC,
+            i.createdAt ASC,
+            i.id ASC
+        """)
+    List<ProductImage> findActiveDetailImages(
+            @Param("productId") Long productId
+    );
 }
