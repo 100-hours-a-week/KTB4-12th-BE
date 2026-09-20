@@ -56,7 +56,8 @@ class ProductQueryServiceTest {
                 productImageRepository,
                 cursorCodec,
                 pageAssembler,
-                thumbnailMapper
+                thumbnailMapper,
+                objectKey -> "https://image/test/" + objectKey
         );
     }
 
