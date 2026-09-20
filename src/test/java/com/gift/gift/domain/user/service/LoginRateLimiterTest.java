@@ -54,8 +54,8 @@ class LoginRateLimiterTest {
     }
 
     @Test
-    @DisplayName("IP와 이메일 제한을 모두 통과하면 로그인을 계속 처리한다")
-    void checkAttempt_allowsWhenBothLimitsPermit() {
+    @DisplayName("분리된 IP와 이메일 제한을 모두 통과하면 로그인을 계속 처리한다")
+    void checkAttempts_allowWhenBothLimitsPermit() {
         stubIdentifiers();
 
         when(transactionService.consumeIpToken(IP_HASH))
@@ -65,35 +65,29 @@ class LoginRateLimiterTest {
                 .thenReturn(LoginRateLimitDecision.permit());
 
         assertDoesNotThrow(
-                () -> loginRateLimiter.checkAttempt(
-                        CLIENT_IP,
-                        EMAIL
-                )
+                () -> {
+                    loginRateLimiter.checkIpAttempt(CLIENT_IP);
+                    loginRateLimiter.checkEmailAttempt(EMAIL);
+                }
         );
     }
 
     @Test
     @DisplayName("IP 토큰이 없으면 IP의 재시도 시간으로 요청을 제한한다")
-    void checkAttempt_rejectsWhenIpLimitRejects() {
-        stubIdentifiers();
+    void checkIpAttempt_rejectsWhenIpLimitRejects() {
+        when(identifierHasher.hashIp(CLIENT_IP))
+                .thenReturn(IP_HASH);
 
         when(transactionService.consumeIpToken(IP_HASH))
                 .thenReturn(
                         LoginRateLimitDecision.reject(6)
                 );
 
-        when(transactionService.inspectEmail(EMAIL_HASH))
-                .thenReturn(
-                        LoginRateLimitDecision.permit()
-                );
-
         LoginRateLimitExceededException exception =
                 assertThrows(
                         LoginRateLimitExceededException.class,
-                        () -> loginRateLimiter.checkAttempt(
-                                CLIENT_IP,
-                                EMAIL
-                        )
+                        () -> loginRateLimiter
+                                .checkIpAttempt(CLIENT_IP)
                 );
 
         assertEquals(6, exception.getRetryAfterSeconds());
@@ -105,13 +99,9 @@ class LoginRateLimiterTest {
 
     @Test
     @DisplayName("이메일이 차단 중이면 이메일의 재시도 시간으로 요청을 제한한다")
-    void checkAttempt_rejectsWhenEmailLimitRejects() {
-        stubIdentifiers();
-
-        when(transactionService.consumeIpToken(IP_HASH))
-                .thenReturn(
-                        LoginRateLimitDecision.permit()
-                );
+    void checkEmailAttempt_rejectsWhenEmailLimitRejects() {
+        when(identifierHasher.hashEmail(EMAIL))
+                .thenReturn(EMAIL_HASH);
 
         when(transactionService.inspectEmail(EMAIL_HASH))
                 .thenReturn(
@@ -121,43 +111,38 @@ class LoginRateLimiterTest {
         LoginRateLimitExceededException exception =
                 assertThrows(
                         LoginRateLimitExceededException.class,
-                        () -> loginRateLimiter.checkAttempt(
-                                CLIENT_IP,
-                                EMAIL
-                        )
+                        () -> loginRateLimiter
+                                .checkEmailAttempt(EMAIL)
                 );
 
         assertEquals(30, exception.getRetryAfterSeconds());
     }
 
     @Test
-    @DisplayName("IP와 이메일이 모두 제한되면 더 긴 재시도 시간을 반환한다")
-    void checkAttempt_usesLongerRetryAfterWhenBothReject() {
-        stubIdentifiers();
+    @DisplayName("IP 제한은 이메일 검사보다 먼저 요청을 중단한다")
+    void separatedChecks_stopBeforeEmailInspectionWhenIpRejects() {
+        when(identifierHasher.hashIp(CLIENT_IP))
+                .thenReturn(IP_HASH);
 
         when(transactionService.consumeIpToken(IP_HASH))
                 .thenReturn(
                         LoginRateLimitDecision.reject(6)
                 );
 
-        when(transactionService.inspectEmail(EMAIL_HASH))
-                .thenReturn(
-                        LoginRateLimitDecision.reject(120)
-                );
-
         LoginRateLimitExceededException exception =
                 assertThrows(
                         LoginRateLimitExceededException.class,
-                        () -> loginRateLimiter.checkAttempt(
-                                CLIENT_IP,
-                                EMAIL
-                        )
+                        () -> {
+                            loginRateLimiter.checkIpAttempt(CLIENT_IP);
+                            loginRateLimiter.checkEmailAttempt(EMAIL);
+                        }
                 );
 
-        assertEquals(
-                120,
-                exception.getRetryAfterSeconds()
-        );
+        assertEquals(6, exception.getRetryAfterSeconds());
+        org.mockito.Mockito.verify(
+                transactionService,
+                org.mockito.Mockito.never()
+        ).inspectEmail(EMAIL_HASH);
     }
 
     @Test
@@ -194,8 +179,9 @@ class LoginRateLimiterTest {
 
     @Test
     @DisplayName("요청 제한 저장소 장애는 503 비즈니스 예외로 변환한다")
-    void checkAttempt_convertsDataAccessFailureToServiceUnavailable() {
-        stubIdentifiers();
+    void checkIpAttempt_convertsDataAccessFailureToServiceUnavailable() {
+        when(identifierHasher.hashIp(CLIENT_IP))
+                .thenReturn(IP_HASH);
 
         DataAccessResourceFailureException failure =
                 new DataAccessResourceFailureException(
@@ -207,10 +193,7 @@ class LoginRateLimiterTest {
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> loginRateLimiter.checkAttempt(
-                        CLIENT_IP,
-                        EMAIL
-                )
+                () -> loginRateLimiter.checkIpAttempt(CLIENT_IP)
         );
 
         assertEquals(
@@ -245,8 +228,9 @@ class LoginRateLimiterTest {
 
     @Test
     @DisplayName("프로그래밍 오류는 저장소 장애로 변환하지 않는다")
-    void checkAttempt_doesNotConvertProgrammingError() {
-        stubIdentifiers();
+    void checkIpAttempt_doesNotConvertProgrammingError() {
+        when(identifierHasher.hashIp(CLIENT_IP))
+                .thenReturn(IP_HASH);
 
         IllegalStateException failure =
                 new IllegalStateException(
@@ -258,10 +242,7 @@ class LoginRateLimiterTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> loginRateLimiter.checkAttempt(
-                        CLIENT_IP,
-                        EMAIL
-                )
+                () -> loginRateLimiter.checkIpAttempt(CLIENT_IP)
         );
 
         assertSame(failure, thrown);
