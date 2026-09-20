@@ -61,7 +61,8 @@ public class SecurityConfig {
                 .requestMatchers(
                         HttpMethod.POST,
                         "/auth/email-availability",
-                        "/auth/signup"
+                        "/auth/signup",
+                        "/auth/login"
                 )
                 .permitAll()
                 .requestMatchers(
