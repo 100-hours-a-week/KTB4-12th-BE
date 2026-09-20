@@ -10,7 +10,8 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      # 스키마 변경은 Flyway가 담당하고 Hibernate는 검증만 수행한다.
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true
