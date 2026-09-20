@@ -19,24 +19,29 @@ public class LoginRateLimiter {
     private final LoginRateLimitTransactionService transactionService;
     private final RateLimitIdentifierHasher identifierHasher;
 
-    public void checkAttempt(
-            String clientIp,
-            String email
-    ) {
+    public void checkIpAttempt(String clientIp) {
         String ipHash = identifierHasher.hashIp(clientIp);
+
+        try {
+            LoginRateLimitDecision decision =
+                    transactionService.consumeIpToken(ipHash);
+
+            rejectWhenLimited(decision);
+        } catch (LoginRateLimitExceededException exception) {
+            throw exception;
+        } catch (DataAccessException exception) {
+            throw storageUnavailable(exception);
+        }
+    }
+
+    public void checkEmailAttempt(String email) {
         String emailHash = identifierHasher.hashEmail(email);
 
         try {
-            LoginRateLimitDecision ipDecision =
-                    transactionService.consumeIpToken(ipHash);
-
-            LoginRateLimitDecision emailDecision =
+            LoginRateLimitDecision decision =
                     transactionService.inspectEmail(emailHash);
 
-            rejectWhenLimited(
-                    ipDecision,
-                    emailDecision
-            );
+            rejectWhenLimited(decision);
         } catch (LoginRateLimitExceededException exception) {
             throw exception;
         } catch (DataAccessException exception) {
@@ -49,15 +54,9 @@ public class LoginRateLimiter {
 
         try {
             LoginRateLimitDecision decision =
-                    transactionService.recordEmailFailure(
-                            emailHash
-                    );
+                    transactionService.recordEmailFailure(emailHash);
 
-            if (!decision.permitted()) {
-                throw new LoginRateLimitExceededException(
-                        decision.retryAfterSeconds()
-                );
-            }
+            rejectWhenLimited(decision);
         } catch (LoginRateLimitExceededException exception) {
             throw exception;
         } catch (DataAccessException exception) {
@@ -69,30 +68,21 @@ public class LoginRateLimiter {
         String emailHash = identifierHasher.hashEmail(email);
 
         try {
-            transactionService.resetEmailFailure(
-                    emailHash
-            );
+            transactionService.resetEmailFailure(emailHash);
         } catch (DataAccessException exception) {
             throw storageUnavailable(exception);
         }
     }
 
     private void rejectWhenLimited(
-            LoginRateLimitDecision ipDecision,
-            LoginRateLimitDecision emailDecision
+            LoginRateLimitDecision decision
     ) {
-        if (ipDecision.permitted()
-                && emailDecision.permitted()) {
+        if (decision.permitted()) {
             return;
         }
 
-        long retryAfterSeconds = Math.max(
-                ipDecision.retryAfterSeconds(),
-                emailDecision.retryAfterSeconds()
-        );
-
         throw new LoginRateLimitExceededException(
-                retryAfterSeconds
+                decision.retryAfterSeconds()
         );
     }
 
