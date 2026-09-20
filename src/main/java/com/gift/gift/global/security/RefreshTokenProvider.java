@@ -7,6 +7,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Component;
 public class RefreshTokenProvider {
 
     private static final int TOKEN_BYTES = 32;
+    private static final Pattern TOKEN_PATTERN =
+            Pattern.compile("^[A-Za-z0-9_-]{43}$");
 
     private final SecureRandom secureRandom =
             new SecureRandom();
@@ -49,5 +52,10 @@ public class RefreshTokenProvider {
                     exception
             );
         }
+    }
+
+    public boolean isValidFormat(String token) {
+        return token != null
+                && TOKEN_PATTERN.matcher(token).matches();
     }
 }
