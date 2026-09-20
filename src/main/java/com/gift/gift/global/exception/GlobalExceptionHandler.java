@@ -8,6 +8,7 @@ import jakarta.validation.ConstraintViolationException;
 
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -18,7 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-import com.gift.gift.domain.user.exception.SignupPolicyViolationException;
+import com.gift.gift.domain.user.exception.LoginRateLimitExceededException;
 import com.gift.gift.global.response.ApiResponse;
 
 @Slf4j
@@ -44,18 +45,42 @@ public class GlobalExceptionHandler {
         return requestError(ErrorCode.INVALID_REQUEST, details);
     }
 
-    @ExceptionHandler(SignupPolicyViolationException.class)
-    public ResponseEntity<ApiResponse<Void>> handleSignupPolicyViolationException(
-            SignupPolicyViolationException exception
-    ) {
-        return requestError(ErrorCode.INVALID_REQUEST, exception.getDetails());
-    }
-
     @ExceptionHandler(RequestValidationException.class)
     public ResponseEntity<ApiResponse<Void>> handleRequestValidationException(
             RequestValidationException exception
     ) {
         return requestError(exception.getErrorCode(), List.of());
+    }
+
+    @ExceptionHandler(LoginRateLimitExceededException.class)
+    public ResponseEntity<ApiResponse<Void>>
+    handleLoginRateLimitExceededException(
+            LoginRateLimitExceededException exception
+    ) {
+        ErrorCode errorCode = exception.getErrorCode();
+        String traceId = resolveTraceId();
+
+        log.warn(
+                "Login request rate limited. traceId={}, retryAfterSeconds={}",
+                traceId,
+                exception.getRetryAfterSeconds()
+        );
+
+        return ResponseEntity
+                .status(errorCode.status())
+                .header(
+                        HttpHeaders.RETRY_AFTER,
+                        Long.toString(
+                                exception.getRetryAfterSeconds()
+                        )
+                )
+                .body(
+                        ApiResponse.error(
+                                errorCode,
+                                errorCode.message(),
+                                traceId
+                        )
+                );
     }
 
     @ExceptionHandler(BusinessException.class)

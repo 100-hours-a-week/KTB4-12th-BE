@@ -1,28 +1,30 @@
 package com.gift.gift.domain.product.service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import lombok.RequiredArgsConstructor;
 
 import com.gift.gift.domain.product.cursor.ProductCursor;
 import com.gift.gift.domain.product.cursor.ProductCursorCodec;
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
+import com.gift.gift.domain.product.dto.response.ProductDetailResponse;
+import com.gift.gift.domain.product.dto.response.ProductImageResponse;
 import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
+import com.gift.gift.domain.product.entity.Product;
+import com.gift.gift.domain.product.entity.ProductImage;
+import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.query.ProductPage;
 import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
-import com.gift.gift.domain.product.repository.ProductImageProjection;
-import com.gift.gift.domain.product.repository.ProductImageRepository;
-import com.gift.gift.domain.product.repository.ProductRepository;
-import com.gift.gift.domain.product.repository.ProductSearchCondition;
-import com.gift.gift.domain.product.repository.ProductSort;
-import com.gift.gift.domain.product.repository.ProductSummaryProjection;
+import com.gift.gift.domain.product.repository.*;
+import com.gift.gift.domain.product.support.ImageUrlProvider;
+import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +36,7 @@ public class ProductQueryService {
     private final ProductCursorCodec cursorCodec;
     private final ProductPageAssembler pageAssembler;
     private final ProductThumbnailMapper thumbnailMapper;
+    private final ImageUrlProvider imageUrlProvider;
 
     public ProductListResponse getProducts(ProductListRequest request) {
         Objects.requireNonNull(
@@ -103,6 +106,25 @@ public class ProductQueryService {
                 appliedSort,
                 page
         );
+    }
+
+    public ProductDetailResponse getProductDetail(Long productId) {
+        Product product = productRepository
+                .findByIdAndDeletedAtIsNull(productId)
+                .orElseThrow(
+                        () -> new ProductException(ErrorCode.PRODUCT_NOT_FOUND)
+                );
+
+        List<ProductImage> activeImages = productImageRepository
+                .findActiveDetailImages(productId);
+
+        List<ProductImageResponse> images = new ArrayList<>();
+        for (ProductImage image : activeImages) {
+            String imageUrl = imageUrlProvider.generateUrl(image.getObjectKey());
+            images.add(ProductImageResponse.from(image, imageUrl));
+        }
+
+        return ProductDetailResponse.from(product, images);
     }
 
     private ProductSort resolveSort(ProductListRequest request) {

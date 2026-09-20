@@ -14,10 +14,10 @@ import static java.lang.annotation.ElementType.RECORD_COMPONENT;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 @Documented
-@Constraint(validatedBy = BirthDateValidator.class)
+@Constraint(validatedBy = SignupBirthValidator.class)
 @Target({FIELD, PARAMETER, RECORD_COMPONENT, ANNOTATION_TYPE})
 @Retention(RUNTIME)
-public @interface ValidBirthDate {
+public @interface ValidSignupBirth {
 
     String message() default "INVALID_FORMAT";
 

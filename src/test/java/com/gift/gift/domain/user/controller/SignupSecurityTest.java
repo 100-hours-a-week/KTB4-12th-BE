@@ -41,11 +41,14 @@ class SignupSecurityTest {
     }
 
     @Test
-    @DisplayName("다른 POST는 CSRF 검사에서 제외하지 않는다")
-    void otherPost_keepsCsrfProtection() throws Exception {
+    @DisplayName("보호 POST는 토큰이 없으면 401 공통 응답을 반환한다")
+    void protectedPost_rejectsMissingAccessToken() throws Exception {
         mockMvc.perform(post("/users/me")
                         .contentType(APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.error.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.error.details").doesNotExist());
     }
 }

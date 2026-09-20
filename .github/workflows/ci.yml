@@ -84,6 +84,11 @@ jobs:
           MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           APP_CONTAINER="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
+          export JWT_SECRET_BASE64="$(openssl rand -base64 32)"
+          export JWT_ISSUER="https://ci.seonjalal.test"
+          export CORS_ALLOWED_ORIGINS="http://localhost:3000"
+          export LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64="$(openssl rand -base64 32)"
+
           docker network create "$NETWORK"
           docker run --detach \
             --name "$MYSQL_CONTAINER" \
@@ -122,6 +127,10 @@ jobs:
             --env DB_PASSWORD=gift_smoke_password \
             --env AWS_REGION \
             --env PRODUCT_IMAGE_BUCKET \
+            --env JWT_SECRET_BASE64 \
+            --env LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64 \
+            --env JWT_ISSUER \
+            --env CORS_ALLOWED_ORIGINS \
             seonjalal-be:ci
 
           HOST_PORT="$(docker port "$APP_CONTAINER" 8080/tcp | sed 's/.*://')"

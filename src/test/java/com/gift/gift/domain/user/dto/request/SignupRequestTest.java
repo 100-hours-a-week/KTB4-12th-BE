@@ -2,34 +2,31 @@ package com.gift.gift.domain.user.dto.request;
 
 import java.util.List;
 
-import jakarta.validation.Validation;
-import jakarta.validation.Validator;
-import jakarta.validation.ValidatorFactory;
-
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+
+import com.gift.gift.support.TestValidatorFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SignupRequestTest {
 
-    private static ValidatorFactory factory;
-    private static Validator validator;
+    private static LocalValidatorFactoryBean validator;
 
     @BeforeAll
     static void setUpValidator() {
-        factory = Validation.buildDefaultValidatorFactory();
-        validator = factory.getValidator();
+        validator = TestValidatorFactory.create();
     }
 
     @AfterAll
     static void closeValidator() {
-        factory.close();
+        validator.close();
     }
 
     @Test
@@ -113,9 +110,23 @@ class SignupRequestTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"2999-01-01", "2020-01-01", "1800-01-01", "2000-02-29"})
-    @DisplayName("DTO에서는 가입 나이와 날짜 범위 정책을 검사하지 않는다")
-    void validate_doesNotApplyBirthBusinessPolicy(String birth) {
+    @CsvSource({
+            "2026-09-19, OUT_OF_RANGE",
+            "1906-09-17, OUT_OF_RANGE",
+            "2012-09-19, AGE_REQUIREMENT_NOT_MET"
+    })
+    @DisplayName("생년월일의 날짜 범위와 만 14세 정책을 검증한다")
+    void validate_rejectsBirthPolicyViolation(String birth, String reason) {
+        assertViolation(
+                request("김선물", birth, "user@example.com", "Password1!"),
+                "birth", reason
+        );
+    }
+
+    @ParameterizedTest
+    @CsvSource({"2012-09-18", "1906-09-18", "2000-02-29"})
+    @DisplayName("만 14세와 120년 경계에 포함되는 생년월일을 허용한다")
+    void validate_acceptsBirthPolicyBoundary(String birth) {
         assertTrue(validator.validate(request(
                 "김선물", birth, "user@example.com", "Password1!"
         )).isEmpty());

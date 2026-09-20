@@ -7,6 +7,11 @@ public enum ProductErrorCode {
     INVALID_REQUEST(
             ErrorCode.INVALID_REQUEST,
             "조회 조건을 확인해 주세요."
+    ),
+
+    INVALID_PRODUCT_ID(
+            ErrorCode.INVALID_REQUEST,
+            "상품 식별자를 확인해 주세요."
     );
 
     private final ErrorCode errorCode;

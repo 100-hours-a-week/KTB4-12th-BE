@@ -1,8 +1,6 @@
 package com.gift.gift.domain.user.controller;
 
 import java.time.LocalDate;
-import java.util.List;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,13 +12,11 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import com.gift.gift.domain.user.dto.response.SignupResponse;
 import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.exception.SignupPolicyViolationException;
 import com.gift.gift.domain.user.service.SignupService;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
-import com.gift.gift.global.exception.ValidationDetail;
-import com.gift.gift.global.exception.ValidationErrorReason;
+import com.gift.gift.support.TestValidatorFactory;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -40,8 +36,7 @@ class SignupControllerTest {
     @BeforeEach
     void setUp() {
         service = mock(SignupService.class);
-        validator = new LocalValidatorFactoryBean();
-        validator.afterPropertiesSet();
+        validator = TestValidatorFactory.create();
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new SignupController(service))
@@ -92,25 +87,25 @@ class SignupControllerTest {
     }
 
     @Test
-    @DisplayName("Service 가입 정책 예외도 동일한 검증 응답 구조를 사용한다")
-    void signup_returnsDetailsForSignupPolicyViolation() throws Exception {
-        when(service.signup(any())).thenThrow(new SignupPolicyViolationException(
-                List.of(new ValidationDetail(
-                        "birth",
-                        ValidationErrorReason.AGE_REQUIREMENT_NOT_MET
-                ))
-        ));
-
+    @DisplayName("이름 형식과 만 14세 정책 오류를 details에 함께 반환한다")
+    void signup_returnsAllDtoValidationErrors() throws Exception {
         mockMvc.perform(post("/auth/signup")
                         .contentType(APPLICATION_JSON)
-                        .content(body()))
+                        .content(body()
+                                .replace("김선물", "김선물1")
+                                .replace("2000-01-01", "2012-09-19")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.error.traceId").isNotEmpty())
                 .andExpect(jsonPath("$.error.details[0].field").value("birth"))
                 .andExpect(jsonPath("$.error.details[0].reason")
                         .value("AGE_REQUIREMENT_NOT_MET"))
+                .andExpect(jsonPath("$.error.details[1].field").value("name"))
+                .andExpect(jsonPath("$.error.details[1].reason")
+                        .value("INVALID_FORMAT"))
                 .andExpect(jsonPath("$.data").doesNotExist());
+
+        verifyNoInteractions(service);
     }
 
     @Test
