@@ -1,3 +1,7 @@
+# 테스트에서는 목 데이터를 제외하고 스키마 마이그레이션만 적용한다.
+# 메인 application.yaml을 그대로 유지하면서 flyway.locations만 오버라이드한다.
+# (src/test/resources의 application.yaml은 메인 파일을 파일 단위로 대체하므로
+#  datasource 등 나머지 설정도 모두 여기에 있어야 한다.)
 spring:
   application:
     name: gift
@@ -18,7 +22,7 @@ spring:
 
   flyway:
     enabled: true
-    locations: classpath:db/migration,classpath:db/seed
+    locations: classpath:db/migration
     # 이미 테이블이 존재하는 기존 로컬 DB에서도 Flyway를 도입할 수 있도록 기준선을 0으로 둔다.
     # V1은 IF NOT EXISTS라 기존 테이블이 있어도 그대로 적용되고, 새 DB에서는 전체 스키마가 생성된다.
     baseline-on-migrate: true
