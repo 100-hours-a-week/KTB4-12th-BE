@@ -16,6 +16,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
+import com.gift.gift.domain.product.dto.response.ProductDetailResponse;
+import com.gift.gift.domain.product.dto.response.ProductImageResponse;
 import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
 import com.gift.gift.domain.product.exception.ProductException;
@@ -26,14 +28,9 @@ import com.gift.gift.global.exception.GlobalExceptionHandler;
 import com.gift.gift.global.pagination.CursorPageResponse.Pagination;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.emptyOrNullString;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -420,6 +417,181 @@ class ProductControllerTest {
                         .value(not(emptyOrNullString())));
 
         verifyNoInteractions(productQueryService);
+    }
+
+    @Test
+    @DisplayName("상품 상세를 공통 성공 응답으로 반환한다")
+    void getProductDetail_returnsProduct() throws Exception {
+        when(productQueryService.getProductDetail(101L))
+                .thenReturn(productDetailResponse(8));
+
+        mockMvc.perform(get("/products/101"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("상품 상세를 조회했습니다."))
+                .andExpect(jsonPath("$.data.product.productId")
+                        .value(101))
+                .andExpect(jsonPath("$.data.product.brandName")
+                        .value("테스트 브랜드"))
+                .andExpect(jsonPath("$.data.product.productName")
+                        .value("테스트 상품"))
+                .andExpect(jsonPath("$.data.product.description")
+                        .value("상품 설명"))
+                .andExpect(jsonPath("$.data.product.unitPrice")
+                        .value(32000))
+                .andExpect(jsonPath("$.data.product.stockQuantity")
+                        .value(8))
+                .andExpect(jsonPath("$.data.product.images.length()")
+                        .value(1))
+                .andExpect(jsonPath(
+                        "$.data.product.images[0].imageId"
+                ).value(1001))
+                .andExpect(jsonPath(
+                        "$.data.product.images[0].imageUrl"
+                ).value("https://image.test/products/101/1.webp"))
+                .andExpect(jsonPath(
+                        "$.data.product.images[0].displayOrder"
+                ).value(1))
+                .andExpect(jsonPath("$.error").doesNotExist());
+
+        verify(productQueryService).getProductDetail(101L);
+    }
+
+    @Test
+    @DisplayName("품절 상품도 재고 0으로 정상 반환한다")
+    void getProductDetail_returnsSoldOutProduct() throws Exception {
+        when(productQueryService.getProductDetail(101L))
+                .thenReturn(productDetailResponse(0));
+
+        mockMvc.perform(get("/products/101"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.product.stockQuantity")
+                        .value(0));
+
+        verify(productQueryService).getProductDetail(101L);
+    }
+
+    @Test
+    @DisplayName("이미지와 설명이 없는 상품도 정상 반환한다")
+    void getProductDetail_returnsEmptyImagesAndNullDescription()
+            throws Exception {
+        ProductDetailResponse response =
+                new ProductDetailResponse(
+                        new ProductDetailResponse.ProductResponse(
+                                101L,
+                                "테스트 브랜드",
+                                "테스트 상품",
+                                null,
+                                new BigDecimal("32000"),
+                                List.of(),
+                                8
+                        )
+                );
+
+        when(productQueryService.getProductDetail(101L))
+                .thenReturn(response);
+
+        mockMvc.perform(get("/products/101"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.product.description")
+                        .value((Object) null))
+                .andExpect(jsonPath("$.data.product.images").isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "0",
+            "-1",
+            "abc",
+            "999999999999999999999999"
+    })
+    @DisplayName("유효하지 않은 상품 식별자는 INVALID_REQUEST로 처리한다")
+    void getProductDetail_rejectsInvalidProductId(
+            String productId
+    ) throws Exception {
+        mockMvc.perform(get("/products/{productId}", productId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("상품 식별자를 확인해 주세요."))
+                .andExpect(jsonPath("$.error.code")
+                        .value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.traceId")
+                        .value(not(emptyOrNullString())))
+                .andExpect(jsonPath("$.error.details")
+                        .doesNotExist())
+                .andExpect(jsonPath("$.data")
+                        .doesNotExist());
+
+        verifyNoInteractions(productQueryService);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 상품은 PRODUCT_NOT_FOUND로 처리한다")
+    void getProductDetail_returnsProductNotFound() throws Exception {
+        when(productQueryService.getProductDetail(999L))
+                .thenThrow(new ProductException(
+                        ErrorCode.PRODUCT_NOT_FOUND
+                ));
+
+        mockMvc.perform(get("/products/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("상품을 찾을 수 없습니다."))
+                .andExpect(jsonPath("$.error.code")
+                        .value("PRODUCT_NOT_FOUND"))
+                .andExpect(jsonPath("$.error.traceId")
+                        .value(not(emptyOrNullString())))
+                .andExpect(jsonPath("$.error.details")
+                        .doesNotExist())
+                .andExpect(jsonPath("$.data")
+                        .doesNotExist());
+    }
+
+    @Test
+    @DisplayName("상품 상세 조회 실패는 명세된 서버 오류로 처리한다")
+    void getProductDetail_returnsInternalServerError() throws Exception {
+        when(productQueryService.getProductDetail(101L))
+                .thenThrow(new IllegalStateException(
+                        "테스트용 예상하지 못한 오류"
+                ));
+
+        mockMvc.perform(get("/products/101"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message")
+                        .value(
+                                "일시적인 오류가 발생했습니다. "
+                                        + "다시 시도해 주세요."
+                        ))
+                .andExpect(jsonPath("$.error.code")
+                        .value("INTERNAL_SERVER_ERROR"))
+                .andExpect(jsonPath("$.error.traceId")
+                        .value(not(emptyOrNullString())))
+                .andExpect(jsonPath("$.error.details")
+                        .doesNotExist())
+                .andExpect(jsonPath("$.data")
+                        .doesNotExist());
+    }
+
+    private ProductDetailResponse productDetailResponse(
+            int stockQuantity
+    ) {
+        return new ProductDetailResponse(
+                new ProductDetailResponse.ProductResponse(
+                        101L,
+                        "테스트 브랜드",
+                        "테스트 상품",
+                        "상품 설명",
+                        new BigDecimal("32000"),
+                        List.of(
+                                new ProductImageResponse(
+                                        1001L,
+                                        "https://image.test/products/101/1.webp",
+                                        1
+                                )
+                        ),
+                        stockQuantity
+                )
+        );
     }
 
     private ProductListRequest captureRequest() {

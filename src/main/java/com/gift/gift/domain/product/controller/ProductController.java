@@ -3,16 +3,12 @@ package com.gift.gift.domain.product.controller;
 import jakarta.validation.Valid;
 
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.util.MultiValueMap;
 import org.springframework.validation.BindingResult;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
+import com.gift.gift.domain.product.dto.response.ProductDetailResponse;
 import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.exception.ProductErrorCode;
 import com.gift.gift.domain.product.exception.ProductException;
@@ -54,6 +50,41 @@ public class ProductController {
                 : "상품 목록을 조회했습니다.";
 
         return ApiResponse.success(message, response);
+    }
+
+    @GetMapping("/{productId}")
+    public ApiResponse<ProductDetailResponse> getProductDetail(
+            @PathVariable String productId
+    ) {
+        Long parsedProductId = parseProductId(productId);
+
+        ProductDetailResponse response =
+                productQueryService.getProductDetail(parsedProductId);
+
+        return ApiResponse.success(
+                "상품 상세를 조회했습니다.",
+                response
+        );
+    }
+
+    private Long parseProductId(String productId) {
+        try {
+            long parsedProductId = Long.parseLong(productId);
+
+            if (parsedProductId <= 0) {
+                throw invalidProductId();
+            }
+
+            return parsedProductId;
+        } catch (NumberFormatException exception) {
+            throw invalidProductId();
+        }
+    }
+
+    private ProductException invalidProductId() {
+        return new ProductException(
+                ProductErrorCode.INVALID_PRODUCT_ID
+        );
     }
 
     private ProductException invalidRequest() {
