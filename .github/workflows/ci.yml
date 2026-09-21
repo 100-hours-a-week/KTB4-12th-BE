@@ -31,26 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DB_URL: jdbc:mysql://127.0.0.1:3306/gift_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-      DB_USERNAME: gift_test
-      DB_PASSWORD: gift_test_password
       AWS_REGION: ap-northeast-2
       PRODUCT_IMAGE_BUCKET: ci-test-product-images
-    services:
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_DATABASE: gift_test
-          MYSQL_USER: gift_test
-          MYSQL_PASSWORD: gift_test_password
-          MYSQL_ROOT_PASSWORD: root_test_password
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=root_test_password"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
 
     steps:
       - name: Check out repository
@@ -67,6 +49,12 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify Docker access for Testcontainers
+        shell: bash
+        run: |
+          test -S /var/run/docker.sock
+          docker info
 
       - name: Run unit tests
         run: ./gradlew --no-daemon test
