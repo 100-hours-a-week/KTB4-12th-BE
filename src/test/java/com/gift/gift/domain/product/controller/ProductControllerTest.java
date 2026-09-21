@@ -23,6 +23,7 @@ import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
 import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.repository.ProductSort;
 import com.gift.gift.domain.product.service.ProductQueryService;
+import com.gift.gift.domain.product.service.ProductViewService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 import com.gift.gift.global.pagination.CursorPageResponse.Pagination;
@@ -38,19 +39,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ProductControllerTest {
 
     private ProductQueryService productQueryService;
+    private ProductViewService productViewService;
     private LocalValidatorFactoryBean validator;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         productQueryService = mock(ProductQueryService.class);
+        productViewService = mock(ProductViewService.class);
 
         validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
 
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new ProductController(productQueryService)
+                        new ProductController(productQueryService, productViewService)
                 )
+                .defaultRequest(get("/").principal(() -> "1"))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
                 .build();

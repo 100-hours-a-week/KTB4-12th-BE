@@ -7,6 +7,11 @@ spring:
     name: gift
 
   # datasource는 MySqlTestContainerInitializer가 Testcontainers MySQL 값으로 주입한다.
+  datasource:
+    hikari:
+      data-source-properties:
+        useAffectedRows: true
+        compensateOnDuplicateKeyUpdateCounts: false
 
   jpa:
     hibernate:
@@ -27,8 +32,8 @@ spring:
 
 storage:
   s3:
-    region: ${AWS_REGION}
-    bucket: ${PRODUCT_IMAGE_BUCKET}
+    region: ${AWS_REGION:ap-northeast-2}
+    bucket: ${PRODUCT_IMAGE_BUCKET:test-product-image-bucket}
 
 management:
   endpoints:
