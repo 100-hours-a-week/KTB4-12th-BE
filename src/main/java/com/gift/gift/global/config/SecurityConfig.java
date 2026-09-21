@@ -2,23 +2,24 @@ package com.gift.gift.global.config;
 
 import java.util.List;
 
-import jakarta.servlet.http.HttpServletRequest;
-
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
 import com.gift.gift.global.security.ActiveUserJwtAuthenticationConverter;
 import com.gift.gift.global.security.ApiAuthenticationEntryPoint;
 import com.gift.gift.global.security.CorsProperties;
+import com.gift.gift.global.security.RefreshCookieOriginFilter;
 
 @Configuration
 @EnableConfigurationProperties(CorsProperties.class)
@@ -29,40 +30,52 @@ public class SecurityConfig {
             HttpSecurity http,
             ApiAuthenticationEntryPoint entryPoint,
             ActiveUserJwtAuthenticationConverter converter,
+            RefreshCookieOriginFilter refreshCookieOriginFilter,
             CorsConfigurationSource corsConfigurationSource
     ) throws Exception {
-        RequestMatcher csrfIgnoredApi =
-                request -> !isRefreshCookieEndpoint(request);
-
         http.cors(cors -> cors
                 .configurationSource(corsConfigurationSource)
         );
 
-        // 서버의 HTTP 세션에 로그인 상태를 저장하지 않음 -> stateless
-        // 보호된 API 요청이 들어올 때마다 Authorization 헤더의 엑세스 토큰을 검증
+        /*
+         * 일반 보호 API는 Authorization Bearer Token을 사용하고,
+         * Refresh Cookie 기반 API는 RefreshCookieOriginFilter에서
+         * Origin을 검증하므로 Spring 기본 CSRF 기능은 비활성화한다.
+         */
+        http.csrf(AbstractHttpConfigurer::disable);
+
         http.sessionManagement(session -> session
-                .sessionCreationPolicy(
-                        SessionCreationPolicy.STATELESS
-                )
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
         );
 
-        http.formLogin(form -> form.disable());
-        http.httpBasic(basic -> basic.disable());
-        http.logout(logout -> logout.disable());
-        http.requestCache(cache -> cache.disable());
+        http.formLogin(AbstractHttpConfigurer::disable);
+        http.httpBasic(AbstractHttpConfigurer::disable);
+        http.logout(AbstractHttpConfigurer::disable);
+        http.requestCache(AbstractHttpConfigurer::disable);
 
-        http.csrf(csrf -> csrf
-                .ignoringRequestMatchers(csrfIgnoredApi)
+        /*
+         * Refresh Cookie를 사용하는 API의 Origin 검사를
+         * Spring CORS 처리보다 먼저 수행해 실패 시에도
+         * 프로젝트 공통 JSON 오류 응답을 반환한다.
+         */
+        http.addFilterBefore(
+                refreshCookieOriginFilter,
+                CorsFilter.class
         );
 
         http.authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(HttpMethod.GET, "/auth/terms")
+                .requestMatchers(
+                        HttpMethod.GET,
+                        "/auth/terms"
+                )
                 .permitAll()
                 .requestMatchers(
                         HttpMethod.POST,
                         "/auth/email-availability",
                         "/auth/signup",
-                        "/auth/login"
+                        "/auth/login",
+                        "/auth/refresh",
+                        "/auth/logout"
                 )
                 .permitAll()
                 .requestMatchers(
@@ -70,7 +83,8 @@ public class SecurityConfig {
                         "/actuator/health",
                         "/actuator/health/**",
                         "/products"
-                ).permitAll()
+                )
+                .permitAll()
                 .anyRequest()
                 .authenticated()
         );
@@ -87,6 +101,26 @@ public class SecurityConfig {
         );
 
         return http.build();
+    }
+
+    /*
+     * RefreshCookieOriginFilter가 @Component이므로 Spring Boot가
+     * Servlet Filter로 자동 등록할 수 있다.
+     *
+     * SecurityFilterChain에 직접 등록했으므로 자동 등록을 끄고,
+     * 필터가 두 경로로 실행되는 것을 방지한다.
+     */
+    @Bean
+    public FilterRegistrationBean<RefreshCookieOriginFilter>
+    refreshCookieOriginFilterRegistration(
+            RefreshCookieOriginFilter filter
+    ) {
+        FilterRegistrationBean<RefreshCookieOriginFilter> registration =
+                new FilterRegistrationBean<>(filter);
+
+        registration.setEnabled(false);
+
+        return registration;
     }
 
     @Bean
@@ -134,14 +168,5 @@ public class SecurityConfig {
         );
 
         return source;
-    }
-
-    private boolean isRefreshCookieEndpoint(
-            HttpServletRequest request
-    ) {
-        String path = request.getServletPath();
-
-        return "/auth/refresh".equals(path)
-                || "/auth/logout".equals(path);
     }
 }
