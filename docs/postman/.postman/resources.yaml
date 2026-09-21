@@ -1,0 +1,9 @@
+# Use this workspace to collaborate
+workspace:
+  id: ffa6c3f1-366d-4498-8525-5b436cb74f80
+
+localResources:
+  collections:
+    - ../gift-api.postman_collection.json
+  environments:
+    - ../gift-local.postman_environment.json

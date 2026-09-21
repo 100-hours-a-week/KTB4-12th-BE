@@ -41,3 +41,19 @@ pre-commit Hook은 commit 전에 저장소 루트의 `.env`를 환경변수로 �
 
 테스트가 MySQL에 연결하므로 commit 전에 `.env`의 DB 설정에 해당하는 MySQL이 실행 중이어야 합니다.
 빌드 또는 DB 연결에 실패하면 commit을 중단합니다.
+
+## Postman
+
+`docs/postman`의 파일을 Postman에서 Import하여 로컬 서버를 테스트합니다.
+
+- `gift-api.postman_collection.json`: API 요청 컬렉션
+- `gift-local.postman_environment.json`: 로컬 환경 변수 (`baseUrl`, `email`, `giftId`, `accessToken`)
+
+1. `.env`의 DB에 해당하는 MySQL을 실행하고 애플리케이션을 `http://localhost:8080`에서 실행합니다.
+2. Postman에서 두 파일을 Import하고 Environment를 `Gift Local`로 선택합니다.
+3. 회원가입은 `약관 조회`를 먼저 실행해야 합니다. 응답의 약관에 모두 동의하는 값이 자동으로 채워집니다.
+   같은 `email`로 다시 가입하면 중복 오류가 발생하므로 Environment의 `email`을 바꿉니다.
+
+4. `gifts`, `friends` 폴더의 요청은 인증이 필요합니다. `auth`의 `로그인`을 먼저 실행하면 응답의 `accessToken`이
+   Environment의 `accessToken`에 저장되어 자동으로 사용됩니다. 로그인하지 않으면 401 Unauthorized를 반환합니다.
+   `로그인`은 `회원가입`에 사용한 `email`과 같은 계정으로 요청하므로 회원가입을 먼저 실행해야 합니다.
