@@ -990,6 +990,10 @@ User user = userRepository.findById(id);
 
 새로운 `.env` 또는 Secret 관리 방식을 임의로 추가하지 않는다.
 
+환경변수가 추가될 경우 `.env.example`에도 함께 반영한다.
+
+`.env.example`에는 실제 값이나 Secret을 작성하지 않고 변수 이름과 예시 형식만 작성한다.
+
 ---
 
 # 36. Issue
@@ -1118,6 +1122,8 @@ Issue를 생성할 때 본문만 작성하지 않고 다음 메타데이터도 �
 - **Project**: 이 저장소에서 생성하는 모든 Issue를 Organization Project인 `KTB4-12th-project`에 등록한다.
     - Project의 Auto-add 규칙으로 이미 등록되었다면 중복으로 추가하지 않고 등록 상태만 확인한다.
     - Auto-add 대상이 아니거나 자동 등록되지 않았다면 `KTB4-12th-project`에 수동으로 추가한다.
+- **Project Status**: `KTB4-12th-project`에 등록한 Issue의 Status는 `Backend-Issue`로 설정한다.
+    - Auto-add로 등록되면서 다른 Status가 지정되었다면 `Backend-Issue`로 변경한다.
 - **Type**: Issue 제목의 Prefix와 작업 목적에 맞는 GitHub Issue Type을 설정한다.
     - `FEAT` → `Feature`
     - `FIX` → `Bug`
@@ -1341,6 +1347,8 @@ force push
 단순 내부 구현 변경까지 모든 문서를 수정하지 않는다.
 
 코드와 문서가 서로 다른 상태로 남는 경우만 필요한 문서를 함께 수정한다.
+
+Controller를 작성한 경우에는 위 기준과 별개로 `docs/postman`의 컬렉션과 환경 파일도 함께 업데이트한다.
 
 ---
 
