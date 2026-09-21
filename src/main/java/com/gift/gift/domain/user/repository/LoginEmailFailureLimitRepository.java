@@ -57,4 +57,30 @@ public interface LoginEmailFailureLimitRepository
             @Param("identifierHash")
             String identifierHash
     );
+
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query(
+            value = """
+                    delete from login_email_failure_limits
+                    where updated_at <= :inactiveBefore
+                        and (
+                            blocked_until is null
+                            or blocked_until <= :now
+                        )
+                    order by updated_at, identifier_hash
+                    limit :batchSize
+                    """,
+            nativeQuery = true
+    )
+    int deleteInactiveBatch(
+            @Param("inactiveBefore")
+            LocalDateTime inactiveBefore,
+            @Param("now")
+            LocalDateTime now,
+            @Param("batchSize")
+            int batchSize
+    );
 }
