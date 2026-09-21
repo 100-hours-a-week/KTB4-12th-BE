@@ -1,6 +1,7 @@
 package com.gift.gift.domain.gift.service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -19,6 +20,7 @@ import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.query.GiftPage;
 import com.gift.gift.domain.gift.query.GiftPageAssembler;
 import com.gift.gift.domain.gift.query.GiftResponseMapper;
+import com.gift.gift.domain.gift.repository.GiftCountRow;
 import com.gift.gift.domain.gift.repository.GiftQueryRepository;
 import com.gift.gift.domain.gift.repository.GiftQueryRow;
 import com.gift.gift.domain.gift.support.GiftCursor;
@@ -154,6 +156,21 @@ class GiftQueryServiceTest {
                 () -> giftQueryService.getReceivedGiftDetail(1L, 10L),
                 "받은 선물 내역을 찾을 수 없습니다."
         );
+    }
+
+    @Test
+    @DisplayName("올해 선물 건수는 해당 연도 1월 1일부터 요청일 당일까지의 범위로 조회한다")
+    void getYearlyGiftCount_queriesFromStartOfYearThroughToday() {
+        when(giftQueryRepository.countSentAndReceivedGifts(
+                1L,
+                LocalDateTime.of(2026, 1, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 22, 0, 0)
+        )).thenReturn(new GiftCountRow(3L, 5L));
+
+        GiftCountRow result = giftQueryService.getYearlyGiftCount(1L, LocalDate.of(2026, 9, 21));
+
+        assertThat(result.sentCount()).isEqualTo(3L);
+        assertThat(result.receivedCount()).isEqualTo(5L);
     }
 
     private void assertGiftNotFound(Runnable action, String message) {
