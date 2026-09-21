@@ -6,11 +6,7 @@ spring:
   application:
     name: gift
 
-  datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+  # datasource는 MySqlTestContainerInitializer가 Testcontainers MySQL 값으로 주입한다.
 
   jpa:
     hibernate:
