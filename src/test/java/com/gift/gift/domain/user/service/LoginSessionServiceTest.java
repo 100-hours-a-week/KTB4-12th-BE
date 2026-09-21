@@ -1,7 +1,9 @@
 package com.gift.gift.domain.user.service;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -13,6 +15,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -35,10 +41,26 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @SpringBootTest(properties = "spring.jpa.hibernate.ddl-auto=update")
+@Import(LoginSessionServiceTest.FixedClockConfig.class)
 class LoginSessionServiceTest {
 
     private static final LocalDateTime LOGIN_TIME =
             LocalDateTime.of(2026, 9, 21, 12, 0);
+
+    @TestConfiguration
+    static class FixedClockConfig {
+
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            ZoneId zoneId = ZoneId.of("Asia/Seoul");
+
+            return Clock.fixed(
+                    LOGIN_TIME.atZone(zoneId).toInstant(),
+                    zoneId
+            );
+        }
+    }
 
     private final List<Long> createdUserIds = new ArrayList<>();
 
@@ -243,7 +265,7 @@ class LoginSessionServiceTest {
                 LOGIN_TIME.minusDays(1),
                 LOGIN_TIME.plusDays(13)
         );
-        revoked.revoke(LOGIN_TIME.minusHours(1));
+        revoked.revoke(LOGIN_TIME);
         sessionRepository.saveAndFlush(revoked);
         Long revokedId = revoked.getId();
         String newHash = refreshTokenProvider.hash(validToken('n'));

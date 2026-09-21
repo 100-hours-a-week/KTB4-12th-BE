@@ -165,6 +165,21 @@ public class UserSession extends BaseTimeEntity {
         );
     }
 
+    public void rotateRefreshToken(
+            String newRefreshTokenHash,
+            LocalDateTime now
+    ) {
+        if (!isActive(now)) {
+            throw new IllegalStateException(
+                    "Inactive session cannot rotate refresh token"
+            );
+        }
+
+        this.refreshTokenHash = requireRefreshTokenHash(
+                newRefreshTokenHash
+        );
+    }
+
     public boolean revoke(LocalDateTime now) {
         Objects.requireNonNull(now, "now must not be null");
 
