@@ -1,13 +1,21 @@
 package com.gift.gift.domain.preference.service;
 
-import java.util.Optional;
+import java.util.*;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.preference.dto.response.DislikeCategoryItemResponse;
+import com.gift.gift.domain.preference.dto.response.DislikeCategoryListResponse;
 import com.gift.gift.domain.preference.dto.response.PreferenceWarningResult;
+import com.gift.gift.domain.preference.exception.PreferenceException;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
+import com.gift.gift.domain.product.entity.Category;
+import com.gift.gift.domain.product.repository.CategoryRepository;
+import com.gift.gift.domain.user.entity.UserStatus;
+import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 @RequiredArgsConstructor
@@ -15,6 +23,8 @@ import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
 public class PreferenceQueryService {
 
     private final UserDislikeCategoryRepository userDislikeCategoryRepository;
+    private final CategoryRepository categoryRepository;
+    private final UserRepository userRepository;
 
     /*
        상품의 세부 카테고리가 속한 대분류를 수신자가 비선호로 등록했으면 대분류 정보를 반환한다.
@@ -27,5 +37,33 @@ public class PreferenceQueryService {
         return userDislikeCategoryRepository
                 .findActiveByUserIdAndProductCategoryId(userId, productCategoryId)
                 .map(dislike -> PreferenceWarningResult.from(dislike.getCategory()));
+    }
+
+    public DislikeCategoryListResponse getDislikeCategories(Long userId) {
+        validateUser(userId);
+
+        Set<Long> selectedCategoryIds = new HashSet<>(
+                userDislikeCategoryRepository.findAllActiveCategoryIdsByUserId(userId)
+        );
+
+        List<Category> rootCategories = categoryRepository.findAllActiveRootsOrderById();
+        List<DislikeCategoryItemResponse> categories = new ArrayList<>();
+
+        for (Category category : rootCategories) {
+            boolean isSelected = selectedCategoryIds.contains(category.getId());
+            DislikeCategoryItemResponse item = DislikeCategoryItemResponse.from(category, isSelected);
+            categories.add(item);
+        }
+
+        return DislikeCategoryListResponse.from(categories);
+    }
+
+    private void validateUser(Long userId) {
+        userRepository.findByIdAndStatusAndDeletedAtIsNull(
+                userId,
+                UserStatus.ACTIVE
+        ).orElseThrow(() -> new PreferenceException(
+                ErrorCode.USER_NOT_FOUND
+        ));
     }
 }
