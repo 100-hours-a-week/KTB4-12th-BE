@@ -18,6 +18,7 @@ import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
 import com.gift.gift.domain.gift.service.GiftQueryService;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.response.ApiResponse;
+import com.gift.gift.global.security.CurrentUserId;
 
 @RestController
 @RequestMapping("/gifts")
@@ -28,7 +29,7 @@ public class GiftController {
 
     @GetMapping("/sent")
     public ResponseEntity<ApiResponse<CursorPageResponse<SentGiftListItem>>> getSentGifts(
-            @AuthenticationPrincipal Long userId,
+            @CurrentUserId Long userId,
             @RequestParam(required = false) String cursor
     ) {
         CursorPageResponse<SentGiftListItem> response = giftQueryService.getSentGifts(userId, cursor);
@@ -41,7 +42,7 @@ public class GiftController {
 
     @GetMapping("/sent/{giftId}")
     public ResponseEntity<ApiResponse<GiftSentDetailResponse>> getSentGiftDetail(
-            @AuthenticationPrincipal Long userId,
+            @CurrentUserId Long userId,
             @PathVariable @Positive Long giftId
     ) {
         GiftSentDetailResponse response = giftQueryService.getSentGiftDetail(userId, giftId);
@@ -51,7 +52,7 @@ public class GiftController {
 
     @GetMapping("/received")
     public ResponseEntity<ApiResponse<CursorPageResponse<ReceivedGiftListItem>>> getReceivedGifts(
-            @AuthenticationPrincipal Long userId,
+            @CurrentUserId Long userId,
             @RequestParam(required = false) String cursor
     ) {
         CursorPageResponse<ReceivedGiftListItem> response = giftQueryService.getReceivedGifts(userId, cursor);
@@ -64,7 +65,7 @@ public class GiftController {
 
     @GetMapping("/received/{giftId}")
     public ResponseEntity<ApiResponse<GiftReceivedDetailResponse>> getReceivedGiftDetail(
-            @AuthenticationPrincipal Long userId,
+            @CurrentUserId Long userId,
             @PathVariable @Positive Long giftId
     ) {
         GiftReceivedDetailResponse response = giftQueryService.getReceivedGiftDetail(userId, giftId);
