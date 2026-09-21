@@ -1,6 +1,7 @@
 package com.gift.gift.domain.gift.controller;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -12,6 +13,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -60,8 +63,20 @@ class GiftControllerTest {
                 .setValidator(validator)
                 .build();
 
+        Jwt jwt = Jwt.withTokenValue("access-token")
+                .header("alg", "HS256")
+                .subject(USER_ID.toString())
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .issuer("https://test-issuer.example")
+                .build();
+
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(USER_ID, null, List.of())
+                new JwtAuthenticationToken(
+                        jwt,
+                        List.of(),
+                        USER_ID.toString()
+                )
         );
     }
 
