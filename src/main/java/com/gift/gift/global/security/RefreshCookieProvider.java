@@ -21,13 +21,25 @@ public class RefreshCookieProvider {
                 "refreshToken must not be null"
         );
 
+        return baseCookie(refreshToken)
+                .maxAge(COOKIE_MAX_AGE)
+                .build();
+    }
+
+    public ResponseCookie expire() {
+        return baseCookie("")
+                .maxAge(Duration.ZERO)
+                .build();
+    }
+
+    private ResponseCookie.ResponseCookieBuilder baseCookie(
+            String value
+    ) {
         return ResponseCookie
-                .from(COOKIE_NAME, refreshToken)
+                .from(COOKIE_NAME, value)
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Lax")
-                .path("/auth")
-                .maxAge(COOKIE_MAX_AGE)
-                .build();
+                .path("/auth");
     }
 }

@@ -1,7 +1,9 @@
 package com.gift.gift.domain.user.repository;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -18,6 +20,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,10 +45,26 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(properties = "spring.jpa.hibernate.ddl-auto=update")
+@Import(UserSessionPersistenceTest.FixedClockConfig.class)
 class UserSessionPersistenceTest {
 
     private static final LocalDateTime BASE_TIME =
             LocalDateTime.of(2026, 9, 21, 12, 0);
+
+    @TestConfiguration
+    static class FixedClockConfig {
+
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            ZoneId zoneId = ZoneId.of("Asia/Seoul");
+
+            return Clock.fixed(
+                    BASE_TIME.atZone(zoneId).toInstant(),
+                    zoneId
+            );
+        }
+    }
 
     private final List<Long> createdUserIds = new ArrayList<>();
 
@@ -219,7 +241,7 @@ class UserSessionPersistenceTest {
                 BASE_TIME.minusDays(1),
                 BASE_TIME.plusDays(13)
         );
-        revoked.revoke(BASE_TIME.minusHours(1));
+        revoked.revoke(BASE_TIME);
         sessionRepository.saveAndFlush(revoked);
 
         UserSession deleted = new UserSession(

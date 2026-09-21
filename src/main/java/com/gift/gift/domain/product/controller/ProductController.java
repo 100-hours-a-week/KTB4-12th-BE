@@ -1,5 +1,7 @@
 package com.gift.gift.domain.product.controller;
 
+import java.security.Principal;
+
 import jakarta.validation.Valid;
 
 import lombok.RequiredArgsConstructor;
@@ -13,6 +15,7 @@ import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.exception.ProductErrorCode;
 import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.service.ProductQueryService;
+import com.gift.gift.domain.product.service.ProductViewService;
 import com.gift.gift.global.response.ApiResponse;
 
 @RestController
@@ -21,6 +24,7 @@ import com.gift.gift.global.response.ApiResponse;
 public class ProductController {
 
     private final ProductQueryService productQueryService;
+    private final ProductViewService productViewService;
 
     @GetMapping
     public ApiResponse<ProductListResponse> getProducts(
@@ -54,12 +58,17 @@ public class ProductController {
 
     @GetMapping("/{productId}")
     public ApiResponse<ProductDetailResponse> getProductDetail(
-            @PathVariable String productId
+            @PathVariable String productId,
+            Principal principal
     ) {
         Long parsedProductId = parseProductId(productId);
+        Long userId = Long.valueOf(principal.getName());
 
         ProductDetailResponse response =
                 productQueryService.getProductDetail(parsedProductId);
+
+        // 상세 상품이 정상적으로 조회된 뒤 조회 수 기록
+        productViewService.recordProductView(userId, parsedProductId);
 
         return ApiResponse.success(
                 "상품 상세를 조회했습니다.",

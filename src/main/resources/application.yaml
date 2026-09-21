@@ -7,6 +7,10 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      data-source-properties:
+        useAffectedRows: true
+        compensateOnDuplicateKeyUpdateCounts: false
 
   jpa:
     hibernate:
