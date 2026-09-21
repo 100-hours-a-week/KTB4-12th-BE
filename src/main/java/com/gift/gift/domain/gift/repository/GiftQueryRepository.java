@@ -1,5 +1,6 @@
 package com.gift.gift.domain.gift.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,6 +47,19 @@ public class GiftQueryRepository {
             ORDER BY g.completedAt DESC, g.id DESC
             """;
 
+    private static final String COUNT_SENT_AND_RECEIVED = """
+            SELECT new com.gift.gift.domain.gift.repository.GiftCountRow(
+                COUNT(CASE WHEN g.sender.id = :userId THEN 1 END),
+                COUNT(CASE WHEN g.recipient.id = :userId THEN 1 END)
+            )
+            FROM GiftHistory g
+            WHERE (g.sender.id = :userId OR g.recipient.id = :userId)
+                AND g.status = com.gift.gift.domain.gift.entity.GiftStatus.COMPLETED
+                AND g.deletedAt IS NULL
+                AND g.completedAt >= :from
+                AND g.completedAt < :toExclusive
+            """;
+
     private final EntityManager entityManager;
 
     public GiftQueryRepository(EntityManager entityManager) {
@@ -66,6 +80,14 @@ public class GiftQueryRepository {
 
     public Optional<GiftQueryRow> findReceivedGiftDetail(Long giftId, Long recipientId) {
         return findGiftDetail(giftId, recipientId, "sender", "recipient");
+    }
+
+    public GiftCountRow countSentAndReceivedGifts(Long userId, LocalDateTime from, LocalDateTime toExclusive) {
+        return entityManager.createQuery(COUNT_SENT_AND_RECEIVED, GiftCountRow.class)
+                .setParameter("userId", userId)
+                .setParameter("from", from)
+                .setParameter("toExclusive", toExclusive)
+                .getSingleResult();
     }
 
     private List<GiftQueryRow> findGiftList(

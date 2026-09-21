@@ -1,5 +1,6 @@
 package com.gift.gift.domain.gift.service;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -14,6 +15,7 @@ import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.query.GiftPage;
 import com.gift.gift.domain.gift.query.GiftPageAssembler;
 import com.gift.gift.domain.gift.query.GiftResponseMapper;
+import com.gift.gift.domain.gift.repository.GiftCountRow;
 import com.gift.gift.domain.gift.repository.GiftQueryRepository;
 import com.gift.gift.domain.gift.repository.GiftQueryRow;
 import com.gift.gift.domain.gift.support.GiftCursor;
@@ -89,6 +91,14 @@ public class GiftQueryService {
                 ));
 
         return responseMapper.toReceivedDetail(row, loadImageUrls(List.of(row)).get(row.productId()));
+    }
+
+    public GiftCountRow getYearlyGiftCount(Long userId, LocalDate today) {
+        return giftQueryRepository.countSentAndReceivedGifts(
+                userId,
+                today.withDayOfYear(1).atStartOfDay(),
+                today.plusDays(1).atStartOfDay()
+        );
     }
 
     private Map<Long, String> loadImageUrls(List<GiftQueryRow> rows) {

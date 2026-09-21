@@ -93,6 +93,37 @@ class GiftQueryRepositoryTest {
         assertThat(row.productBrand()).isNull();
     }
 
+    @Test
+    @DisplayName("기간 내 완료된 선물의 보낸 건수와 받은 건수를 사용자 관점으로 센다")
+    void countSentAndReceivedGifts_countsCompletedGiftsInPeriodForEachDirection() {
+        Fixture fixture = persistFixture();
+        LocalDateTime from = fixture.completedAt().minusDays(1);
+        LocalDateTime toExclusive = fixture.completedAt().plusDays(1);
+
+        GiftCountRow senderCount = giftQueryRepository.countSentAndReceivedGifts(fixture.senderId(), from, toExclusive);
+        GiftCountRow recipientCount =
+                giftQueryRepository.countSentAndReceivedGifts(fixture.recipientId(), from, toExclusive);
+
+        assertThat(senderCount).isEqualTo(new GiftCountRow(1L, 0L));
+        assertThat(recipientCount).isEqualTo(new GiftCountRow(0L, 1L));
+    }
+
+    @Test
+    @DisplayName("기간 밖이거나 삭제된 선물은 건수에 포함하지 않는다")
+    void countSentAndReceivedGifts_excludesOutOfPeriodAndDeletedGifts() {
+        Fixture fixture = persistFixture();
+        LocalDateTime toExclusive = fixture.completedAt();
+
+        GiftCountRow outOfPeriod = giftQueryRepository.countSentAndReceivedGifts(
+                fixture.senderId(), fixture.completedAt().minusDays(1), toExclusive);
+        jdbcTemplate.update("UPDATE gift_histories SET deleted_at = ? WHERE id = ?", LocalDateTime.now(), fixture.giftId());
+        GiftCountRow deleted = giftQueryRepository.countSentAndReceivedGifts(
+                fixture.senderId(), fixture.completedAt().minusDays(1), fixture.completedAt().plusDays(1));
+
+        assertThat(outOfPeriod).isEqualTo(new GiftCountRow(0L, 0L));
+        assertThat(deleted).isEqualTo(new GiftCountRow(0L, 0L));
+    }
+
     private Fixture persistFixture() {
         String uniqueSuffix = UUID.randomUUID().toString();
         Category rootCategory = new Category("대분류-" + uniqueSuffix, null);
