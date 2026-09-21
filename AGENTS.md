@@ -990,6 +990,10 @@ User user = userRepository.findById(id);
 
 새로운 `.env` 또는 Secret 관리 방식을 임의로 추가하지 않는다.
 
+환경변수가 추가될 경우 `.env.example`에도 함께 반영한다.
+
+`.env.example`에는 실제 값이나 Secret을 작성하지 않고 변수 이름과 예시 형식만 작성한다.
+
 ---
 
 # 36. Issue
