@@ -26,6 +26,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
     implementation platform('software.amazon.awssdk:bom:2.54.17')
     implementation 'software.amazon.awssdk:s3'
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	implementation 'org.flywaydb:flyway-mysql'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	annotationProcessor 'org.projectlombok:lombok'
@@ -34,6 +36,7 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.testcontainers:testcontainers-mysql'
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
@@ -41,4 +44,6 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// 테스트에서는 목 데이터(db/seed)를 제외하고 스키마 마이그레이션만 적용한다.
+	systemProperty 'spring.flyway.locations', 'classpath:db/migration'
 }
