@@ -51,4 +51,24 @@ public interface LoginIpRateLimitRepository
     Optional<LoginIpRateLimit> findByIdentifierHashForUpdate(
             @Param("identifierHash") String identifierHash
     );
+
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query(
+            value = """
+                    delete from login_ip_rate_limits
+                    where updated_at <= :inactiveBefore
+                    order by updated_at, identifier_hash
+                    limit :batchSize
+                    """,
+            nativeQuery = true
+    )
+    int deleteInactiveBatch(
+            @Param("inactiveBefore")
+            LocalDateTime inactiveBefore,
+            @Param("batchSize")
+            int batchSize
+    );
 }

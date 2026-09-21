@@ -1,14 +1,12 @@
 package com.gift.gift.domain.user.repository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
 
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.jpa.repository.QueryHints;
+import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
 import com.gift.gift.domain.user.entity.UserSession;
@@ -35,5 +33,31 @@ public interface UserSessionRepository
     Optional<UserSession> findByRefreshTokenHashForUpdate(
             @Param("refreshTokenHash")
             String refreshTokenHash
+    );
+
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query(
+            value = """
+                    delete from user_sessions
+                    where (
+                        expires_at <= :inactiveBefore
+                        or (
+                            revoked_at is not null
+                            and revoked_at <= :inactiveBefore
+                        )
+                    )
+                    order by id
+                    limit :batchSize
+                    """,
+            nativeQuery = true
+    )
+    int deleteInactiveBatch(
+            @Param("inactiveBefore")
+            LocalDateTime inactiveBefore,
+            @Param("batchSize")
+            int batchSize
     );
 }
