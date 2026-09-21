@@ -16,4 +16,13 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
             order by c.id asc
             """)
     List<Category> findAllActiveWithParent();
+
+    @Query("""
+        select category
+        from Category category
+        where category.parent is null
+          and category.deletedAt is null
+        order by category.id asc
+        """)
+    List<Category> findAllActiveRootsOrderById();
 }

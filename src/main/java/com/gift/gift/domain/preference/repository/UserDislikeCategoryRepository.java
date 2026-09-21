@@ -1,5 +1,6 @@
 package com.gift.gift.domain.preference.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -30,5 +31,17 @@ public interface UserDislikeCategoryRepository
     Optional<UserDislikeCategory> findActiveByUserIdAndProductCategoryId(
             @Param("userId") Long userId,
             @Param("productCategoryId") Long productCategoryId
+    );
+
+    @Query("""
+        select dislike.category.id
+        from UserDislikeCategory dislike
+        where dislike.user.id = :userId
+          and dislike.deletedAt is null
+          and dislike.category.deletedAt is null
+          and dislike.category.parent is null
+        """)
+    List<Long> findAllActiveCategoryIdsByUserId(
+            @Param("userId") Long userId
     );
 }
