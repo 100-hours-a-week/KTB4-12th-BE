@@ -9,7 +9,7 @@ public record CompleteOnboardingResponse(
 ) {
 
     public static CompleteOnboardingResponse from(User user) {
-        Objects.requireNonNull(user, "user must not be null");
+        Objects.requireNonNull(user, "사용자는 null일 수 없습니다.");
 
         return new CompleteOnboardingResponse(
                 user.isFirstLogin()

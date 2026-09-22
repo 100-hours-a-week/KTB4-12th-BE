@@ -113,14 +113,14 @@ public class UserSession extends BaseTimeEntity {
     ) {
         this.user = Objects.requireNonNull(
                 user,
-                "user must not be null"
+                "사용자는 null일 수 없습니다."
         );
         this.refreshTokenHash = requireRefreshTokenHash(
                 refreshTokenHash
         );
         this.authenticatedAt = Objects.requireNonNull(
                 authenticatedAt,
-                "authenticatedAt must not be null"
+                "인증 시각은 null일 수 없습니다."
         );
         this.expiresAt = requireExpiresAfterAuthentication(
                 authenticatedAt,
@@ -129,7 +129,7 @@ public class UserSession extends BaseTimeEntity {
     }
 
     public boolean isActive(LocalDateTime now) {
-        Objects.requireNonNull(now, "now must not be null");
+        Objects.requireNonNull(now, "현재 시각은 null일 수 없습니다.");
 
         return revokedAt == null
                 && deletedAt == null
@@ -149,7 +149,7 @@ public class UserSession extends BaseTimeEntity {
     ) {
         if (!isActive(now)) {
             throw new IllegalStateException(
-                    "Inactive session cannot be reauthenticated"
+                    "비활성 세션은 다시 인증할 수 없습니다."
             );
         }
 
@@ -158,7 +158,7 @@ public class UserSession extends BaseTimeEntity {
         );
         this.authenticatedAt = Objects.requireNonNull(
                 authenticatedAt,
-                "authenticatedAt must not be null"
+                "인증 시각은 null일 수 없습니다."
         );
         this.expiresAt = requireExpiresAfterAuthentication(
                 authenticatedAt,
@@ -172,7 +172,7 @@ public class UserSession extends BaseTimeEntity {
     ) {
         if (!isActive(now)) {
             throw new IllegalStateException(
-                    "Inactive session cannot rotate refresh token"
+                    "비활성 세션은 리프레시 토큰을 교체할 수 없습니다."
             );
         }
 
@@ -182,7 +182,7 @@ public class UserSession extends BaseTimeEntity {
     }
 
     public boolean revoke(LocalDateTime now) {
-        Objects.requireNonNull(now, "now must not be null");
+        Objects.requireNonNull(now, "현재 시각은 null일 수 없습니다.");
 
         if (revokedAt != null) {
             return false;
@@ -197,12 +197,12 @@ public class UserSession extends BaseTimeEntity {
     ) {
         Objects.requireNonNull(
                 refreshTokenHash,
-                "refreshTokenHash must not be null"
+                "리프레시 토큰 해시는 null일 수 없습니다."
         );
 
         if (!refreshTokenHash.matches("^[0-9a-f]{64}$")) {
             throw new IllegalArgumentException(
-                    "refreshTokenHash must be lowercase SHA-256 hex"
+                    "리프레시 토큰 해시는 소문자 SHA-256 16진수여야 합니다."
             );
         }
 
@@ -215,12 +215,12 @@ public class UserSession extends BaseTimeEntity {
     ) {
         Objects.requireNonNull(
                 expiresAt,
-                "expiresAt must not be null"
+                "만료 시각은 null일 수 없습니다."
         );
 
         if (!expiresAt.isAfter(authenticatedAt)) {
             throw new IllegalArgumentException(
-                    "expiresAt must be after authenticatedAt"
+                    "만료 시각은 인증 시각보다 이후여야 합니다."
             );
         }
 

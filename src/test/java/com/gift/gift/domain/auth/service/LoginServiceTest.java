@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.auth.dto.request.LoginRequest;
+import com.gift.gift.domain.auth.exception.AuthException;
 import com.gift.gift.domain.auth.service.LoginRateLimiter;
 import com.gift.gift.domain.auth.service.LoginService;
 import com.gift.gift.domain.auth.service.LoginSessionService;
@@ -160,8 +161,8 @@ class LoginServiceTest {
                 ))
                 .thenReturn(Optional.empty());
 
-        BusinessException exception = assertThrows(
-                BusinessException.class,
+        AuthException exception = assertThrows(
+                AuthException.class,
                 () -> loginService.login(
                         request(),
                         null

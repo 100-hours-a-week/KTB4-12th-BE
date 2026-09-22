@@ -185,6 +185,9 @@ class LoginControllerTest {
                         .content("{}"))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string(HttpHeaders.RETRY_AFTER, "6"))
+                .andExpect(jsonPath("$.message").value(
+                        "로그인 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."
+                ))
                 .andExpect(jsonPath("$.error.code")
                         .value("TOO_MANY_REQUESTS"))
                 .andExpect(jsonPath("$.error.details").doesNotExist());

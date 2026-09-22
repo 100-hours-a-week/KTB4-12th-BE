@@ -30,14 +30,14 @@ public class RateLimitIdentifierHasher {
     public String hashIp(String clientIp) {
         Objects.requireNonNull(
                 clientIp,
-                "clientIp must not be null"
+                "클라이언트 IP는 null일 수 없습니다."
         );
 
         String normalizedIp = clientIp.strip();
 
         if (normalizedIp.isBlank()) {
             throw new IllegalArgumentException(
-                    "clientIp must not be blank"
+                    "클라이언트 IP는 비어 있을 수 없습니다."
             );
         }
 
@@ -62,7 +62,7 @@ public class RateLimitIdentifierHasher {
             return HexFormat.of().formatHex(result);
         } catch (GeneralSecurityException exception) {
             throw new IllegalStateException(
-                    "Failed to create rate limit identifier",
+                    "요청 제한 식별자를 생성하지 못했습니다.",
                     exception
             );
         }

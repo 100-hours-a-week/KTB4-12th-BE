@@ -67,11 +67,11 @@ public class LoginEmailFailureLimit extends BaseTimeEntity {
     ) {
         this.identifierHash = Objects.requireNonNull(
                 identifierHash,
-                "identifierHash must not be null"
+                "식별자 해시는 null일 수 없습니다."
         );
         this.windowStartedAt = Objects.requireNonNull(
                 now,
-                "now must not be null"
+                "현재 시각은 null일 수 없습니다."
         );
         this.failureCount = 0;
         this.backoffLevel = 0;
@@ -81,7 +81,7 @@ public class LoginEmailFailureLimit extends BaseTimeEntity {
     public LoginRateLimitDecision inspect(
             LocalDateTime now
     ) {
-        Objects.requireNonNull(now, "now must not be null");
+        Objects.requireNonNull(now, "현재 시각은 null일 수 없습니다.");
 
         if (isBlocked(now)) {
             return LoginRateLimitDecision.reject(
@@ -97,7 +97,7 @@ public class LoginEmailFailureLimit extends BaseTimeEntity {
     public LoginRateLimitDecision recordFailure(
             LocalDateTime now
     ) {
-        Objects.requireNonNull(now, "now must not be null");
+        Objects.requireNonNull(now, "현재 시각은 null일 수 없습니다.");
 
         if (isBlocked(now)) {
             return LoginRateLimitDecision.reject(

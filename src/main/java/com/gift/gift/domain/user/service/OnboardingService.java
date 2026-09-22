@@ -7,9 +7,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.gift.gift.domain.user.dto.response.CompleteOnboardingResponse;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
+import com.gift.gift.domain.user.exception.UserErrorCode;
+import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 @RequiredArgsConstructor
@@ -26,8 +26,8 @@ public class OnboardingService {
                         userId,
                         UserStatus.ACTIVE
                 )
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.USER_NOT_FOUND
+                .orElseThrow(() -> new UserException(
+                        UserErrorCode.USER_NOT_FOUND
                 ));
 
         user.completeOnboarding();

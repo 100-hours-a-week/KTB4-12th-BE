@@ -105,7 +105,7 @@ public class User extends BaseTimeEntity {
     public void updateBirth(LocalDate birth) {
         this.birth = Objects.requireNonNull(
                 birth,
-                "birth must not be null"
+                "생년월일은 null일 수 없습니다."
         );
     }
 

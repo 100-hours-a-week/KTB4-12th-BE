@@ -7,13 +7,13 @@ public record LoginRateLimitDecision(
     public LoginRateLimitDecision {
         if (permitted && retryAfterSeconds != 0) {
             throw new IllegalArgumentException(
-                    "Permitted decision must have zero retryAfterSeconds"
+                    "허용 결정의 재시도 대기 시간은 0초여야 합니다."
             );
         }
 
         if (!permitted && retryAfterSeconds < 1) {
             throw new IllegalArgumentException(
-                    "Rejected decision must have positive retryAfterSeconds"
+                    "거부 결정의 재시도 대기 시간은 1초 이상이어야 합니다."
             );
         }
     }

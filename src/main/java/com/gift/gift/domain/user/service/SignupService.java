@@ -19,11 +19,11 @@ import com.gift.gift.domain.user.entity.Term;
 import com.gift.gift.domain.user.entity.TermConsent;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.exception.SignupTermsConfigurationException;
+import com.gift.gift.domain.user.exception.UserErrorCode;
+import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.TermConsentRepository;
 import com.gift.gift.domain.user.repository.TermRepository;
 import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 @RequiredArgsConstructor
@@ -47,7 +47,7 @@ public class SignupService {
         validateTermConsents(requiredTerms, request.termConsents());
 
         if (userRepository.existsByEmail(request.email())) {
-            throw new BusinessException(ErrorCode.EMAIL_ALREADY_IN_USE);
+            throw new UserException(UserErrorCode.EMAIL_ALREADY_IN_USE);
         }
 
         String passwordHash = passwordEncoder.encode(request.password());
@@ -83,7 +83,7 @@ public class SignupService {
 
             if (currentTerm == null
                     || currentTerm.getVersion() != consent.version()) {
-                throw new BusinessException(ErrorCode.INVALID_TERM_VERSION);
+                throw new UserException(UserErrorCode.INVALID_TERM_VERSION);
             }
         }
 
@@ -98,7 +98,7 @@ public class SignupService {
             SignupTermConsentRequest consent = requestedById.get(term.getId());
 
             if (consent == null || !Boolean.TRUE.equals(consent.isAgreed())) {
-                throw new BusinessException(ErrorCode.REQUIRED_TERMS_NOT_AGREED);
+                throw new UserException(UserErrorCode.REQUIRED_TERMS_NOT_AGREED);
             }
         }
     }
@@ -108,7 +108,7 @@ public class SignupService {
             return userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
             if (isEmailUniqueViolation(exception)) {
-                throw new BusinessException(ErrorCode.EMAIL_ALREADY_IN_USE);
+                throw new UserException(UserErrorCode.EMAIL_ALREADY_IN_USE);
             }
 
             throw exception;

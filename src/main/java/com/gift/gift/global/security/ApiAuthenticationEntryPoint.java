@@ -30,7 +30,7 @@ public class ApiAuthenticationEntryPoint
     ) throws IOException {
         if (exception instanceof
                 InternalAuthenticationServiceException) {
-            log.error("Authenticated user lookup failed");
+            log.error("인증된 사용자 조회에 실패했습니다.");
 
             responseWriter.write(
                     response,

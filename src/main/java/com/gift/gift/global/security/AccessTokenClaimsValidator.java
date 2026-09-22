@@ -52,7 +52,7 @@ public class AccessTokenClaimsValidator
         return OAuth2TokenValidatorResult.failure(
                 new OAuth2Error(
                         "invalid_token",
-                        "Invalid access token claims",
+                        "액세스 토큰 클레임이 유효하지 않습니다.",
                         null
                 )
         );

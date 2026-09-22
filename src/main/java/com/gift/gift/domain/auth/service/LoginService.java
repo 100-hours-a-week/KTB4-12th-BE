@@ -9,12 +9,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.gift.gift.domain.auth.dto.request.LoginRequest;
+import com.gift.gift.domain.auth.exception.AuthErrorCode;
+import com.gift.gift.domain.auth.exception.AuthException;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.domain.auth.support.LoginResult;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.security.AccessTokenProvider;
 import com.gift.gift.global.security.IssuedAccessToken;
 import com.gift.gift.global.security.RefreshTokenProvider;
@@ -55,8 +55,8 @@ public class LoginService {
         )) {
             loginRateLimiter.recordFailure(email);
 
-            throw new BusinessException(
-                    ErrorCode.INVALID_CREDENTIALS
+            throw new AuthException(
+                    AuthErrorCode.INVALID_CREDENTIALS
             );
         }
 

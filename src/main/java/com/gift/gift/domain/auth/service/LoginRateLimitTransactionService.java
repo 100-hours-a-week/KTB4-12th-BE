@@ -36,7 +36,7 @@ public class LoginRateLimitTransactionService {
         LoginIpRateLimit rateLimit = ipRepository
                 .findByIdentifierHashForUpdate(identifierHash)
                 .orElseThrow(() -> new IllegalStateException(
-                        "IP rate limit row was not created"
+                        "IP 요청 제한 데이터가 생성되지 않았습니다."
                 ));
 
         return rateLimit.consume(now);
@@ -75,7 +75,7 @@ public class LoginRateLimitTransactionService {
                         )
                         .orElseThrow(() ->
                                 new IllegalStateException(
-                                        "Email failure limit row was not created"
+                                        "이메일 실패 제한 데이터가 생성되지 않았습니다."
                                 )
                         );
 
