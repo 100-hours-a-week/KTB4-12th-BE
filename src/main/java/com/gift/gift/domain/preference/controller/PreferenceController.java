@@ -9,7 +9,8 @@ import org.springframework.web.bind.annotation.*;
 import com.gift.gift.domain.preference.dto.request.SaveDislikeCategoriesRequest;
 import com.gift.gift.domain.preference.dto.response.DislikeCategoryListResponse;
 import com.gift.gift.domain.preference.dto.response.SaveDislikeCategoriesResponse;
-import com.gift.gift.domain.preference.service.PreferenceService;
+import com.gift.gift.domain.preference.service.PreferenceQueryService;
+import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
 
@@ -18,7 +19,8 @@ import com.gift.gift.global.security.CurrentUserId;
 @RequiredArgsConstructor
 public class PreferenceController {
 
-    private final PreferenceService preferenceService;
+    private final PreferenceQueryService preferenceQueryService;
+    private final PreferenceSaveService preferenceSaveService;
 
     @GetMapping("/dislike-categories")
     public ResponseEntity<ApiResponse<DislikeCategoryListResponse>>
@@ -26,7 +28,7 @@ public class PreferenceController {
             @CurrentUserId Long userId
     ) {
         DislikeCategoryListResponse response =
-                preferenceService.getDislikeCategories(userId);
+                preferenceQueryService.getDislikeCategories(userId);
 
         return ResponseEntity.ok(ApiResponse.success(
                 "비선호 카테고리를 조회했습니다.",
@@ -41,7 +43,7 @@ public class PreferenceController {
             @Valid @RequestBody SaveDislikeCategoriesRequest request
     ) {
         SaveDislikeCategoriesResponse response =
-                preferenceService.saveDislikeCategories(
+                preferenceSaveService.saveDislikeCategories(
                         userId,
                         request.categoryIds()
                 );

@@ -1,21 +1,16 @@
 package com.gift.gift.domain.gift.controller;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import com.gift.gift.domain.gift.dto.response.GiftReceivedDetailResponse;
-import com.gift.gift.domain.gift.dto.response.GiftSentDetailResponse;
-import com.gift.gift.domain.gift.dto.response.ReceivedGiftListItem;
-import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
+import com.gift.gift.domain.gift.dto.request.GiftPreflightRequest;
+import com.gift.gift.domain.gift.dto.response.*;
 import com.gift.gift.domain.gift.service.GiftQueryService;
+import com.gift.gift.domain.gift.service.GiftService;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
@@ -26,6 +21,7 @@ import com.gift.gift.global.security.CurrentUserId;
 public class GiftController {
 
     private final GiftQueryService giftQueryService;
+    private final GiftService giftService;
 
     @GetMapping("/sent")
     public ResponseEntity<ApiResponse<CursorPageResponse<SentGiftListItem>>> getSentGifts(
@@ -71,6 +67,16 @@ public class GiftController {
         GiftReceivedDetailResponse response = giftQueryService.getReceivedGiftDetail(userId, giftId);
 
         return ResponseEntity.ok(ApiResponse.success("받은 선물 상세 정보를 조회했습니다.", response));
+    }
+
+    @PostMapping("/preflight")
+    public ResponseEntity<ApiResponse<GiftPreflightResponse>> preflight(
+            @CurrentUserId Long senderId,
+            @Valid @RequestBody GiftPreflightRequest request
+    ) {
+        GiftPreflightResponse response = giftService.preflight(senderId, request);
+
+        return ResponseEntity.ok(ApiResponse.success("선물 사전 검증을 완료했습니다.", response));
     }
 
     private String listMessage(CursorPageResponse<?> response, String message, String emptyMessage) {

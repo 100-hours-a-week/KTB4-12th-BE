@@ -20,24 +20,30 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
+import com.gift.gift.domain.gift.dto.response.GiftPreflightResponse;
 import com.gift.gift.domain.gift.dto.response.GiftReceivedDetailResponse;
 import com.gift.gift.domain.gift.dto.response.GiftSentDetailResponse;
 import com.gift.gift.domain.gift.dto.response.ReceivedGiftListItem;
 import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.service.GiftQueryService;
+import com.gift.gift.domain.gift.service.GiftService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.InvalidCursorException;
 
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -47,17 +53,19 @@ class GiftControllerTest {
     private static final LocalDateTime COMPLETED_AT = LocalDateTime.of(2026, 8, 29, 14, 20);
 
     private GiftQueryService giftQueryService;
+    private GiftService giftService;
     private MockMvc mockMvc;
     private LocalValidatorFactoryBean validator;
 
     @BeforeEach
     void setUp() {
         giftQueryService = mock(GiftQueryService.class);
+        giftService = mock(GiftService.class);
         validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new GiftController(giftQueryService))
+                .standaloneSetup(new GiftController(giftQueryService, giftService))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
@@ -266,6 +274,72 @@ class GiftControllerTest {
                 .andExpect(jsonPath("$.message").value("받은 선물 내역을 찾을 수 없습니다."))
                 .andExpect(jsonPath("$.error.code").value("GIFT_NOT_FOUND"))
                 .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("선물 사전 검증은 인증 사용자와 요청 본문으로 조회하고 결과를 반환한다")
+    void preflight_returnsResult_forAuthenticatedUser() throws Exception {
+        GiftPreflightResponse response = GiftPreflightResponse.from(
+                new GiftPreflightResponse.Recipient(27L, "김민정"),
+                new GiftPreflightResponse.Product(
+                        51L,
+                        BigDecimal.valueOf(35000),
+                        2,
+                        BigDecimal.valueOf(70000),
+                        10
+                ),
+                null
+        );
+        when(giftService.preflight(eq(USER_ID), any())).thenReturn(response);
+
+        mockMvc.perform(post("/gifts/preflight")
+                        .contentType(APPLICATION_JSON)
+                        .content(preflightBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("선물 사전 검증을 완료했습니다."))
+                .andExpect(jsonPath("$.data.recipient.name").value("김민정"))
+                .andExpect(jsonPath("$.data.product.totalPrice").value(70000))
+                .andExpect(jsonPath("$.data.preferenceWarning").doesNotExist())
+                .andExpect(jsonPath("$.error").doesNotExist());
+
+        verify(giftService).preflight(eq(USER_ID), any());
+        verifyNoMoreInteractions(giftService);
+    }
+
+    @Test
+    @DisplayName("선물 사전 검증 요청 값이 없으면 400 INVALID_REQUEST를 반환한다")
+    void preflight_returnsInvalidRequest_whenFieldsAreMissing() throws Exception {
+        mockMvc.perform(post("/gifts/preflight")
+                        .contentType(APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(giftService);
+    }
+
+    @Test
+    @DisplayName("수신자가 활성 사용자가 아니면 404 RECIPIENT_NOT_FOUND를 반환한다")
+    void preflight_returnsRecipientNotFound_whenRecipientDoesNotExist() throws Exception {
+        when(giftService.preflight(eq(USER_ID), any()))
+                .thenThrow(new GiftException(ErrorCode.RECIPIENT_NOT_FOUND));
+
+        mockMvc.perform(post("/gifts/preflight")
+                        .contentType(APPLICATION_JSON)
+                        .content(preflightBody()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RECIPIENT_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    private String preflightBody() {
+        return """
+                {
+                  "productId": 51,
+                  "recipientUserId": 27,
+                  "quantity": 2
+                }
+                """;
     }
 
     private SentGiftListItem sentListItem() {

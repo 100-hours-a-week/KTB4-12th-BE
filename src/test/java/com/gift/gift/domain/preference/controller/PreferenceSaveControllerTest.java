@@ -22,7 +22,8 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import com.gift.gift.domain.preference.dto.response.SaveDislikeCategoriesResponse;
 import com.gift.gift.domain.preference.exception.PreferenceException;
-import com.gift.gift.domain.preference.service.PreferenceService;
+import com.gift.gift.domain.preference.service.PreferenceQueryService;
+import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 import com.gift.gift.support.TestValidatorFactory;
@@ -36,17 +37,22 @@ class PreferenceSaveControllerTest {
 
     private static final Long USER_ID = 1L;
 
-    private PreferenceService preferenceService;
+    private PreferenceQueryService preferenceQueryService;
+    private PreferenceSaveService preferenceSaveService;
     private LocalValidatorFactoryBean validator;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        preferenceService = mock(PreferenceService.class);
+        preferenceQueryService = mock(PreferenceQueryService.class);
+        preferenceSaveService = mock(PreferenceSaveService.class);
         validator = TestValidatorFactory.create();
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new PreferenceController(preferenceService))
+                .standaloneSetup(new PreferenceController(
+                        preferenceQueryService,
+                        preferenceSaveService
+                ))
                 .setCustomArgumentResolvers(
                         new AuthenticationPrincipalArgumentResolver()
                 )
@@ -81,7 +87,7 @@ class PreferenceSaveControllerTest {
     @DisplayName("선택한 비선호 카테고리 ID를 저장 결과로 반환한다")
     void saveDislikeCategories_returnsSelectedCategoryIds()
             throws Exception {
-        when(preferenceService.saveDislikeCategories(
+        when(preferenceSaveService.saveDislikeCategories(
                 USER_ID,
                 List.of(1L, 3L)
         )).thenReturn(SaveDislikeCategoriesResponse.from(
@@ -104,7 +110,7 @@ class PreferenceSaveControllerTest {
                         .value(3))
                 .andExpect(jsonPath("$.error").doesNotExist());
 
-        verify(preferenceService).saveDislikeCategories(
+        verify(preferenceSaveService).saveDislikeCategories(
                 USER_ID,
                 List.of(1L, 3L)
         );
@@ -133,7 +139,10 @@ class PreferenceSaveControllerTest {
                         .value(reason))
                 .andExpect(jsonPath("$.data").doesNotExist());
 
-        verifyNoInteractions(preferenceService);
+        verifyNoInteractions(
+                preferenceQueryService,
+                preferenceSaveService
+        );
     }
 
     @Test
@@ -153,7 +162,10 @@ class PreferenceSaveControllerTest {
                 .andExpect(jsonPath("$.error.details")
                         .doesNotExist());
 
-        verifyNoInteractions(preferenceService);
+        verifyNoInteractions(
+                preferenceQueryService,
+                preferenceSaveService
+        );
     }
 
     @ParameterizedTest(name = "{0}")
@@ -163,7 +175,7 @@ class PreferenceSaveControllerTest {
             String description,
             ErrorCode errorCode
     ) throws Exception {
-        when(preferenceService.saveDislikeCategories(
+        when(preferenceSaveService.saveDislikeCategories(
                 USER_ID,
                 List.of(1L)
         )).thenThrow(new PreferenceException(errorCode));

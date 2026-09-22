@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PreferenceQueryServiceIntegrationTest {
 
     @Autowired
-    private PreferenceService preferenceService;
+    private PreferenceQueryService preferenceQueryService;
 
     @Autowired
     private UserDislikeCategoryRepository dislikeRepository;
@@ -64,7 +64,7 @@ class PreferenceQueryServiceIntegrationTest {
         String categoryName = root.getName();
         flushAndClear();
 
-        assertThat(preferenceService.findMatchingWarning(userId, categoryId))
+        assertThat(preferenceQueryService.findMatchingWarning(userId, categoryId))
                 .contains(new PreferenceWarningResult(root.getId(), categoryName));
     }
 
@@ -83,7 +83,7 @@ class PreferenceQueryServiceIntegrationTest {
         User otherUser = saveUser();
         flushAndClear();
 
-        assertThat(preferenceService.findMatchingWarning(
+        assertThat(preferenceQueryService.findMatchingWarning(
                 otherUser.getId(),
                 category.getId()
         )).isEmpty();
@@ -101,7 +101,7 @@ class PreferenceQueryServiceIntegrationTest {
         entityManager.persist(otherCategory);
         flushAndClear();
 
-        assertThat(preferenceService.findMatchingWarning(
+        assertThat(preferenceQueryService.findMatchingWarning(
                 user.getId(),
                 otherCategory.getId()
         )).contains(new PreferenceWarningResult(root.getId(), root.getName()));
@@ -117,7 +117,7 @@ class PreferenceQueryServiceIntegrationTest {
         entityManager.persist(otherCategory);
         flushAndClear();
 
-        assertThat(preferenceService.findMatchingWarning(
+        assertThat(preferenceQueryService.findMatchingWarning(
                 user.getId(), otherCategory.getId()
         )).isEmpty();
     }
@@ -128,7 +128,7 @@ class PreferenceQueryServiceIntegrationTest {
         saveDislike();
         flushAndClear();
 
-        assertThat(preferenceService.findMatchingWarning(
+        assertThat(preferenceQueryService.findMatchingWarning(
                 user.getId(),
                 root.getId()
         )).isEmpty();
@@ -257,7 +257,7 @@ class PreferenceQueryServiceIntegrationTest {
     }
 
     private void assertNoWarning() {
-        assertThat(preferenceService.findMatchingWarning(
+        assertThat(preferenceQueryService.findMatchingWarning(
                 user.getId(),
                 category.getId()
         )).isEmpty();

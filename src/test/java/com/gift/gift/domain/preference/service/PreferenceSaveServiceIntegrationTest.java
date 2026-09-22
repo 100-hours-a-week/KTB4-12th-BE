@@ -40,7 +40,7 @@ import static org.mockito.Mockito.reset;
 class PreferenceSaveServiceIntegrationTest {
 
     @Autowired
-    private PreferenceService preferenceService;
+    private PreferenceSaveService preferenceSaveService;
 
     @Autowired
     private UserRepository userRepository;
@@ -62,7 +62,7 @@ class PreferenceSaveServiceIntegrationTest {
         Category food = saveRoot("식품");
         Category digital = saveRoot("디지털");
 
-        preferenceService.saveDislikeCategories(
+        preferenceSaveService.saveDislikeCategories(
                 user.getId(),
                 List.of(beauty.getId(), food.getId())
         );
@@ -76,7 +76,7 @@ class PreferenceSaveServiceIntegrationTest {
                 .orElseThrow()
                 .getId();
 
-        preferenceService.saveDislikeCategories(
+        preferenceSaveService.saveDislikeCategories(
                 user.getId(),
                 List.of(food.getId(), digital.getId())
         );
@@ -87,18 +87,18 @@ class PreferenceSaveServiceIntegrationTest {
                         digital.getId()
                 );
 
-        preferenceService.saveDislikeCategories(
+        preferenceSaveService.saveDislikeCategories(
                 user.getId(),
                 List.of()
         );
 
         assertThat(activeCategoryIds(user.getId())).isEmpty();
 
-        preferenceService.saveDislikeCategories(
+        preferenceSaveService.saveDislikeCategories(
                 user.getId(),
                 List.of(beauty.getId())
         );
-        preferenceService.saveDislikeCategories(
+        preferenceSaveService.saveDislikeCategories(
                 user.getId(),
                 List.of(beauty.getId())
         );
@@ -142,10 +142,10 @@ class PreferenceSaveServiceIntegrationTest {
                 .map(Category::getId)
                 .toList();
 
-        preferenceService.saveDislikeCategories(user.getId(), fiveIds);
+        preferenceSaveService.saveDislikeCategories(user.getId(), fiveIds);
 
         assertThatThrownBy(() ->
-                preferenceService.saveDislikeCategories(
+                preferenceSaveService.saveDislikeCategories(
                         user.getId(),
                         sixIds
                 )
@@ -170,7 +170,7 @@ class PreferenceSaveServiceIntegrationTest {
         );
         Category deleted = saveRoot("삭제대분류");
 
-        preferenceService.saveDislikeCategories(
+        preferenceSaveService.saveDislikeCategories(
                 user.getId(),
                 List.of(selected.getId())
         );
@@ -190,7 +190,7 @@ class PreferenceSaveServiceIntegrationTest {
 
         for (Long unavailableId : unavailableIds) {
             assertThatThrownBy(() ->
-                    preferenceService.saveDislikeCategories(
+                    preferenceSaveService.saveDislikeCategories(
                             user.getId(),
                             List.of(unavailableId)
                     )
@@ -214,7 +214,7 @@ class PreferenceSaveServiceIntegrationTest {
         Category existing = saveRoot("롤백-기존");
         Category requested = saveRoot("롤백-신규");
 
-        preferenceService.saveDislikeCategories(
+        preferenceSaveService.saveDislikeCategories(
                 user.getId(),
                 List.of(existing.getId())
         );
@@ -225,7 +225,7 @@ class PreferenceSaveServiceIntegrationTest {
 
         try {
             assertThatThrownBy(() ->
-                    preferenceService.saveDislikeCategories(
+                    preferenceSaveService.saveDislikeCategories(
                             user.getId(),
                             List.of(requested.getId())
                     )
@@ -256,7 +256,7 @@ class PreferenceSaveServiceIntegrationTest {
             Future<?> first = executor.submit(() -> {
                 ready.countDown();
                 await(start);
-                preferenceService.saveDislikeCategories(
+                preferenceSaveService.saveDislikeCategories(
                         user.getId(),
                         firstIds
                 );
@@ -264,7 +264,7 @@ class PreferenceSaveServiceIntegrationTest {
             Future<?> second = executor.submit(() -> {
                 ready.countDown();
                 await(start);
-                preferenceService.saveDislikeCategories(
+                preferenceSaveService.saveDislikeCategories(
                         user.getId(),
                         secondIds
                 );
