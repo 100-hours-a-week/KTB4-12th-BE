@@ -11,6 +11,8 @@ import com.gift.gift.domain.friend.dto.request.FriendCreateRequest;
 import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
 import com.gift.gift.domain.friend.entity.Friend;
+import com.gift.gift.domain.friend.exception.FriendErrorCode;
+import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.query.FriendPage;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
@@ -18,9 +20,9 @@ import com.gift.gift.domain.friend.repository.FriendRepository;
 import com.gift.gift.domain.friend.support.FriendCursor;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
+import com.gift.gift.domain.user.exception.UserErrorCode;
+import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.InvalidCursorException;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -36,31 +38,54 @@ public class FriendService {
     private final OpaqueCursorCodec cursorCodec;
     private final FriendPageAssembler pageAssembler;
 
-    public CursorPageResponse<FriendListItem> getFriends(Long userId, String rawCursor) {
+    public CursorPageResponse<FriendListItem> getFriends(
+            Long userId,
+            String rawCursor
+    ) {
         FriendCursor cursor = decode(rawCursor);
-        FriendPage page = pageAssembler.assemble(friendQueryRepository.findFriends(userId, cursor));
-        List<FriendListItem> items = page.items().stream()
+        FriendPage page = pageAssembler.assemble(
+                friendQueryRepository.findFriends(
+                        userId,
+                        cursor
+                )
+        );
+
+        List<FriendListItem> items = page.items()
+                .stream()
                 .map(FriendListItem::from)
                 .toList();
 
-        return CursorPageResponse.from(items, page.nextCursor(), page.hasNext());
+        return CursorPageResponse.from(
+                items,
+                page.nextCursor(),
+                page.hasNext()
+        );
     }
 
-    @org.springframework.transaction.annotation.Transactional
+    @Transactional
     public FriendCreateResponse createFriend(
             Long userId,
             FriendCreateRequest request
     ) {
         Long friendUserId = request.friendUserId();
 
-        validateNotSelf(userId, friendUserId);
+        validateNotSelf(
+                userId,
+                friendUserId
+        );
 
         User user = findActiveUser(userId);
         User friendUser = findActiveUser(friendUserId);
 
-        validateNotAlreadyFriend(userId, friendUserId);
+        validateNotAlreadyFriend(
+                userId,
+                friendUserId
+        );
 
-        saveFriend(user, friendUser);
+        saveFriend(
+                user,
+                friendUser
+        );
 
         return FriendCreateResponse.from(friendUser);
     }
@@ -70,8 +95,8 @@ public class FriendService {
             Long friendUserId
     ) {
         if (userId.equals(friendUserId)) {
-            throw new BusinessException(
-                    ErrorCode.FRIEND_CANNOT_ADD_SELF
+            throw new FriendException(
+                    FriendErrorCode.FRIEND_CANNOT_ADD_SELF
             );
         }
     }
@@ -82,8 +107,8 @@ public class FriendService {
                         userId,
                         UserStatus.ACTIVE
                 )
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.USER_NOT_FOUND
+                .orElseThrow(() -> new UserException(
+                        UserErrorCode.USER_NOT_FOUND
                 ));
     }
 
@@ -99,8 +124,8 @@ public class FriendService {
                         );
 
         if (alreadyExists) {
-            throw new BusinessException(
-                    ErrorCode.FRIEND_ALREADY_EXISTS
+            throw new FriendException(
+                    FriendErrorCode.FRIEND_ALREADY_EXISTS
             );
         }
     }
@@ -111,12 +136,15 @@ public class FriendService {
     ) {
         try {
             friendRepository.saveAndFlush(
-                    new Friend(user, friendUser)
+                    new Friend(
+                            user,
+                            friendUser
+                    )
             );
         } catch (DataIntegrityViolationException exception) {
             if (isFriendUniqueConstraintViolation(exception)) {
-                throw new BusinessException(
-                        ErrorCode.FRIEND_ALREADY_EXISTS
+                throw new FriendException(
+                        FriendErrorCode.FRIEND_ALREADY_EXISTS
                 );
             }
 
@@ -170,9 +198,12 @@ public class FriendService {
             return null;
         }
 
-        FriendCursor cursor = cursorCodec.decode(rawCursor, FriendCursor.class);
+        FriendCursor cursor =
+                cursorCodec.decode(
+                        rawCursor,
+                        FriendCursor.class
+                );
 
-        // 검색용 커서로 전체 목록을 이어서 조회하면 조회 범위가 어긋나므로 거부한다.
         if (cursor.query() != null) {
             throw new InvalidCursorException();
         }
