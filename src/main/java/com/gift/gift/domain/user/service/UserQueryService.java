@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.domain.user.support.ActiveUserSummary;
@@ -26,5 +27,15 @@ public class UserQueryService {
                         UserStatus.ACTIVE
                 )
                 .map(ActiveUserSummary::from);
+    }
+
+    @Transactional
+    public Optional<User> findActiveUserForUpdate(
+            Long userId
+    ) {
+        return userRepository.findActiveByIdForUpdate(
+                userId,
+                UserStatus.ACTIVE
+        );
     }
 }

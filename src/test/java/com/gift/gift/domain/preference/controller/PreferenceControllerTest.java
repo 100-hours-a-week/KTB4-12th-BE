@@ -18,13 +18,11 @@ import com.gift.gift.domain.preference.dto.response.DislikeCategoryItemResponse;
 import com.gift.gift.domain.preference.dto.response.DislikeCategoryListResponse;
 import com.gift.gift.domain.preference.exception.PreferenceException;
 import com.gift.gift.domain.preference.service.PreferenceQueryService;
+import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -34,17 +32,21 @@ class PreferenceControllerTest {
     private static final Long USER_ID = 1L;
 
     private PreferenceQueryService preferenceQueryService;
+    private PreferenceSaveService preferenceSaveService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         preferenceQueryService =
                 mock(PreferenceQueryService.class);
+        preferenceSaveService =
+                mock(PreferenceSaveService.class);
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(
                         new PreferenceController(
-                                preferenceQueryService
+                                preferenceQueryService,
+                                preferenceSaveService
                         )
                 )
                 .setCustomArgumentResolvers(
@@ -129,7 +131,10 @@ class PreferenceControllerTest {
 
         verify(preferenceQueryService)
                 .getDislikeCategories(USER_ID);
-        verifyNoMoreInteractions(preferenceQueryService);
+        verifyNoMoreInteractions(
+                preferenceQueryService,
+                preferenceSaveService
+        );
     }
 
     @Test

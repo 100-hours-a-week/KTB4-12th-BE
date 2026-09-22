@@ -27,6 +27,12 @@ public class CategoryQueryService {
         return categoryRepository.findAllActiveRootsOrderById();
     }
 
+    public List<Category> findCategoriesByIds(
+            List<Long> categoryIds
+    ) {
+        return categoryRepository.findAllById(categoryIds);
+    }
+
     public CategoryListResponse getCategories() {
         List<Category> categories =
                 categoryRepository.findAllActiveWithParent();

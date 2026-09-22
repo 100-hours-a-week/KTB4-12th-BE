@@ -61,4 +61,28 @@ public class UserDislikeCategory extends BaseTimeEntity {
         }
 
     }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
+
+    public void softDelete(LocalDateTime deletedAt) {
+        Objects.requireNonNull(deletedAt, "deletedAt must not be null");
+
+        if (isDeleted()) {
+            return;
+        }
+
+        this.deletedAt = deletedAt;
+    }
+
+    public void restore() {
+        if (!category.isRoot() || category.isDeleted()) {
+            throw new IllegalArgumentException(
+                    "삭제되지 않은 대분류 카테고리만 비선호로 등록할 수 있습니다."
+            );
+        }
+
+        this.deletedAt = null;
+    }
 }
