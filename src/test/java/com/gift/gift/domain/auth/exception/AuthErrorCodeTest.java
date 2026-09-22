@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import com.gift.gift.global.exception.ErrorCode;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AuthErrorCodeTest {
 
@@ -36,6 +37,20 @@ class AuthErrorCodeTest {
         assertEquals(
                 "로그인 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
                 AuthErrorCode.LOGIN_RATE_LIMIT_EXCEEDED.message()
+        );
+    }
+
+    @Test
+    @DisplayName("재시도 시간이 올바르지 않으면 한국어 진단 메시지를 제공한다")
+    void loginRateLimitException_rejectsInvalidRetryAfterWithKoreanDiagnostic() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoginRateLimitExceededException(0)
+        );
+
+        assertEquals(
+                "재시도 대기 시간은 1초 이상이어야 합니다.",
+                exception.getMessage()
         );
     }
 }

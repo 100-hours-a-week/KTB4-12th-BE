@@ -17,11 +17,11 @@ public record UpdateUserProfileResponse(
             User user,
             ZoneId zoneId
     ) {
-        Objects.requireNonNull(user, "user must not be null");
-        Objects.requireNonNull(zoneId, "zoneId must not be null");
+        Objects.requireNonNull(user, "사용자는 null일 수 없습니다.");
+        Objects.requireNonNull(zoneId, "시간대는 null일 수 없습니다.");
         Objects.requireNonNull(
                 user.getUpdatedAt(),
-                "user.updatedAt must not be null"
+                "사용자 수정 시각은 null일 수 없습니다."
         );
 
         return new UpdateUserProfileResponse(

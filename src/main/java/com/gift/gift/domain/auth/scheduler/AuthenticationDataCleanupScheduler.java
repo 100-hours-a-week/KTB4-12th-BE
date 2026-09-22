@@ -95,7 +95,7 @@ public class AuthenticationDataCleanupScheduler {
             }
 
             log.info(
-                    "Authentication data cleanup completed. "
+                    "인증 데이터 정리를 완료했습니다. "
                             + "target={}, deletedCount={}, "
                             + "batchCount={}, executedAt={}",
                     target,
@@ -105,7 +105,7 @@ public class AuthenticationDataCleanupScheduler {
             );
         } catch (RuntimeException exception) {
             log.error(
-                    "Authentication data cleanup partially failed. "
+                    "인증 데이터 정리가 일부 실패했습니다. "
                             + "target={}, committedDeletedCount={}, "
                             + "committedBatchCount={}, executedAt={}",
                     target,

@@ -63,8 +63,14 @@ public class TermConsent extends BaseTimeEntity {
     private boolean isAgreed;
 
     public TermConsent(User user, Term term, boolean isAgreed) {
-        this.user = Objects.requireNonNull(user, "user must not be null");
-        this.term = Objects.requireNonNull(term, "term must not be null");
+        this.user = Objects.requireNonNull(
+                user,
+                "사용자는 null일 수 없습니다."
+        );
+        this.term = Objects.requireNonNull(
+                term,
+                "약관은 null일 수 없습니다."
+        );
         this.isAgreed = isAgreed;
     }
 }

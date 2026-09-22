@@ -29,4 +29,16 @@ class UserErrorCodeTest {
                 UserErrorCode.USER_NOT_FOUND.message()
         );
     }
+
+    @Test
+    @DisplayName("회원가입 약관 설정 오류는 한국어 내부 메시지를 제공한다")
+    void signupTermsConfigurationException_usesKoreanDiagnostic() {
+        SignupTermsConfigurationException exception =
+                new SignupTermsConfigurationException();
+
+        assertEquals(
+                "현재 적용할 필수 회원가입 약관이 설정되지 않았습니다.",
+                exception.getMessage()
+        );
+    }
 }

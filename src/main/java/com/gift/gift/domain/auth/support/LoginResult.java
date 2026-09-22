@@ -15,28 +15,28 @@ public record LoginResult(
     public LoginResult {
         Objects.requireNonNull(
                 accessToken,
-                "accessToken must not be null"
+                "액세스 토큰은 null일 수 없습니다."
         );
         Objects.requireNonNull(
                 refreshToken,
-                "refreshToken must not be null"
+                "리프레시 토큰은 null일 수 없습니다."
         );
         Objects.requireNonNull(
                 userId,
-                "userId must not be null"
+                "사용자 식별자는 null일 수 없습니다."
         );
         Objects.requireNonNull(
                 name,
-                "name must not be null"
+                "사용자 이름은 null일 수 없습니다."
         );
         Objects.requireNonNull(
                 email,
-                "email must not be null"
+                "이메일은 null일 수 없습니다."
         );
 
         if (expiresIn <= 0) {
             throw new IllegalArgumentException(
-                    "expiresIn must be positive"
+                    "토큰 유효 시간은 1초 이상이어야 합니다."
             );
         }
     }

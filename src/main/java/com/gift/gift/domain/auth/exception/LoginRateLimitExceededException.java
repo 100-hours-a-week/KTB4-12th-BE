@@ -12,7 +12,7 @@ public class LoginRateLimitExceededException
 
         if (retryAfterSeconds < 1) {
             throw new IllegalArgumentException(
-                    "retryAfterSeconds must be positive"
+                    "재시도 대기 시간은 1초 이상이어야 합니다."
             );
         }
 

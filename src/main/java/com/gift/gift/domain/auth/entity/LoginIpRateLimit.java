@@ -68,19 +68,19 @@ public class LoginIpRateLimit extends BaseTimeEntity {
     ) {
         this.identifierHash = Objects.requireNonNull(
                 identifierHash,
-                "identifierHash must not be null"
+                "식별자 해시는 null일 수 없습니다."
         );
         this.availableTokens = CAPACITY;
         this.lastRefilledAt = Objects.requireNonNull(
                 now,
-                "now must not be null"
+                "현재 시각은 null일 수 없습니다."
         );
     }
 
     public LoginRateLimitDecision consume(
             LocalDateTime now
     ) {
-        Objects.requireNonNull(now, "now must not be null");
+        Objects.requireNonNull(now, "현재 시각은 null일 수 없습니다.");
 
         refill(now);
 

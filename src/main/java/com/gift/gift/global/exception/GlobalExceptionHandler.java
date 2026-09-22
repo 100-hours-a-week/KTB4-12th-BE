@@ -61,7 +61,7 @@ public class GlobalExceptionHandler {
         String traceId = resolveTraceId();
 
         log.warn(
-                "Login request rate limited. traceId={}, retryAfterSeconds={}",
+                "로그인 요청이 제한되었습니다. traceId={}, retryAfterSeconds={}",
                 traceId,
                 exception.getRetryAfterSeconds()
         );
@@ -91,7 +91,7 @@ public class GlobalExceptionHandler {
         String traceId = resolveTraceId();
 
         log.warn(
-                "Business exception occurred. traceId={}, code={}",
+                "비즈니스 예외가 발생했습니다. traceId={}, code={}",
                 traceId,
                 errorCode.code()
         );
@@ -133,7 +133,7 @@ public class GlobalExceptionHandler {
         String traceId = resolveTraceId();
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
 
-        log.error("Unexpected error occurred. traceId={}", traceId, exception);
+        log.error("예상하지 못한 오류가 발생했습니다. traceId={}", traceId, exception);
 
         return ResponseEntity
                 .status(errorCode.status())
@@ -147,7 +147,7 @@ public class GlobalExceptionHandler {
         String traceId = resolveTraceId();
 
         log.warn(
-                "Request rejected. traceId={}, code={}, detailCount={}",
+                "요청이 거부되었습니다. traceId={}, code={}, detailCount={}",
                 traceId,
                 errorCode.code(),
                 details.size()

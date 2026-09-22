@@ -90,7 +90,7 @@ public class LoginRateLimiter {
             DataAccessException exception
     ) {
         log.error(
-                "Login rate limit storage is unavailable",
+                "로그인 요청 제한 저장소를 사용할 수 없습니다.",
                 exception
         );
 

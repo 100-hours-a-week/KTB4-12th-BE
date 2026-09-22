@@ -10,16 +10,16 @@ public record TokenRefreshResult(
     public TokenRefreshResult {
         Objects.requireNonNull(
                 accessToken,
-                "accessToken must not be null"
+                "액세스 토큰은 null일 수 없습니다."
         );
         Objects.requireNonNull(
                 refreshToken,
-                "refreshToken must not be null"
+                "리프레시 토큰은 null일 수 없습니다."
         );
 
         if (expiresIn <= 0) {
             throw new IllegalArgumentException(
-                    "expiresIn must be positive"
+                    "토큰 유효 시간은 1초 이상이어야 합니다."
             );
         }
     }
