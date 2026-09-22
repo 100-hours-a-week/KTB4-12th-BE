@@ -316,6 +316,26 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "선물 사전 검증",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/gifts/preflight",
+              "host": ["{{baseUrl}}"],
+              "path": ["gifts", "preflight"]
+            },
+            "description": "선물 생성 전 수신자·친구 관계·상품·재고 조건을 검증하고 총금액과 최대 주문 수량을 반환한다. 데이터를 변경하지 않는다.\n\n자기 자신에게 보내면 400 INVALID_REQUEST, 활성 수신자가 아니면 404 RECIPIENT_NOT_FOUND, 상품이 없으면 404 PRODUCT_NOT_FOUND, 친구가 아니면 422 RECIPIENT_NOT_FRIEND, 재고가 부족하면 422 INSUFFICIENT_STOCK이다. 수신자가 상품 카테고리를 비선호로 등록했으면 응답의 `preferenceWarning`에 경고 정보가 채워지지만 선물 자체를 막지는 않는다."
+          },
+          "response": []
         }
       ]
     },
