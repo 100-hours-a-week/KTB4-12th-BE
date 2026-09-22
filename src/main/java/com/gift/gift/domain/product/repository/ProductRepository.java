@@ -35,4 +35,18 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
           AND deleted_at IS NULL
         """, nativeQuery = true)
     int incrementViewsIfActive(@Param("productId") Long productId);
+
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+            UPDATE products
+            SET quantity = quantity - :quantity,
+                sales = sales + :quantity,
+                updated_at = CURRENT_TIMESTAMP(6)
+            WHERE id = :productId
+              AND quantity >= :quantity
+            """, nativeQuery = true)
+    int deductStockIfAvailable(
+            @Param("productId") Long productId,
+            @Param("quantity") int quantity
+    );
 }
