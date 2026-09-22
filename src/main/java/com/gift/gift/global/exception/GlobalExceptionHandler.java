@@ -77,7 +77,7 @@ public class GlobalExceptionHandler {
                 .body(
                         ApiResponse.error(
                                 errorCode,
-                                errorCode.message(),
+                                exception.getMessage(),
                                 traceId
                         )
                 );
