@@ -12,9 +12,8 @@ import com.gift.gift.domain.preference.dto.response.PreferenceWarningResult;
 import com.gift.gift.domain.preference.exception.PreferenceException;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
 import com.gift.gift.domain.product.entity.Category;
-import com.gift.gift.domain.product.repository.CategoryRepository;
-import com.gift.gift.domain.user.entity.UserStatus;
-import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.domain.product.service.CategoryQueryService;
+import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.global.exception.ErrorCode;
 
 @Service
@@ -23,8 +22,8 @@ import com.gift.gift.global.exception.ErrorCode;
 public class PreferenceQueryService {
 
     private final UserDislikeCategoryRepository userDislikeCategoryRepository;
-    private final CategoryRepository categoryRepository;
-    private final UserRepository userRepository;
+    private final CategoryQueryService categoryQueryService;
+    private final UserQueryService userQueryService;
 
     /*
        상품의 세부 카테고리가 속한 대분류를 수신자가 비선호로 등록했으면 대분류 정보를 반환한다.
@@ -46,7 +45,7 @@ public class PreferenceQueryService {
                 userDislikeCategoryRepository.findAllActiveCategoryIdsByUserId(userId)
         );
 
-        List<Category> rootCategories = categoryRepository.findAllActiveRootsOrderById();
+        List<Category> rootCategories = categoryQueryService.findActiveRootCategories();
         List<DislikeCategoryItemResponse> categories = new ArrayList<>();
 
         for (Category category : rootCategories) {
@@ -59,11 +58,7 @@ public class PreferenceQueryService {
     }
 
     private void validateUser(Long userId) {
-        userRepository.findByIdAndStatusAndDeletedAtIsNull(
-                userId,
-                UserStatus.ACTIVE
-        ).orElseThrow(() -> new PreferenceException(
-                ErrorCode.USER_NOT_FOUND
-        ));
+        userQueryService.findActiveUser(userId)
+                .orElseThrow(() -> new PreferenceException(ErrorCode.USER_NOT_FOUND));
     }
 }

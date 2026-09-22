@@ -19,9 +19,7 @@ import com.gift.gift.domain.gift.repository.GiftCountRow;
 import com.gift.gift.domain.gift.repository.GiftQueryRepository;
 import com.gift.gift.domain.gift.repository.GiftQueryRow;
 import com.gift.gift.domain.gift.support.GiftCursor;
-import com.gift.gift.domain.product.query.ProductThumbnailMapper;
-import com.gift.gift.domain.product.repository.ProductImageProjection;
-import com.gift.gift.domain.product.repository.ProductImageRepository;
+import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -34,23 +32,20 @@ public class GiftQueryService {
     private final OpaqueCursorCodec cursorCodec;
     private final GiftPageAssembler pageAssembler;
     private final GiftResponseMapper responseMapper;
-    private final ProductImageRepository productImageRepository;
-    private final ProductThumbnailMapper productThumbnailMapper;
+    private final ProductQueryService productQueryService;
 
     public GiftQueryService(
             GiftQueryRepository giftQueryRepository,
             OpaqueCursorCodec cursorCodec,
             GiftPageAssembler pageAssembler,
             GiftResponseMapper responseMapper,
-            ProductImageRepository productImageRepository,
-            ProductThumbnailMapper productThumbnailMapper
+            ProductQueryService productQueryService
     ) {
         this.giftQueryRepository = giftQueryRepository;
         this.cursorCodec = cursorCodec;
         this.pageAssembler = pageAssembler;
         this.responseMapper = responseMapper;
-        this.productImageRepository = productImageRepository;
-        this.productThumbnailMapper = productThumbnailMapper;
+        this.productQueryService = productQueryService;
     }
 
     public CursorPageResponse<SentGiftListItem> getSentGifts(Long userId, String rawCursor) {
@@ -106,11 +101,8 @@ public class GiftQueryService {
                 .map(GiftQueryRow::productId)
                 .distinct()
                 .toList();
-        List<ProductImageProjection> images = productIds.isEmpty()
-                ? List.of()
-                : productImageRepository.findThumbnailCandidates(productIds);
 
-        return productThumbnailMapper.mapUrls(productIds, images);
+        return productQueryService.findThumbnailUrls(productIds);
     }
 
     private GiftCursor decode(String rawCursor) {

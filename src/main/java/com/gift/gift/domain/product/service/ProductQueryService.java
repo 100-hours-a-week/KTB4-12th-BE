@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -79,18 +80,8 @@ public class ProductQueryService {
                 .map(ProductSummaryProjection::productId)
                 .toList();
 
-        // 7. 대표 이미지 후보 일괄 조회
-        List<ProductImageProjection> images = productIds.isEmpty()
-                ? List.of()
-                : productImageRepository.findThumbnailCandidates(
-                productIds
-        );
-
-        // 8. 대표 이미지 선택 및 URL 조합
-        Map<Long, String> thumbnailUrls = thumbnailMapper.mapUrls(
-                productIds,
-                images
-        );
+        // 7~8. 대표 이미지 후보 일괄 조회 및 URL 조합
+        Map<Long, String> thumbnailUrls = findThumbnailUrls(productIds);
 
         // 9. 상품 요약 Response 생성
         List<ProductSummaryResponse> products = page.items().stream()
@@ -125,6 +116,18 @@ public class ProductQueryService {
         }
 
         return ProductDetailResponse.from(product, images);
+    }
+
+    public Optional<Product> findAvailableProduct(Long productId) {
+        return productRepository.findByIdAndDeletedAtIsNull(productId);
+    }
+
+    public Map<Long, String> findThumbnailUrls(List<Long> productIds) {
+        List<ProductImageProjection> images = productIds.isEmpty()
+                ? List.of()
+                : productImageRepository.findThumbnailCandidates(productIds);
+
+        return thumbnailMapper.mapUrls(productIds, images);
     }
 
     private ProductSort resolveSort(ProductListRequest request) {

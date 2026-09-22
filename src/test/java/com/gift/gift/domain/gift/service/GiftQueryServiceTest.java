@@ -24,9 +24,7 @@ import com.gift.gift.domain.gift.repository.GiftCountRow;
 import com.gift.gift.domain.gift.repository.GiftQueryRepository;
 import com.gift.gift.domain.gift.repository.GiftQueryRow;
 import com.gift.gift.domain.gift.support.GiftCursor;
-import com.gift.gift.domain.product.query.ProductThumbnailMapper;
-import com.gift.gift.domain.product.repository.ProductImageProjection;
-import com.gift.gift.domain.product.repository.ProductImageRepository;
+import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -43,8 +41,7 @@ class GiftQueryServiceTest {
     private OpaqueCursorCodec cursorCodec;
     private GiftPageAssembler pageAssembler;
     private GiftResponseMapper responseMapper;
-    private ProductImageRepository productImageRepository;
-    private ProductThumbnailMapper productThumbnailMapper;
+    private ProductQueryService productQueryService;
     private GiftQueryService giftQueryService;
 
     @BeforeEach
@@ -53,15 +50,13 @@ class GiftQueryServiceTest {
         cursorCodec = mock(OpaqueCursorCodec.class);
         pageAssembler = mock(GiftPageAssembler.class);
         responseMapper = mock(GiftResponseMapper.class);
-        productImageRepository = mock(ProductImageRepository.class);
-        productThumbnailMapper = mock(ProductThumbnailMapper.class);
+        productQueryService = mock(ProductQueryService.class);
         giftQueryService = new GiftQueryService(
                 giftQueryRepository,
                 cursorCodec,
                 pageAssembler,
                 responseMapper,
-                productImageRepository,
-                productThumbnailMapper
+                productQueryService
         );
     }
 
@@ -72,12 +67,10 @@ class GiftQueryServiceTest {
         GiftCursor cursor = new GiftCursor(LocalDateTime.of(2026, 9, 17, 20, 0), 10L);
         GiftQueryRow row = row();
         SentGiftListItem item = mock(SentGiftListItem.class);
-        ProductImageProjection image = new ProductImageProjection(3L, "products/3/main.jpg");
         when(cursorCodec.decode(rawCursor, GiftCursor.class)).thenReturn(cursor);
         when(giftQueryRepository.findSentGifts(1L, cursor)).thenReturn(List.of(row));
         when(pageAssembler.assemble(List.of(row))).thenReturn(new GiftPage(List.of(row), true, "next"));
-        when(productImageRepository.findThumbnailCandidates(List.of(3L))).thenReturn(List.of(image));
-        when(productThumbnailMapper.mapUrls(List.of(3L), List.of(image)))
+        when(productQueryService.findThumbnailUrls(List.of(3L)))
                 .thenReturn(Map.of(3L, "https://image.example/main.jpg"));
         when(responseMapper.toSentListItem(row, "https://image.example/main.jpg")).thenReturn(item);
 
@@ -94,11 +87,9 @@ class GiftQueryServiceTest {
     void getReceivedGifts_mapsProductThumbnailUrl() {
         GiftQueryRow row = row();
         ReceivedGiftListItem item = mock(ReceivedGiftListItem.class);
-        ProductImageProjection image = new ProductImageProjection(3L, "products/3/main.jpg");
         when(giftQueryRepository.findReceivedGifts(1L, null)).thenReturn(List.of(row));
         when(pageAssembler.assemble(List.of(row))).thenReturn(new GiftPage(List.of(row), false, null));
-        when(productImageRepository.findThumbnailCandidates(List.of(3L))).thenReturn(List.of(image));
-        when(productThumbnailMapper.mapUrls(List.of(3L), List.of(image)))
+        when(productQueryService.findThumbnailUrls(List.of(3L)))
                 .thenReturn(Map.of(3L, "https://image.example/main.jpg"));
         when(responseMapper.toReceivedListItem(row, "https://image.example/main.jpg")).thenReturn(item);
 
@@ -112,10 +103,8 @@ class GiftQueryServiceTest {
     void getSentGiftDetail_mapsProductImageUrl() {
         GiftQueryRow row = row();
         GiftSentDetailResponse response = mock(GiftSentDetailResponse.class);
-        ProductImageProjection image = new ProductImageProjection(3L, "products/3/main.jpg");
         when(giftQueryRepository.findSentGiftDetail(10L, 1L)).thenReturn(Optional.of(row));
-        when(productImageRepository.findThumbnailCandidates(List.of(3L))).thenReturn(List.of(image));
-        when(productThumbnailMapper.mapUrls(List.of(3L), List.of(image)))
+        when(productQueryService.findThumbnailUrls(List.of(3L)))
                 .thenReturn(Map.of(3L, "https://image.example/main.jpg"));
         when(responseMapper.toSentDetail(row, "https://image.example/main.jpg")).thenReturn(response);
 
@@ -128,8 +117,7 @@ class GiftQueryServiceTest {
         GiftQueryRow row = row();
         GiftReceivedDetailResponse response = mock(GiftReceivedDetailResponse.class);
         when(giftQueryRepository.findReceivedGiftDetail(10L, 1L)).thenReturn(Optional.of(row));
-        when(productImageRepository.findThumbnailCandidates(List.of(3L))).thenReturn(List.of());
-        when(productThumbnailMapper.mapUrls(List.of(3L), List.of()))
+        when(productQueryService.findThumbnailUrls(List.of(3L)))
                 .thenReturn(Collections.singletonMap(3L, null));
         when(responseMapper.toReceivedDetail(row, null)).thenReturn(response);
 
