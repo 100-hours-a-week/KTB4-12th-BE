@@ -3,8 +3,8 @@ package com.gift.gift.domain.user.controller;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -46,5 +46,27 @@ class UserProfileSecurityTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code")
                         .value("UNAUTHORIZED"));
+    }
+
+    @Test
+    @DisplayName("Access Token 없이 온보딩을 완료하면 401을 반환한다")
+    void completeOnboarding_returnsUnauthorizedWithoutToken()
+            throws Exception {
+        mockMvc.perform(
+                        patch("/users/me/onboarding")
+                                .contentType(APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "completed": true
+                                        }
+                                        """)
+                )
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message")
+                        .value("로그인이 필요합니다."))
+                .andExpect(jsonPath("$.error.code")
+                        .value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.error.details")
+                        .doesNotExist());
     }
 }
