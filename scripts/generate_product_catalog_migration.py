@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Generate V10 catalog seed SQL from the checked-in product data package."""
+
+from __future__ import annotations
+
+import json
+import random
+from datetime import datetime, timedelta
+from pathlib import Path
+
+
+CATALOG_VERSION = "product-catalog-20260922-v1"
+TAXONOMY_VERSION = "2026-09-15.final57"
+S3_IMAGE_PREFIX = "test/products"
+DEFAULT_STOCK_QUANTITY = 100
+BATCH_SIZE = 200
+RANDOM_SEED = 20260922
+PRODUCT_CREATED_FROM = datetime(2025, 1, 1, 0, 0, 0)
+PRODUCT_UPDATED_UNTIL = datetime(2026, 9, 21, 23, 59, 59)
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = BACKEND_ROOT.parent
+DATA_ROOT = WORKSPACE_ROOT / "products-data" / "data"
+OUTPUT = (
+    BACKEND_ROOT
+    / "src/main/resources/db/seed/V10__seed_product_catalog.sql"
+)
+
+
+def sql_string(value: str | None) -> str:
+    if value is None:
+        return "NULL"
+    escaped = value.replace("\\", "\\\\").replace("'", "''")
+    return f"'{escaped}'"
+
+
+def batched(values: list[str], size: int = BATCH_SIZE):
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
+
+
+def append_insert(
+    lines: list[str],
+    table: str,
+    columns: str,
+    values: list[str],
+) -> None:
+    for batch in batched(values):
+        lines.append(f"INSERT INTO {table} ({columns}) VALUES")
+        lines.append(",\n".join(batch) + ";")
+        lines.append("")
+
+
+def main() -> None:
+    randomizer = random.Random(RANDOM_SEED)
+    category_document = json.loads(
+        (DATA_ROOT / "categories.json").read_text(encoding="utf-8")
+    )
+    categories = category_document["categories"]
+    if category_document["taxonomyVersion"] != TAXONOMY_VERSION:
+        raise ValueError("Unexpected taxonomy version")
+
+    products = [
+        json.loads(line)
+        for line in (DATA_ROOT / "products.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assets = {
+        asset["assetId"]: asset
+        for asset in json.loads(
+            (DATA_ROOT / "image-assets.json").read_text(encoding="utf-8")
+        )["assets"]
+    }
+
+    if len(categories) != 67:
+        raise ValueError(f"Expected 67 categories, got {len(categories)}")
+    if len(products) != 4231:
+        raise ValueError(f"Expected 4231 products, got {len(products)}")
+
+    category_id_by_source = {
+        category["sourceCategoryId"]: index
+        for index, category in enumerate(categories, start=1)
+    }
+
+    category_rows: list[str] = []
+    for category in categories:
+        category_id = category_id_by_source[category["sourceCategoryId"]]
+        parent_source_id = category["parentSourceCategoryId"]
+        parent_id = (
+            "NULL"
+            if parent_source_id is None
+            else str(category_id_by_source[parent_source_id])
+        )
+        category_rows.append(
+            "(" 
+            f"{category_id}, {parent_id}, {sql_string(category['name'])}, "
+            "NULL, NOW(6), NOW(6))"
+        )
+
+    product_rows: list[str] = []
+    image_rows: list[str] = []
+    for product_id, product in enumerate(products, start=1):
+        category_id = category_id_by_source[product["sourceCategoryId"]]
+        created_range_seconds = int(
+            (PRODUCT_UPDATED_UNTIL - PRODUCT_CREATED_FROM).total_seconds()
+        )
+        created_at = PRODUCT_CREATED_FROM + timedelta(
+            seconds=randomizer.randint(0, created_range_seconds)
+        )
+        updated_range_seconds = int(
+            (PRODUCT_UPDATED_UNTIL - created_at).total_seconds()
+        )
+        updated_at = created_at + timedelta(
+            seconds=randomizer.randint(0, updated_range_seconds)
+        )
+        views = randomizer.randint(100, 50_000)
+        sales = randomizer.randint(0, min(5_000, views))
+        created_at_sql = sql_string(created_at.strftime("%Y-%m-%d %H:%M:%S.%f"))
+        updated_at_sql = sql_string(updated_at.strftime("%Y-%m-%d %H:%M:%S.%f"))
+        product_rows.append(
+            "("
+            f"{product_id}, {category_id}, "
+            f"{sql_string(product['productName'])}, "
+            f"{sql_string(product['brandName'])}, "
+            f"{sql_string(product['description'])}, "
+            f"{product['unitPrice']}, {DEFAULT_STOCK_QUANTITY}, "
+            f"{views}, {sales}, NULL, {created_at_sql}, {updated_at_sql})"
+        )
+        product_images = product["images"]
+        if len(product_images) != 1:
+            raise ValueError(
+                f"Expected one image for {product['sourceProductId']}"
+            )
+        asset_id = product_images[0]["assetId"]
+        detail_path = assets[asset_id]["variants"]["detail"]["path"]
+        object_key = f"{S3_IMAGE_PREFIX}/{Path(detail_path).name}"
+        image_rows.append(
+            "("
+            f"{product_id}, {sql_string(object_key)}, 0, NULL, "
+            f"{created_at_sql}, {updated_at_sql})"
+        )
+
+    lines = [
+        "-- Generated by scripts/generate_product_catalog_migration.py",
+        "-- Source: products-data product-catalog-20260922-v1",
+        "-- All products receive the agreed demonstration stock quantity of 100.",
+        "-- Product views, sales, and timestamps are reproducible pseudo-random demo values.",
+        f"-- Random seed: {RANDOM_SEED}",
+        f"-- S3 image prefix: {S3_IMAGE_PREFIX}/",
+        "",
+        "START TRANSACTION;",
+        "",
+    ]
+    append_insert(
+        lines,
+        "categories",
+        "id, parent_id, name, deleted_at, created_at, updated_at",
+        category_rows,
+    )
+    append_insert(
+        lines,
+        "products",
+        "id, category_id, name, brand, description, price, quantity, views, sales, deleted_at, created_at, updated_at",
+        product_rows,
+    )
+    append_insert(
+        lines,
+        "product_images",
+        "product_id, object_key, sort_order, deleted_at, created_at, updated_at",
+        image_rows,
+    )
+    lines.extend(
+        [
+            "COMMIT;",
+            "",
+            "ALTER TABLE categories AUTO_INCREMENT = 68;",
+            "ALTER TABLE products AUTO_INCREMENT = 4232;",
+            "ALTER TABLE product_images AUTO_INCREMENT = 4232;",
+            "",
+        ]
+    )
+
+    OUTPUT.write_text("\n".join(lines), encoding="utf-8")
+    print(
+        f"Generated {OUTPUT} with {len(categories)} categories, "
+        f"{len(products)} products, and {len(image_rows)} image mappings."
+    )
+
+
+if __name__ == "__main__":
+    main()
