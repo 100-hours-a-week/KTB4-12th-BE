@@ -8,7 +8,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 
-import com.gift.gift.domain.user.exception.LoginRateLimitExceededException;
+import com.gift.gift.domain.auth.exception.LoginRateLimitExceededException;
+import com.gift.gift.domain.auth.service.LoginRateLimiter;
+import com.gift.gift.domain.auth.service.LoginRateLimitTransactionService;
 import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
 import com.gift.gift.domain.auth.support.RateLimitIdentifierHasher;
 import com.gift.gift.global.exception.BusinessException;

@@ -12,7 +12,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.gift.gift.domain.user.service.AuthenticationDataCleanupTransactionService;
+import com.gift.gift.domain.auth.scheduler.AuthenticationDataCleanupScheduler;
+import com.gift.gift.domain.auth.service.AuthenticationDataCleanupTransactionService;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.Mockito.times;

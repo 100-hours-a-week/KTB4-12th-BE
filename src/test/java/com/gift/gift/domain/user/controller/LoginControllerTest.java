@@ -10,9 +10,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.gift.gift.domain.user.exception.LoginRateLimitExceededException;
-import com.gift.gift.domain.user.service.LoginRateLimiter;
-import com.gift.gift.domain.user.service.LoginService;
+import com.gift.gift.domain.auth.exception.LoginRateLimitExceededException;
+import com.gift.gift.domain.auth.service.LoginRateLimiter;
+import com.gift.gift.domain.auth.service.LoginService;
 import com.gift.gift.domain.auth.support.LoginResult;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.gift.gift.domain.auth.dto.request.LoginRequest;
 import com.gift.gift.support.TestValidatorFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

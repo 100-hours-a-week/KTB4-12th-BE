@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.service;
+package com.gift.gift.domain.auth.service;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import com.gift.gift.domain.user.dto.request.LoginRequest;
+import com.gift.gift.domain.auth.dto.request.LoginRequest;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;

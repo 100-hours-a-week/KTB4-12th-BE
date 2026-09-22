@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.scheduler;
+package com.gift.gift.domain.auth.scheduler;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.gift.gift.domain.user.service.AuthenticationDataCleanupTransactionService;
+import com.gift.gift.domain.auth.service.AuthenticationDataCleanupTransactionService;
 
 @Slf4j
 @Component

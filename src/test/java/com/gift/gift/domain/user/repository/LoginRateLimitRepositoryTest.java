@@ -17,7 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.user.service.LoginRateLimitTransactionService;
+import com.gift.gift.domain.auth.service.LoginRateLimitTransactionService;
 import com.gift.gift.domain.auth.entity.LoginEmailFailureLimit;
 import com.gift.gift.domain.auth.entity.LoginIpRateLimit;
 import com.gift.gift.domain.auth.repository.LoginEmailFailureLimitRepository;

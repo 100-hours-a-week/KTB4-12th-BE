@@ -12,8 +12,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.gift.gift.domain.user.service.LogoutService;
-import com.gift.gift.domain.user.service.TokenRefreshService;
+import com.gift.gift.domain.auth.service.LogoutService;
+import com.gift.gift.domain.auth.service.TokenRefreshService;
 import com.gift.gift.domain.auth.support.TokenRefreshResult;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;

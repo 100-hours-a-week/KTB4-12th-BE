@@ -23,6 +23,20 @@ class AuthUserPackageStructureTest {
         assertPresent("com.gift.gift.domain.auth.support.RateLimitIdentifierHasher");
     }
 
+    @Test
+    @DisplayName("로그인과 인증 세션 애플리케이션 타입은 auth 도메인에 위치한다")
+    void authApplicationTypesBelongToAuthDomain() {
+        assertPresent("com.gift.gift.domain.auth.controller.LoginController");
+        assertPresent("com.gift.gift.domain.auth.controller.AuthSessionController");
+        assertPresent("com.gift.gift.domain.auth.service.LoginService");
+        assertPresent("com.gift.gift.domain.auth.service.LoginSessionService");
+        assertPresent("com.gift.gift.domain.auth.service.LogoutService");
+        assertPresent("com.gift.gift.domain.auth.service.TokenRefreshService");
+        assertPresent("com.gift.gift.domain.auth.service.LoginRateLimiter");
+        assertPresent("com.gift.gift.domain.auth.scheduler.AuthenticationDataCleanupScheduler");
+        assertPresent("com.gift.gift.domain.auth.web.LoginIpRateLimitInterceptor");
+    }
+
     private void assertPresent(String className) {
         assertThatCode(() -> Class.forName(className))
                 .doesNotThrowAnyException();

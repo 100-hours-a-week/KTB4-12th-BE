@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.controller;
+package com.gift.gift.domain.auth.controller;
 
 import jakarta.validation.Valid;
 
@@ -11,9 +11,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.gift.gift.domain.user.dto.request.LoginRequest;
-import com.gift.gift.domain.user.dto.response.LoginResponse;
-import com.gift.gift.domain.user.service.LoginService;
+import com.gift.gift.domain.auth.dto.request.LoginRequest;
+import com.gift.gift.domain.auth.dto.response.LoginResponse;
+import com.gift.gift.domain.auth.service.LoginService;
 import com.gift.gift.domain.auth.support.LoginResult;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.RefreshCookieProvider;

@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.dto.response;
+package com.gift.gift.domain.auth.dto.response;
 
 import com.gift.gift.domain.auth.support.LoginResult;
 

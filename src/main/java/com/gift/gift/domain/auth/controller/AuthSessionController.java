@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.controller;
+package com.gift.gift.domain.auth.controller;
 
 import java.util.Map;
 
@@ -10,9 +10,9 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.gift.gift.domain.user.dto.response.TokenRefreshResponse;
-import com.gift.gift.domain.user.service.LogoutService;
-import com.gift.gift.domain.user.service.TokenRefreshService;
+import com.gift.gift.domain.auth.dto.response.TokenRefreshResponse;
+import com.gift.gift.domain.auth.service.LogoutService;
+import com.gift.gift.domain.auth.service.TokenRefreshService;
 import com.gift.gift.domain.auth.support.TokenRefreshResult;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.RefreshCookieProvider;

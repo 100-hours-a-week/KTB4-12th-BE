@@ -18,6 +18,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.auth.entity.UserSession;
 import com.gift.gift.domain.auth.repository.UserSessionRepository;
+import com.gift.gift.domain.auth.service.LogoutService;
 import com.gift.gift.global.security.RefreshTokenProvider;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

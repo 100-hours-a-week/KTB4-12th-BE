@@ -16,7 +16,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.gift.gift.domain.user.dto.request.LoginRequest;
+import com.gift.gift.domain.auth.dto.request.LoginRequest;
+import com.gift.gift.domain.auth.service.LoginRateLimiter;
+import com.gift.gift.domain.auth.service.LoginService;
+import com.gift.gift.domain.auth.service.LoginSessionService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;
