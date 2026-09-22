@@ -17,14 +17,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.gift.gift.domain.preference.dto.response.DislikeCategoryItemResponse;
 import com.gift.gift.domain.preference.dto.response.DislikeCategoryListResponse;
 import com.gift.gift.domain.preference.exception.PreferenceException;
-import com.gift.gift.domain.preference.service.PreferenceQueryService;
+import com.gift.gift.domain.preference.service.PreferenceService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -33,18 +30,18 @@ class PreferenceControllerTest {
 
     private static final Long USER_ID = 1L;
 
-    private PreferenceQueryService preferenceQueryService;
+    private PreferenceService preferenceService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        preferenceQueryService =
-                mock(PreferenceQueryService.class);
+        preferenceService =
+                mock(PreferenceService.class);
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(
                         new PreferenceController(
-                                preferenceQueryService
+                                preferenceService
                         )
                 )
                 .setCustomArgumentResolvers(
@@ -94,7 +91,7 @@ class PreferenceControllerTest {
                         )
                 ));
 
-        when(preferenceQueryService.getDislikeCategories(USER_ID))
+        when(preferenceService.getDislikeCategories(USER_ID))
                 .thenReturn(response);
 
         mockMvc.perform(
@@ -127,15 +124,15 @@ class PreferenceControllerTest {
                 ).value(false))
                 .andExpect(jsonPath("$.error").doesNotExist());
 
-        verify(preferenceQueryService)
+        verify(preferenceService)
                 .getDislikeCategories(USER_ID);
-        verifyNoMoreInteractions(preferenceQueryService);
+        verifyNoMoreInteractions(preferenceService);
     }
 
     @Test
     @DisplayName("선택 가능한 대분류가 없으면 빈 배열을 반환한다")
     void getDislikeCategories_returnsEmptyCategories() throws Exception {
-        when(preferenceQueryService.getDislikeCategories(USER_ID))
+        when(preferenceService.getDislikeCategories(USER_ID))
                 .thenReturn(
                         DislikeCategoryListResponse.from(List.of())
                 );
@@ -153,14 +150,14 @@ class PreferenceControllerTest {
                 .andExpect(jsonPath("$.error")
                         .doesNotExist());
 
-        verify(preferenceQueryService)
+        verify(preferenceService)
                 .getDislikeCategories(USER_ID);
     }
 
     @Test
     @DisplayName("사용자를 찾을 수 없으면 404 USER_NOT_FOUND를 반환한다")
     void getDislikeCategories_returnsUserNotFound() throws Exception {
-        when(preferenceQueryService.getDislikeCategories(USER_ID))
+        when(preferenceService.getDislikeCategories(USER_ID))
                 .thenThrow(new PreferenceException(
                         ErrorCode.USER_NOT_FOUND
                 ));
@@ -185,7 +182,7 @@ class PreferenceControllerTest {
     @DisplayName("예상하지 못한 오류는 500 공통 오류 응답을 반환한다")
     void getDislikeCategories_returnsInternalServerError()
             throws Exception {
-        when(preferenceQueryService.getDislikeCategories(USER_ID))
+        when(preferenceService.getDislikeCategories(USER_ID))
                 .thenThrow(new IllegalStateException(
                         "unexpected error"
                 ));
