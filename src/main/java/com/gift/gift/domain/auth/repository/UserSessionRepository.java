@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.repository;
+package com.gift.gift.domain.auth.repository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -9,7 +9,7 @@ import jakarta.persistence.QueryHint;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
-import com.gift.gift.domain.user.entity.UserSession;
+import com.gift.gift.domain.auth.entity.UserSession;
 
 public interface UserSessionRepository
         extends JpaRepository<UserSession, Long> {

@@ -7,8 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.entity.UserSession;
-import com.gift.gift.domain.user.repository.UserSessionRepository;
+import com.gift.gift.domain.auth.entity.UserSession;
+import com.gift.gift.domain.auth.repository.UserSessionRepository;
 import com.gift.gift.global.security.RefreshTokenProvider;
 
 @Service

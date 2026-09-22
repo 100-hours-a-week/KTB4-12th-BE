@@ -1,6 +1,6 @@
 package com.gift.gift.domain.user.dto.response;
 
-import com.gift.gift.domain.user.support.LoginResult;
+import com.gift.gift.domain.auth.support.LoginResult;
 
 public record LoginResponse(
         String accessToken,

@@ -7,9 +7,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.user.repository.LoginEmailFailureLimitRepository;
-import com.gift.gift.domain.user.repository.LoginIpRateLimitRepository;
-import com.gift.gift.domain.user.repository.UserSessionRepository;
+import com.gift.gift.domain.auth.repository.LoginEmailFailureLimitRepository;
+import com.gift.gift.domain.auth.repository.LoginIpRateLimitRepository;
+import com.gift.gift.domain.auth.repository.UserSessionRepository;
 
 @Service
 @RequiredArgsConstructor

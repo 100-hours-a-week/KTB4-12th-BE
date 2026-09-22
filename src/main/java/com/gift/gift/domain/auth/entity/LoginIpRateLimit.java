@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.entity;
+package com.gift.gift.domain.auth.entity;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -19,7 +19,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import com.gift.gift.domain.user.support.LoginRateLimitDecision;
+import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
 import com.gift.gift.global.common.BaseTimeEntity;
 
 @Getter

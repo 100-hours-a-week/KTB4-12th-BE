@@ -16,8 +16,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.entity.UserSession;
-import com.gift.gift.domain.user.repository.UserSessionRepository;
+import com.gift.gift.domain.auth.entity.UserSession;
+import com.gift.gift.domain.auth.repository.UserSessionRepository;
 import com.gift.gift.global.security.RefreshTokenProvider;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

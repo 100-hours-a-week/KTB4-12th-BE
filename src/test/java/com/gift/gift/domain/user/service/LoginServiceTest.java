@@ -20,7 +20,7 @@ import com.gift.gift.domain.user.dto.request.LoginRequest;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.domain.user.support.LoginResult;
+import com.gift.gift.domain.auth.support.LoginResult;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.security.AccessTokenProvider;

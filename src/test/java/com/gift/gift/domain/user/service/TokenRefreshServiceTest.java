@@ -19,9 +19,9 @@ import org.springframework.dao.QueryTimeoutException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.entity.UserSession;
-import com.gift.gift.domain.user.repository.UserSessionRepository;
-import com.gift.gift.domain.user.support.TokenRefreshResult;
+import com.gift.gift.domain.auth.entity.UserSession;
+import com.gift.gift.domain.auth.repository.UserSessionRepository;
+import com.gift.gift.domain.auth.support.TokenRefreshResult;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.security.AccessTokenProvider;

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.gift.gift.domain.user.dto.response.TokenRefreshResponse;
 import com.gift.gift.domain.user.service.LogoutService;
 import com.gift.gift.domain.user.service.TokenRefreshService;
-import com.gift.gift.domain.user.support.TokenRefreshResult;
+import com.gift.gift.domain.auth.support.TokenRefreshResult;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.RefreshCookieProvider;
 

@@ -8,11 +8,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.user.entity.LoginEmailFailureLimit;
-import com.gift.gift.domain.user.entity.LoginIpRateLimit;
-import com.gift.gift.domain.user.repository.LoginEmailFailureLimitRepository;
-import com.gift.gift.domain.user.repository.LoginIpRateLimitRepository;
-import com.gift.gift.domain.user.support.LoginRateLimitDecision;
+import com.gift.gift.domain.auth.entity.LoginEmailFailureLimit;
+import com.gift.gift.domain.auth.entity.LoginIpRateLimit;
+import com.gift.gift.domain.auth.repository.LoginEmailFailureLimitRepository;
+import com.gift.gift.domain.auth.repository.LoginIpRateLimitRepository;
+import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
 
 @Service
 @RequiredArgsConstructor

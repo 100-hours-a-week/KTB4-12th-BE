@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.support;
+package com.gift.gift.domain.auth.support;
 
 public record LoginRateLimitDecision(
         boolean permitted,

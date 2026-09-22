@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.repository;
+package com.gift.gift.domain.auth.repository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -11,7 +11,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.gift.gift.domain.user.entity.LoginEmailFailureLimit;
+import com.gift.gift.domain.auth.entity.LoginEmailFailureLimit;
 
 public interface LoginEmailFailureLimitRepository
         extends JpaRepository<LoginEmailFailureLimit, String> {

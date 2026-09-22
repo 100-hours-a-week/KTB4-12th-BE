@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.support;
+package com.gift.gift.domain.auth.support;
 
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -10,6 +10,8 @@ import javax.crypto.SecretKey;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+
+import com.gift.gift.domain.user.support.EmailNormalizer;
 
 @Component
 public class RateLimitIdentifierHasher {

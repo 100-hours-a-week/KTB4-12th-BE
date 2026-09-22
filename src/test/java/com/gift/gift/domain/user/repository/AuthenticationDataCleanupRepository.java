@@ -12,6 +12,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.auth.repository.LoginEmailFailureLimitRepository;
+import com.gift.gift.domain.auth.repository.LoginIpRateLimitRepository;
+import com.gift.gift.domain.auth.repository.UserSessionRepository;
 import com.gift.gift.domain.user.entity.User;
 
 import static org.assertj.core.api.Assertions.assertThat;

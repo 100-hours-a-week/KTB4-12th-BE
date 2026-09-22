@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.entity;
+package com.gift.gift.domain.auth.entity;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -24,6 +24,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.global.common.BaseTimeEntity;
 
 @Getter

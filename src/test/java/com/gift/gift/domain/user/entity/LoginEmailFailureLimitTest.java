@@ -5,7 +5,8 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import com.gift.gift.domain.user.support.LoginRateLimitDecision;
+import com.gift.gift.domain.auth.entity.LoginEmailFailureLimit;
+import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

@@ -18,7 +18,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.user.service.LoginRateLimitTransactionService;
-import com.gift.gift.domain.user.support.LoginRateLimitDecision;
+import com.gift.gift.domain.auth.entity.LoginEmailFailureLimit;
+import com.gift.gift.domain.auth.entity.LoginIpRateLimit;
+import com.gift.gift.domain.auth.repository.LoginEmailFailureLimitRepository;
+import com.gift.gift.domain.auth.repository.LoginIpRateLimitRepository;
+import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

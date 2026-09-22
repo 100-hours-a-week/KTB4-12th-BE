@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.gift.gift.domain.user.dto.request.LoginRequest;
 import com.gift.gift.domain.user.dto.response.LoginResponse;
 import com.gift.gift.domain.user.service.LoginService;
-import com.gift.gift.domain.user.support.LoginResult;
+import com.gift.gift.domain.auth.support.LoginResult;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.RefreshCookieProvider;
 

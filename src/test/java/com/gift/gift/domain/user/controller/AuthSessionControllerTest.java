@@ -14,7 +14,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.gift.gift.domain.user.service.LogoutService;
 import com.gift.gift.domain.user.service.TokenRefreshService;
-import com.gift.gift.domain.user.support.TokenRefreshResult;
+import com.gift.gift.domain.auth.support.TokenRefreshResult;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.security.RefreshCookieProvider;

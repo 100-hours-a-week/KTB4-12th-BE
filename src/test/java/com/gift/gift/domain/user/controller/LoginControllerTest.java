@@ -13,7 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.gift.gift.domain.user.exception.LoginRateLimitExceededException;
 import com.gift.gift.domain.user.service.LoginRateLimiter;
 import com.gift.gift.domain.user.service.LoginService;
-import com.gift.gift.domain.user.support.LoginResult;
+import com.gift.gift.domain.auth.support.LoginResult;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 
