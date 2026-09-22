@@ -10,9 +10,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.gift.gift.domain.user.dto.request.CompleteOnboardingRequest;
 import com.gift.gift.domain.user.dto.request.UpdateUserProfileRequest;
+import com.gift.gift.domain.user.dto.response.CompleteOnboardingResponse;
 import com.gift.gift.domain.user.dto.response.UpdateUserProfileResponse;
 import com.gift.gift.domain.user.dto.response.UserProfileResponse;
+import com.gift.gift.domain.user.service.OnboardingService;
 import com.gift.gift.domain.user.service.UserProfileService;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
@@ -23,6 +26,7 @@ import com.gift.gift.global.security.CurrentUserId;
 public class UserProfileController {
 
     private final UserProfileService userProfileService;
+    private final OnboardingService onboardingService;
 
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<UserProfileResponse>>
@@ -55,6 +59,23 @@ public class UserProfileController {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "사용자 정보를 수정했습니다.",
+                        response
+                )
+        );
+    }
+
+    @PatchMapping("/me/onboarding")
+    public ResponseEntity<ApiResponse<CompleteOnboardingResponse>>
+    completeOnboarding(
+            @CurrentUserId Long userId,
+            @Valid @RequestBody CompleteOnboardingRequest request
+    ) {
+        CompleteOnboardingResponse response =
+                onboardingService.completeOnboarding(userId);
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "최초 로그인 설정을 완료했습니다.",
                         response
                 )
         );
