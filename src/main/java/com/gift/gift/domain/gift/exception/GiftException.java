@@ -5,6 +5,10 @@ import com.gift.gift.global.exception.ErrorCode;
 
 public class GiftException extends BusinessException {
 
+    public GiftException(GiftErrorCode errorCode) {
+        super(errorCode.errorCode(), errorCode.message());
+    }
+
     public GiftException(ErrorCode errorCode) {
         super(errorCode);
     }
