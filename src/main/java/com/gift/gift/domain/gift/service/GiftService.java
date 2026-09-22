@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +15,8 @@ import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.gift.support.GiftPolicy;
+import com.gift.gift.domain.preference.dto.response.PreferenceWarningResult;
+import com.gift.gift.domain.preference.service.PreferenceQueryService;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.domain.user.service.UserQueryService;
@@ -21,24 +24,14 @@ import com.gift.gift.domain.user.support.ActiveUserSummary;
 import com.gift.gift.global.exception.ErrorCode;
 
 @Service
+@RequiredArgsConstructor
 public class GiftService {
 
     private final GiftHistoryRepository giftHistoryRepository;
     private final UserQueryService userQueryService;
     private final FriendQueryService friendQueryService;
     private final ProductQueryService productQueryService;
-
-    public GiftService(
-            GiftHistoryRepository giftHistoryRepository,
-            UserQueryService userQueryService,
-            FriendQueryService friendQueryService,
-            ProductQueryService productQueryService
-    ) {
-        this.giftHistoryRepository = giftHistoryRepository;
-        this.userQueryService = userQueryService;
-        this.friendQueryService = friendQueryService;
-        this.productQueryService = productQueryService;
-    }
+    private final PreferenceQueryService preferenceQueryService;
 
     @Transactional(readOnly = true)
     public GiftPreflightResponse preflight(Long senderId, GiftPreflightRequest request) {
@@ -60,6 +53,9 @@ public class GiftService {
             throw new GiftException(ErrorCode.INSUFFICIENT_STOCK);
         }
 
+        PreferenceWarningResult preferenceWarningResult = preferenceQueryService.findMatchingWarning(recipient.userId(),
+                product.getCategory().getId()).orElse(null);
+
         BigDecimal totalPrice = product.getPrice().multiply(BigDecimal.valueOf(request.quantity()));
         int maxOrderQuantity = Math.min(product.getQuantity(), GiftPolicy.MAX_QUANTITY);
 
@@ -72,7 +68,10 @@ public class GiftService {
                         totalPrice,
                         maxOrderQuantity
                 ),
-                null
+                preferenceWarningResult == null ? null : new GiftPreflightResponse.PreferenceWarning(
+                        preferenceWarningResult.categoryId(),
+                        preferenceWarningResult.categoryName()
+                )
         );
     }
 

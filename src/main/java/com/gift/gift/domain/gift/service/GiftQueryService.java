@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
 
 @Service
+@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class GiftQueryService {
 
@@ -33,20 +35,6 @@ public class GiftQueryService {
     private final GiftPageAssembler pageAssembler;
     private final GiftResponseMapper responseMapper;
     private final ProductQueryService productQueryService;
-
-    public GiftQueryService(
-            GiftQueryRepository giftQueryRepository,
-            OpaqueCursorCodec cursorCodec,
-            GiftPageAssembler pageAssembler,
-            GiftResponseMapper responseMapper,
-            ProductQueryService productQueryService
-    ) {
-        this.giftQueryRepository = giftQueryRepository;
-        this.cursorCodec = cursorCodec;
-        this.pageAssembler = pageAssembler;
-        this.responseMapper = responseMapper;
-        this.productQueryService = productQueryService;
-    }
 
     public CursorPageResponse<SentGiftListItem> getSentGifts(Long userId, String rawCursor) {
         GiftPage page = pageAssembler.assemble(giftQueryRepository.findSentGifts(userId, decode(rawCursor)));

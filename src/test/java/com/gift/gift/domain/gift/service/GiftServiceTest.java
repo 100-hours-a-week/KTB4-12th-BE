@@ -14,6 +14,9 @@ import com.gift.gift.domain.gift.dto.response.GiftPreflightResponse;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
+import com.gift.gift.domain.preference.dto.response.PreferenceWarningResult;
+import com.gift.gift.domain.preference.service.PreferenceQueryService;
+import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.domain.user.service.UserQueryService;
@@ -30,6 +33,7 @@ class GiftServiceTest {
     private UserQueryService userQueryService;
     private FriendQueryService friendQueryService;
     private ProductQueryService productQueryService;
+    private PreferenceQueryService preferenceQueryService;
     private GiftService giftService;
 
     @BeforeEach
@@ -38,11 +42,13 @@ class GiftServiceTest {
         userQueryService = mock(UserQueryService.class);
         friendQueryService = mock(FriendQueryService.class);
         productQueryService = mock(ProductQueryService.class);
+        preferenceQueryService = mock(PreferenceQueryService.class);
         giftService = new GiftService(
                 giftHistoryRepository,
                 userQueryService,
                 friendQueryService,
-                productQueryService
+                productQueryService,
+                preferenceQueryService
         );
     }
 
@@ -52,7 +58,9 @@ class GiftServiceTest {
         Long senderId = 1L;
         Long recipientId = 2L;
         Long productId = 3L;
+        Long categoryId = 9L;
         Product product = mock(Product.class);
+        Category category = mock(Category.class);
         GiftPreflightRequest request = new GiftPreflightRequest(productId, recipientId, 2);
 
         when(userQueryService.findActiveUser(recipientId))
@@ -62,6 +70,10 @@ class GiftServiceTest {
         when(product.getId()).thenReturn(productId);
         when(product.getPrice()).thenReturn(BigDecimal.valueOf(32_000));
         when(product.getQuantity()).thenReturn(15);
+        when(product.getCategory()).thenReturn(category);
+        when(category.getId()).thenReturn(categoryId);
+        when(preferenceQueryService.findMatchingWarning(recipientId, categoryId))
+                .thenReturn(Optional.empty());
 
         GiftPreflightResponse response = giftService.preflight(senderId, request);
 
@@ -76,10 +88,40 @@ class GiftServiceTest {
         ));
         assertThat(response.preferenceWarning()).isNull();
 
-        var order = inOrder(userQueryService, friendQueryService, productQueryService);
+        var order = inOrder(userQueryService, friendQueryService, productQueryService, preferenceQueryService);
         order.verify(userQueryService).findActiveUser(recipientId);
         order.verify(friendQueryService).areFriends(senderId, recipientId);
         order.verify(productQueryService).findAvailableProduct(productId);
+        order.verify(preferenceQueryService).findMatchingWarning(recipientId, categoryId);
+    }
+
+    @Test
+    @DisplayName("수신자가 상품 카테고리를 비선호로 등록했으면 경고 정보를 포함한다")
+    void preflight_includesPreferenceWarning_whenRecipientDislikesProductCategory() {
+        Long senderId = 1L;
+        Long recipientId = 2L;
+        Long productId = 3L;
+        Long categoryId = 9L;
+        Product product = mock(Product.class);
+        Category category = mock(Category.class);
+        GiftPreflightRequest request = new GiftPreflightRequest(productId, recipientId, 2);
+
+        when(userQueryService.findActiveUser(recipientId))
+                .thenReturn(Optional.of(new ActiveUserSummary(recipientId, "수신자")));
+        when(friendQueryService.areFriends(senderId, recipientId)).thenReturn(true);
+        when(productQueryService.findAvailableProduct(productId)).thenReturn(Optional.of(product));
+        when(product.getId()).thenReturn(productId);
+        when(product.getPrice()).thenReturn(BigDecimal.valueOf(32_000));
+        when(product.getQuantity()).thenReturn(15);
+        when(product.getCategory()).thenReturn(category);
+        when(category.getId()).thenReturn(categoryId);
+        when(preferenceQueryService.findMatchingWarning(recipientId, categoryId))
+                .thenReturn(Optional.of(new PreferenceWarningResult(categoryId, "패션")));
+
+        GiftPreflightResponse response = giftService.preflight(senderId, request);
+
+        assertThat(response.preferenceWarning())
+                .isEqualTo(new GiftPreflightResponse.PreferenceWarning(categoryId, "패션"));
     }
 
     @Test
@@ -89,7 +131,7 @@ class GiftServiceTest {
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.INVALID_REQUEST);
 
-        verifyNoInteractions(userQueryService, friendQueryService, productQueryService);
+        verifyNoInteractions(userQueryService, friendQueryService, productQueryService, preferenceQueryService);
     }
 
     @Test
@@ -100,7 +142,7 @@ class GiftServiceTest {
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.RECIPIENT_NOT_FOUND);
 
-        verifyNoInteractions(friendQueryService, productQueryService);
+        verifyNoInteractions(friendQueryService, productQueryService, preferenceQueryService);
     }
 
     @Test
@@ -113,7 +155,7 @@ class GiftServiceTest {
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.RECIPIENT_NOT_FRIEND);
 
-        verifyNoInteractions(productQueryService);
+        verifyNoInteractions(productQueryService, preferenceQueryService);
     }
 
     @Test
@@ -136,6 +178,8 @@ class GiftServiceTest {
         when(product.getQuantity()).thenReturn(2);
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.INSUFFICIENT_STOCK);
+
+        verifyNoInteractions(preferenceQueryService);
     }
 
     @Test
