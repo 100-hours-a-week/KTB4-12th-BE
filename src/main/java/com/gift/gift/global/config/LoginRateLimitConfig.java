@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import com.gift.gift.domain.user.support.LoginRateLimitProperties;
+import com.gift.gift.domain.auth.support.LoginRateLimitProperties;
 
 @Configuration
 @EnableConfigurationProperties(

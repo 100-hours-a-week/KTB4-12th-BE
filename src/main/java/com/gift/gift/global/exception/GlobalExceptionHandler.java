@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-import com.gift.gift.domain.user.exception.LoginRateLimitExceededException;
+import com.gift.gift.domain.auth.exception.LoginRateLimitExceededException;
 import com.gift.gift.global.response.ApiResponse;
 
 @Slf4j
