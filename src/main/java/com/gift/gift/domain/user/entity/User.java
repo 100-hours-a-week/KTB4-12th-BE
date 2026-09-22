@@ -2,6 +2,7 @@ package com.gift.gift.domain.user.entity;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -99,6 +100,17 @@ public class User extends BaseTimeEntity {
 
     public boolean isActive() {
         return status == UserStatus.ACTIVE && getDeletedAt() == null;
+    }
+
+    public void updateBirth(LocalDate birth) {
+        this.birth = Objects.requireNonNull(
+                birth,
+                "birth must not be null"
+        );
+    }
+
+    public void updateBirthdayPublic(boolean birthdayPublic) {
+        this.isBirthdayPublic = birthdayPublic;
     }
 
     public boolean completeOnboarding() {
