@@ -63,9 +63,6 @@ public record SignupRequest(
         }
     }
 
-    // 회원가입 DTO의 비밀번호와 개인정보가 로그에 노출되지 않도록 toString() 재정의
-    // record는 기본적으로 toString()이 필드 값을 포함하기 때문에 로그에 실제 비밀번호가 노출 될 수 있음.
-    // ex) SignupRequest[email=user@example.com, password=실제비밀번호, ...]
     @Override
     public String toString() {
         return "SignupRequest[REDACTED]";
