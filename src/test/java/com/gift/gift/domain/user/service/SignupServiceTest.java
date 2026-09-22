@@ -17,6 +17,7 @@ import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
 import com.gift.gift.domain.user.entity.Term;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.exception.SignupTermsConfigurationException;
+import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.TermConsentRepository;
 import com.gift.gift.domain.user.repository.TermRepository;
 import com.gift.gift.domain.user.repository.UserRepository;
@@ -64,8 +65,8 @@ class SignupServiceTest {
     void signup_rejectsOutdatedVersion() {
         when(termRepository.findCurrentRequiredTerms()).thenReturn(List.of(term));
 
-        BusinessException exception = assertThrows(
-                BusinessException.class,
+        UserException exception = assertThrows(
+                UserException.class,
                 () -> service.signup(request("2000-01-01", 2, true))
         );
 
