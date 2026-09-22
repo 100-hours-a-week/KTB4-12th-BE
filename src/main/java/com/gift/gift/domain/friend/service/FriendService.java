@@ -3,14 +3,24 @@ package com.gift.gift.domain.friend.service;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.friend.dto.request.FriendCreateRequest;
+import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
+import com.gift.gift.domain.friend.entity.Friend;
 import com.gift.gift.domain.friend.query.FriendPage;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
+import com.gift.gift.domain.friend.repository.FriendRepository;
 import com.gift.gift.domain.friend.support.FriendCursor;
+import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.domain.user.entity.UserStatus;
+import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.global.exception.BusinessException;
+import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.InvalidCursorException;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -21,6 +31,8 @@ import com.gift.gift.global.pagination.OpaqueCursorCodec;
 public class FriendService {
 
     private final FriendQueryRepository friendQueryRepository;
+    private final FriendRepository friendRepository;
+    private final UserRepository userRepository;
     private final OpaqueCursorCodec cursorCodec;
     private final FriendPageAssembler pageAssembler;
 
@@ -32,6 +44,125 @@ public class FriendService {
                 .toList();
 
         return CursorPageResponse.from(items, page.nextCursor(), page.hasNext());
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public FriendCreateResponse createFriend(
+            Long userId,
+            FriendCreateRequest request
+    ) {
+        Long friendUserId = request.friendUserId();
+
+        validateNotSelf(userId, friendUserId);
+
+        User user = findActiveUser(userId);
+        User friendUser = findActiveUser(friendUserId);
+
+        validateNotAlreadyFriend(userId, friendUserId);
+
+        saveFriend(user, friendUser);
+
+        return FriendCreateResponse.from(friendUser);
+    }
+
+    private void validateNotSelf(
+            Long userId,
+            Long friendUserId
+    ) {
+        if (userId.equals(friendUserId)) {
+            throw new BusinessException(
+                    ErrorCode.FRIEND_CANNOT_ADD_SELF
+            );
+        }
+    }
+
+    private User findActiveUser(Long userId) {
+        return userRepository
+                .findByIdAndStatusAndDeletedAtIsNull(
+                        userId,
+                        UserStatus.ACTIVE
+                )
+                .orElseThrow(() -> new BusinessException(
+                        ErrorCode.USER_NOT_FOUND
+                ));
+    }
+
+    private void validateNotAlreadyFriend(
+            Long userId,
+            Long friendUserId
+    ) {
+        boolean alreadyExists =
+                friendRepository
+                        .existsByUser_IdAndFriendUser_IdAndDeletedAtIsNull(
+                                userId,
+                                friendUserId
+                        );
+
+        if (alreadyExists) {
+            throw new BusinessException(
+                    ErrorCode.FRIEND_ALREADY_EXISTS
+            );
+        }
+    }
+
+    private void saveFriend(
+            User user,
+            User friendUser
+    ) {
+        try {
+            friendRepository.saveAndFlush(
+                    new Friend(user, friendUser)
+            );
+        } catch (DataIntegrityViolationException exception) {
+            if (isFriendUniqueConstraintViolation(exception)) {
+                throw new BusinessException(
+                        ErrorCode.FRIEND_ALREADY_EXISTS
+                );
+            }
+
+            throw exception;
+        }
+    }
+
+    private boolean isFriendUniqueConstraintViolation(
+            Throwable exception
+    ) {
+        Throwable current = exception;
+
+        while (current != null) {
+            if (current instanceof
+                    org.hibernate.exception.ConstraintViolationException violation) {
+
+                String constraintName =
+                        violation.getConstraintName();
+
+                if (constraintName == null) {
+                    return false;
+                }
+
+                String normalizedName =
+                        constraintName.replace("`", "");
+
+                int separatorIndex =
+                        normalizedName.lastIndexOf('.');
+
+                if (separatorIndex >= 0) {
+                    normalizedName =
+                            normalizedName.substring(
+                                    separatorIndex + 1
+                            );
+                }
+
+                return "uk_friends_user_friend_user"
+                        .equalsIgnoreCase(normalizedName)
+                        && violation.getSQLException()
+                        .getErrorCode() == 1062;
+            }
+
+            current = current.getCause();
+        }
+
+        return false;
     }
 
     private FriendCursor decode(String rawCursor) {
