@@ -8,6 +8,7 @@ import jakarta.validation.ConstraintViolationException;
 
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import com.gift.gift.domain.user.exception.LoginRateLimitExceededException;
 import com.gift.gift.global.response.ApiResponse;
 
 @Slf4j
@@ -26,39 +28,84 @@ public class GlobalExceptionHandler {
 
     private static final String TRACE_ID_KEY = "traceId";
 
-    @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException exception) {
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValidException(
+            MethodArgumentNotValidException exception
+    ) {
+        List<ValidationDetail> details = exception.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .filter(this::shouldIncludeValidationDetail)
+                .map(this::toValidationDetail)
+                .distinct()
+                .sorted(Comparator.comparing(ValidationDetail::field)
+                        .thenComparing(detail -> detail.reason().name()))
+                .toList();
+
+        return requestError(ErrorCode.INVALID_REQUEST, details);
+    }
+
+    @ExceptionHandler(RequestValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleRequestValidationException(
+            RequestValidationException exception
+    ) {
+        return requestError(exception.getErrorCode(), List.of());
+    }
+
+    @ExceptionHandler(LoginRateLimitExceededException.class)
+    public ResponseEntity<ApiResponse<Void>>
+    handleLoginRateLimitExceededException(
+            LoginRateLimitExceededException exception
+    ) {
         ErrorCode errorCode = exception.getErrorCode();
         String traceId = resolveTraceId();
 
-        log.warn("Business exception occurred. traceId={}, code={}", traceId, errorCode.code());
+        log.warn(
+                "Login request rate limited. traceId={}, retryAfterSeconds={}",
+                traceId,
+                exception.getRetryAfterSeconds()
+        );
+
+        return ResponseEntity
+                .status(errorCode.status())
+                .header(
+                        HttpHeaders.RETRY_AFTER,
+                        Long.toString(
+                                exception.getRetryAfterSeconds()
+                        )
+                )
+                .body(
+                        ApiResponse.error(
+                                errorCode,
+                                errorCode.message(),
+                                traceId
+                        )
+                );
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBusinessException(
+            BusinessException exception
+    ) {
+        ErrorCode errorCode = exception.getErrorCode();
+        String traceId = resolveTraceId();
+
+        log.warn(
+                "Business exception occurred. traceId={}, code={}",
+                traceId,
+                errorCode.code()
+        );
 
         return ResponseEntity
                 .status(errorCode.status())
                 .body(ApiResponse.error(errorCode, exception.getMessage(), traceId));
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValidException(
-            MethodArgumentNotValidException exception
-    ) {
-        List<ApiResponse.ValidationDetail> details = exception.getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .filter(this::shouldIncludeValidationDetail)
-                .map(this::toValidationDetail)
-                .distinct()
-                .sorted(Comparator.comparing(ApiResponse.ValidationDetail::field))
-                .toList();
-
-        return invalidRequest(details);
-    }
-
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleConstraintViolationException(
             ConstraintViolationException exception
     ) {
-        return invalidRequest(List.of());
+        return requestError(ErrorCode.INVALID_REQUEST, List.of());
     }
 
     @ExceptionHandler(HandlerMethodValidationException.class)
@@ -69,7 +116,7 @@ public class GlobalExceptionHandler {
             return handleUnexpectedException(exception);
         }
 
-        return invalidRequest(List.of());
+        return requestError(ErrorCode.INVALID_REQUEST, List.of());
     }
 
     @ExceptionHandler({
@@ -78,7 +125,7 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException.class
     })
     public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(Exception exception) {
-        return invalidRequest(List.of());
+        return requestError(ErrorCode.INVALID_REQUEST, List.of());
     }
 
     @ExceptionHandler(Exception.class)
@@ -91,6 +138,29 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(errorCode.status())
                 .body(ApiResponse.error(errorCode, errorCode.message(), traceId));
+    }
+
+    private ResponseEntity<ApiResponse<Void>> requestError(
+            ErrorCode errorCode,
+            List<ValidationDetail> details
+    ) {
+        String traceId = resolveTraceId();
+
+        log.warn(
+                "Request rejected. traceId={}, code={}, detailCount={}",
+                traceId,
+                errorCode.code(),
+                details.size()
+        );
+
+        return ResponseEntity
+                .status(errorCode.status())
+                .body(ApiResponse.error(
+                        errorCode,
+                        errorCode.message(),
+                        traceId,
+                        details
+                ));
     }
 
     private boolean shouldIncludeValidationDetail(FieldError fieldError) {
@@ -109,19 +179,8 @@ public class GlobalExceptionHandler {
         return false;
     }
 
-    private ResponseEntity<ApiResponse<Void>> invalidRequest(List<ApiResponse.ValidationDetail> details) {
-        ErrorCode errorCode = ErrorCode.INVALID_REQUEST;
-        String traceId = resolveTraceId();
-
-        log.warn("Invalid request. traceId={}, detailCount={}", traceId, details.size());
-
-        return ResponseEntity
-                .status(errorCode.status())
-                .body(ApiResponse.error(errorCode, errorCode.message(), traceId, details));
-    }
-
-    private ApiResponse.ValidationDetail toValidationDetail(FieldError fieldError) {
-        return new ApiResponse.ValidationDetail(
+    private ValidationDetail toValidationDetail(FieldError fieldError) {
+        return new ValidationDetail(
                 fieldError.getField(),
                 ValidationErrorReason.valueOf(fieldError.getDefaultMessage())
         );
@@ -129,6 +188,7 @@ public class GlobalExceptionHandler {
 
     private String resolveTraceId() {
         String traceId = MDC.get(TRACE_ID_KEY);
+
         return traceId != null && !traceId.isBlank()
                 ? traceId
                 : UUID.randomUUID().toString().replace("-", "");

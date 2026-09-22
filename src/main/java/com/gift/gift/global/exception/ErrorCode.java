@@ -57,7 +57,21 @@ public enum ErrorCode {
     GIFT_NOT_FOUND(HttpStatus.NOT_FOUND, "선물 내역을 찾을 수 없습니다."),
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다."),
     REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 리뷰를 등록한 선물입니다."),
-    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "알림을 찾을 수 없습니다.");
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "알림을 찾을 수 없습니다."),
+
+    AUTHENTICATION_TEMPORARILY_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "인증 서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."
+    ),
+
+    CSRF_VALIDATION_FAILED(
+            HttpStatus.FORBIDDEN,
+            "허용되지 않은 요청입니다."
+    ),
+    TOKEN_REFRESH_CONFLICT(
+            HttpStatus.CONFLICT,
+            "다른 토큰 재발급 요청이 처리 중입니다. 잠시 후 다시 시도해 주세요."
+    );
 
     private final HttpStatus status;
     private final String message;
