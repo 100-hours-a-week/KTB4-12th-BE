@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.dto.request;
+package com.gift.gift.domain.auth.dto.request;
 
 import java.util.Set;
 

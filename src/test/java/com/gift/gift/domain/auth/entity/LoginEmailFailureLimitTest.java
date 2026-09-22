@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.entity;
+package com.gift.gift.domain.auth.entity;
 
 import java.time.LocalDateTime;
 

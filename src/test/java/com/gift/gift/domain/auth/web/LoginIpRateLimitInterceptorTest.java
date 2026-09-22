@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.web;
+package com.gift.gift.domain.auth.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;

@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.repository;
+package com.gift.gift.domain.auth.repository;
 
 import java.time.Clock;
 import java.time.LocalDateTime;

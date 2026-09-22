@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.repository;
+package com.gift.gift.domain.auth.repository;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -36,6 +36,7 @@ import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.auth.entity.UserSession;
 import com.gift.gift.domain.auth.repository.UserSessionRepository;
 import com.gift.gift.domain.auth.service.LoginSessionService;
+import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.security.RefreshTokenProvider;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

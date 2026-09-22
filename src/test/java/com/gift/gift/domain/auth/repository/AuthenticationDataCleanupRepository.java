@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.repository;
+package com.gift.gift.domain.auth.repository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -16,6 +16,7 @@ import com.gift.gift.domain.auth.repository.LoginEmailFailureLimitRepository;
 import com.gift.gift.domain.auth.repository.LoginIpRateLimitRepository;
 import com.gift.gift.domain.auth.repository.UserSessionRepository;
 import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.domain.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.service;
+package com.gift.gift.domain.auth.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

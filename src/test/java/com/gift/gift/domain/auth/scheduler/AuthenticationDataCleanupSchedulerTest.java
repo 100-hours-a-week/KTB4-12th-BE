@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.scheduler;
+package com.gift.gift.domain.auth.scheduler;
 
 import java.time.Clock;
 import java.time.Instant;

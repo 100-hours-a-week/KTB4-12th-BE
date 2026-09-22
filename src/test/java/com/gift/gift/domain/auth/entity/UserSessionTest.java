@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.entity;
+package com.gift.gift.domain.auth.entity;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.auth.entity.UserSession;
+import com.gift.gift.domain.user.entity.User;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

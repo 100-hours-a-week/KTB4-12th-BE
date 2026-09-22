@@ -1,4 +1,4 @@
-package com.gift.gift.domain.user.controller;
+package com.gift.gift.domain.auth.controller;
 
 import jakarta.servlet.http.Cookie;
 
