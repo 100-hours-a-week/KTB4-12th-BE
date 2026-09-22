@@ -3,6 +3,7 @@ package com.gift.gift.domain.user.controller;
 import jakarta.validation.Valid;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,6 +15,7 @@ import com.gift.gift.domain.user.dto.request.CheckEmailAvailabilityRequest;
 import com.gift.gift.domain.user.dto.response.EmailAvailabilityResponse;
 import com.gift.gift.domain.user.dto.response.SignupTermsResponse;
 import com.gift.gift.domain.user.exception.UserErrorCode;
+import com.gift.gift.domain.user.response.UserSuccessCode;
 import com.gift.gift.domain.user.service.SignupPreflightService;
 import com.gift.gift.global.exception.RequestValidationException;
 import com.gift.gift.global.response.ApiResponse;
@@ -26,18 +28,24 @@ public class SignupPreflightController {
     private final SignupPreflightService signupPreflightService;
 
     @GetMapping("/terms")
-    public ApiResponse<SignupTermsResponse> getSignupTerms() {
+    public ResponseEntity<ApiResponse<SignupTermsResponse>>
+    getSignupTerms() {
         SignupTermsResponse response =
                 signupPreflightService.getSignupTerms();
+        UserSuccessCode successCode =
+                UserSuccessCode.SIGNUP_TERMS_RETRIEVED;
 
-        return ApiResponse.success(
-                "회원가입 약관을 조회했습니다.",
-                response
-        );
+        return ResponseEntity
+                .status(successCode.status())
+                .body(ApiResponse.success(
+                        successCode.message(),
+                        response
+                ));
     }
 
     @PostMapping("/email-availability")
-    public ApiResponse<EmailAvailabilityResponse> checkEmailAvailability(
+    public ResponseEntity<ApiResponse<EmailAvailabilityResponse>>
+    checkEmailAvailability(
             @Valid @RequestBody CheckEmailAvailabilityRequest request,
             BindingResult bindingResult
     ) {
@@ -52,10 +60,15 @@ public class SignupPreflightController {
                         request.email()
                 );
 
-        String message = response.available()
-                ? "사용할 수 있는 이메일입니다."
-                : "이미 사용 중인 이메일입니다.";
+        UserSuccessCode successCode = response.available()
+                ? UserSuccessCode.EMAIL_AVAILABLE
+                : UserSuccessCode.EMAIL_UNAVAILABLE;
 
-        return ApiResponse.success(message, response);
+        return ResponseEntity
+                .status(successCode.status())
+                .body(ApiResponse.success(
+                        successCode.message(),
+                        response
+                ));
     }
 }

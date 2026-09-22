@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.gift.gift.domain.auth.dto.request.LoginRequest;
 import com.gift.gift.domain.auth.dto.response.LoginResponse;
+import com.gift.gift.domain.auth.response.AuthSuccessCode;
 import com.gift.gift.domain.auth.service.LoginService;
 import com.gift.gift.domain.auth.support.LoginResult;
 import com.gift.gift.global.response.ApiResponse;
@@ -21,9 +22,6 @@ import com.gift.gift.global.security.RefreshCookieProvider;
 @RestController
 @RequiredArgsConstructor
 public class LoginController {
-
-    private static final String LOGIN_SUCCESS_MESSAGE =
-            "로그인에 성공했습니다.";
 
     private final LoginService loginService;
     private final RefreshCookieProvider refreshCookieProvider;
@@ -47,15 +45,18 @@ public class LoginController {
                         result.refreshToken()
                 );
 
+        AuthSuccessCode successCode =
+                AuthSuccessCode.LOGIN_COMPLETED;
+
         return ResponseEntity
-                .ok()
+                .status(successCode.status())
                 .header(
                         HttpHeaders.SET_COOKIE,
                         refreshCookie.toString()
                 )
                 .body(
                         ApiResponse.success(
-                                LOGIN_SUCCESS_MESSAGE,
+                                successCode.message(),
                                 LoginResponse.from(result)
                         )
                 );

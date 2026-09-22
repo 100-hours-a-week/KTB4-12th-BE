@@ -15,6 +15,7 @@ import com.gift.gift.domain.user.dto.request.UpdateUserProfileRequest;
 import com.gift.gift.domain.user.dto.response.CompleteOnboardingResponse;
 import com.gift.gift.domain.user.dto.response.UpdateUserProfileResponse;
 import com.gift.gift.domain.user.dto.response.UserProfileResponse;
+import com.gift.gift.domain.user.response.UserSuccessCode;
 import com.gift.gift.domain.user.service.OnboardingService;
 import com.gift.gift.domain.user.service.UserProfileService;
 import com.gift.gift.global.response.ApiResponse;
@@ -35,13 +36,15 @@ public class UserProfileController {
     ) {
         UserProfileResponse response =
                 userProfileService.getMyProfile(userId);
+        UserSuccessCode successCode =
+                UserSuccessCode.PROFILE_RETRIEVED;
 
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        "내 정보를 조회했습니다.",
+        return ResponseEntity
+                .status(successCode.status())
+                .body(ApiResponse.success(
+                        successCode.message(),
                         response
-                )
-        );
+                ));
     }
 
     @PatchMapping("/me")
@@ -55,13 +58,15 @@ public class UserProfileController {
                         userId,
                         request
                 );
+        UserSuccessCode successCode =
+                UserSuccessCode.PROFILE_UPDATED;
 
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        "사용자 정보를 수정했습니다.",
+        return ResponseEntity
+                .status(successCode.status())
+                .body(ApiResponse.success(
+                        successCode.message(),
                         response
-                )
-        );
+                ));
     }
 
     @PatchMapping("/me/onboarding")
@@ -72,12 +77,14 @@ public class UserProfileController {
     ) {
         CompleteOnboardingResponse response =
                 onboardingService.completeOnboarding(userId);
+        UserSuccessCode successCode =
+                UserSuccessCode.ONBOARDING_COMPLETED;
 
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        "최초 로그인 설정을 완료했습니다.",
+        return ResponseEntity
+                .status(successCode.status())
+                .body(ApiResponse.success(
+                        successCode.message(),
                         response
-                )
-        );
+                ));
     }
 }

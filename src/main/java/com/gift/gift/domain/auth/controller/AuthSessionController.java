@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.gift.gift.domain.auth.dto.response.TokenRefreshResponse;
+import com.gift.gift.domain.auth.response.AuthSuccessCode;
 import com.gift.gift.domain.auth.service.LogoutService;
 import com.gift.gift.domain.auth.service.TokenRefreshService;
 import com.gift.gift.domain.auth.support.TokenRefreshResult;
@@ -20,12 +21,6 @@ import com.gift.gift.global.security.RefreshCookieProvider;
 @RestController
 @RequiredArgsConstructor
 public class AuthSessionController {
-
-    private static final String REFRESH_SUCCESS_MESSAGE =
-            "토큰을 재발급했습니다.";
-
-    private static final String LOGOUT_SUCCESS_MESSAGE =
-            "로그아웃이 완료되었습니다.";
 
     private final TokenRefreshService tokenRefreshService;
     private final LogoutService logoutService;
@@ -50,15 +45,18 @@ public class AuthSessionController {
                         result.refreshToken()
                 );
 
+        AuthSuccessCode successCode =
+                AuthSuccessCode.TOKEN_REFRESHED;
+
         return ResponseEntity
-                .ok()
+                .status(successCode.status())
                 .header(
                         HttpHeaders.SET_COOKIE,
                         refreshCookie.toString()
                 )
                 .body(
                         ApiResponse.success(
-                                REFRESH_SUCCESS_MESSAGE,
+                                successCode.message(),
                                 TokenRefreshResponse.from(
                                         result
                                 )
@@ -80,15 +78,18 @@ public class AuthSessionController {
         ResponseCookie expiredCookie =
                 refreshCookieProvider.expire();
 
+        AuthSuccessCode successCode =
+                AuthSuccessCode.LOGOUT_COMPLETED;
+
         return ResponseEntity
-                .ok()
+                .status(successCode.status())
                 .header(
                         HttpHeaders.SET_COOKIE,
                         expiredCookie.toString()
                 )
                 .body(
                         ApiResponse.success(
-                                LOGOUT_SUCCESS_MESSAGE
+                                successCode.message()
                         )
                 );
     }
