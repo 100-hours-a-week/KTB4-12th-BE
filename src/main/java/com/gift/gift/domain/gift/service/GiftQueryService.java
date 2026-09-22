@@ -12,6 +12,7 @@ import com.gift.gift.domain.gift.dto.response.GiftReceivedDetailResponse;
 import com.gift.gift.domain.gift.dto.response.GiftSentDetailResponse;
 import com.gift.gift.domain.gift.dto.response.ReceivedGiftListItem;
 import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
+import com.gift.gift.domain.gift.exception.GiftErrorCode;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.query.GiftPage;
 import com.gift.gift.domain.gift.query.GiftPageAssembler;
@@ -21,7 +22,6 @@ import com.gift.gift.domain.gift.repository.GiftQueryRepository;
 import com.gift.gift.domain.gift.repository.GiftQueryRow;
 import com.gift.gift.domain.gift.support.GiftCursor;
 import com.gift.gift.domain.product.service.ProductQueryService;
-import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
 
@@ -58,20 +58,14 @@ public class GiftQueryService {
 
     public GiftSentDetailResponse getSentGiftDetail(Long userId, Long giftId) {
         GiftQueryRow row = giftQueryRepository.findSentGiftDetail(giftId, userId)
-                .orElseThrow(() -> new GiftException(
-                        ErrorCode.GIFT_NOT_FOUND,
-                        "보낸 선물 내역을 찾을 수 없습니다."
-                ));
+                .orElseThrow(() -> new GiftException(GiftErrorCode.SENT_GIFT_NOT_FOUND));
 
         return responseMapper.toSentDetail(row, loadImageUrls(List.of(row)).get(row.productId()));
     }
 
     public GiftReceivedDetailResponse getReceivedGiftDetail(Long userId, Long giftId) {
         GiftQueryRow row = giftQueryRepository.findReceivedGiftDetail(giftId, userId)
-                .orElseThrow(() -> new GiftException(
-                        ErrorCode.GIFT_NOT_FOUND,
-                        "받은 선물 내역을 찾을 수 없습니다."
-                ));
+                .orElseThrow(() -> new GiftException(GiftErrorCode.RECEIVED_GIFT_NOT_FOUND));
 
         return responseMapper.toReceivedDetail(row, loadImageUrls(List.of(row)).get(row.productId()));
     }
