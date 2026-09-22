@@ -20,7 +20,7 @@ import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 class GiftHistoryTest {
 
@@ -31,15 +31,64 @@ class GiftHistoryTest {
         User recipient = createUser("recipient@example.com", "받는사람", LocalDate.of(1991, 1, 1));
         Product product = createProduct();
 
-        assertThatNullPointerException()
+        assertThatIllegalArgumentException()
                 .isThrownBy(() -> createGiftHistory(null, recipient, product))
-                .withMessage("sender must not be null");
-        assertThatNullPointerException()
+                .withMessage("보낸 사람, 받는 사람, 상품은 필수입니다.");
+        assertThatIllegalArgumentException()
                 .isThrownBy(() -> createGiftHistory(sender, null, product))
-                .withMessage("recipient must not be null");
-        assertThatNullPointerException()
+                .withMessage("보낸 사람, 받는 사람, 상품은 필수입니다.");
+        assertThatIllegalArgumentException()
                 .isThrownBy(() -> createGiftHistory(sender, recipient, null))
-                .withMessage("product must not be null");
+                .withMessage("보낸 사람, 받는 사람, 상품은 필수입니다.");
+    }
+
+    @Test
+    @DisplayName("선물 이력은 필수 값이 없으면 생성할 수 없다")
+    void giftHistory_rejectsNullRequiredValues() {
+        User sender = createUser("sender@example.com", "보낸사람", LocalDate.of(1990, 1, 1));
+        User recipient = createUser("recipient@example.com", "받는사람", LocalDate.of(1991, 1, 1));
+        Product product = createProduct();
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> createGiftHistory(
+                        sender, recipient, product,
+                        null,
+                        BigDecimal.valueOf(10_000), "선물 상품",
+                        UUID.randomUUID(), "a".repeat(64)
+                ))
+                .withMessage("수량, 가격 스냅샷, 상품명 스냅샷, 멱등성 키, 요청 지문은 필수입니다.");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> createGiftHistory(
+                        sender, recipient, product,
+                        1,
+                        null, "선물 상품",
+                        UUID.randomUUID(), "a".repeat(64)
+                ))
+                .withMessage("수량, 가격 스냅샷, 상품명 스냅샷, 멱등성 키, 요청 지문은 필수입니다.");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> createGiftHistory(
+                        sender, recipient, product,
+                        1,
+                        BigDecimal.valueOf(10_000), null,
+                        UUID.randomUUID(), "a".repeat(64)
+                ))
+                .withMessage("수량, 가격 스냅샷, 상품명 스냅샷, 멱등성 키, 요청 지문은 필수입니다.");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> createGiftHistory(
+                        sender, recipient, product,
+                        1,
+                        BigDecimal.valueOf(10_000), "선물 상품",
+                        null, "a".repeat(64)
+                ))
+                .withMessage("수량, 가격 스냅샷, 상품명 스냅샷, 멱등성 키, 요청 지문은 필수입니다.");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> createGiftHistory(
+                        sender, recipient, product,
+                        1,
+                        BigDecimal.valueOf(10_000), "선물 상품",
+                        UUID.randomUUID(), null
+                ))
+                .withMessage("수량, 가격 스냅샷, 상품명 스냅샷, 멱등성 키, 요청 지문은 필수입니다.");
     }
 
     @Test
@@ -141,7 +190,7 @@ class GiftHistoryTest {
     }
 
     private GiftHistory createGiftHistory(User sender, User recipient, Product product) {
-        return new GiftHistory(
+        return createGiftHistory(
                 sender,
                 recipient,
                 product,
@@ -150,6 +199,28 @@ class GiftHistoryTest {
                 "선물 상품",
                 UUID.randomUUID(),
                 "a".repeat(64)
+        );
+    }
+
+    private GiftHistory createGiftHistory(
+            User sender,
+            User recipient,
+            Product product,
+            Integer quantity,
+            BigDecimal productPriceSnapshot,
+            String productNameSnapshot,
+            UUID idempotencyKey,
+            String requestFingerprint
+    ) {
+        return new GiftHistory(
+                sender,
+                recipient,
+                product,
+                quantity,
+                productPriceSnapshot,
+                productNameSnapshot,
+                idempotencyKey,
+                requestFingerprint
         );
     }
 

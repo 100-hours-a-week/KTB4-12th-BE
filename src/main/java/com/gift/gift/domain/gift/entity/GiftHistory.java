@@ -2,7 +2,6 @@ package com.gift.gift.domain.gift.entity;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import java.util.UUID;
 
 import jakarta.persistence.*;
@@ -109,9 +108,18 @@ public class GiftHistory extends BaseTimeEntity {
 
     public GiftHistory(User sender, User recipient, Product product, Integer quantity, BigDecimal productPriceSnapshot,
                        String productNameSnapshot, UUID idempotencyKey, String requestFingerprint) {
-        this.sender = Objects.requireNonNull(sender, "sender must not be null");
-        this.recipient = Objects.requireNonNull(recipient, "recipient must not be null");
-        this.product = Objects.requireNonNull(product, "product must not be null");
+        if (sender == null || recipient == null || product == null) {
+            throw new IllegalArgumentException("보낸 사람, 받는 사람, 상품은 필수입니다.");
+        }
+
+        if (quantity == null || productPriceSnapshot == null || productNameSnapshot == null
+                || idempotencyKey == null || requestFingerprint == null) {
+            throw new IllegalArgumentException("수량, 가격 스냅샷, 상품명 스냅샷, 멱등성 키, 요청 지문은 필수입니다.");
+        }
+
+        this.sender = sender;
+        this.recipient = recipient;
+        this.product = product;
         this.quantity = quantity;
         this.productPriceSnapshot = productPriceSnapshot;
         this.productNameSnapshot = productNameSnapshot;
