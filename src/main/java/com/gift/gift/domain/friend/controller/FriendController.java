@@ -3,7 +3,6 @@ package com.gift.gift.domain.friend.controller;
 import jakarta.validation.Valid;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.gift.gift.domain.friend.dto.request.FriendCreateRequest;
 import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
+import com.gift.gift.domain.friend.response.FriendSuccessCode;
 import com.gift.gift.domain.friend.service.FriendService;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.response.ApiResponse;
@@ -39,12 +39,17 @@ public class FriendController {
                         cursor
                 );
 
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        "친구 목록을 조회했습니다.",
-                        response
-                )
-        );
+        FriendSuccessCode successCode =
+                FriendSuccessCode.FRIEND_LIST_RETRIEVED;
+
+        return ResponseEntity
+                .status(successCode.status())
+                .body(
+                        ApiResponse.success(
+                                successCode.message(),
+                                response
+                        )
+                );
     }
 
     @PostMapping
@@ -59,15 +64,16 @@ public class FriendController {
                         request
                 );
 
-        String message =
-                response.friendName()
-                        + "님을 친구로 추가했습니다.";
+        FriendSuccessCode successCode =
+                FriendSuccessCode.FRIEND_ADDED;
 
         return ResponseEntity
-                .status(HttpStatus.CREATED)
+                .status(successCode.status())
                 .body(
                         ApiResponse.success(
-                                message,
+                                successCode.formatMessage(
+                                        response.friendName()
+                                ),
                                 response
                         )
                 );
