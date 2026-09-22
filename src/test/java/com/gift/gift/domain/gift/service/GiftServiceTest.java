@@ -15,10 +15,9 @@ import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.product.entity.Product;
-import com.gift.gift.domain.product.repository.ProductRepository;
-import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.entity.UserStatus;
-import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.domain.product.service.ProductQueryService;
+import com.gift.gift.domain.user.service.UserQueryService;
+import com.gift.gift.domain.user.support.ActiveUserSummary;
 import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,22 +27,22 @@ import static org.mockito.Mockito.*;
 class GiftServiceTest {
 
     private GiftHistoryRepository giftHistoryRepository;
-    private UserRepository userRepository;
+    private UserQueryService userQueryService;
     private FriendQueryService friendQueryService;
-    private ProductRepository productRepository;
+    private ProductQueryService productQueryService;
     private GiftService giftService;
 
     @BeforeEach
     void setUp() {
         giftHistoryRepository = mock(GiftHistoryRepository.class);
-        userRepository = mock(UserRepository.class);
+        userQueryService = mock(UserQueryService.class);
         friendQueryService = mock(FriendQueryService.class);
-        productRepository = mock(ProductRepository.class);
+        productQueryService = mock(ProductQueryService.class);
         giftService = new GiftService(
                 giftHistoryRepository,
-                userRepository,
+                userQueryService,
                 friendQueryService,
-                productRepository
+                productQueryService
         );
     }
 
@@ -53,17 +52,13 @@ class GiftServiceTest {
         Long senderId = 1L;
         Long recipientId = 2L;
         Long productId = 3L;
-        User recipient = mock(User.class);
         Product product = mock(Product.class);
         GiftPreflightRequest request = new GiftPreflightRequest(productId, recipientId, 2);
 
-        when(userRepository.findByIdAndStatusAndDeletedAtIsNull(recipientId, UserStatus.ACTIVE))
-                .thenReturn(Optional.of(recipient));
+        when(userQueryService.findActiveUser(recipientId))
+                .thenReturn(Optional.of(new ActiveUserSummary(recipientId, "수신자")));
         when(friendQueryService.areFriends(senderId, recipientId)).thenReturn(true);
-        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
-        when(recipient.getId()).thenReturn(recipientId);
-        when(recipient.getName()).thenReturn("수신자");
-        when(product.isDeleted()).thenReturn(false);
+        when(productQueryService.findAvailableProduct(productId)).thenReturn(Optional.of(product));
         when(product.getId()).thenReturn(productId);
         when(product.getPrice()).thenReturn(BigDecimal.valueOf(32_000));
         when(product.getQuantity()).thenReturn(15);
@@ -81,10 +76,10 @@ class GiftServiceTest {
         ));
         assertThat(response.preferenceWarning()).isNull();
 
-        var order = inOrder(userRepository, friendQueryService, productRepository);
-        order.verify(userRepository).findByIdAndStatusAndDeletedAtIsNull(recipientId, UserStatus.ACTIVE);
+        var order = inOrder(userQueryService, friendQueryService, productQueryService);
+        order.verify(userQueryService).findActiveUser(recipientId);
         order.verify(friendQueryService).areFriends(senderId, recipientId);
-        order.verify(productRepository).findById(productId);
+        order.verify(productQueryService).findAvailableProduct(productId);
     }
 
     @Test
@@ -94,34 +89,31 @@ class GiftServiceTest {
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.INVALID_REQUEST);
 
-        verifyNoInteractions(userRepository, friendQueryService, productRepository);
+        verifyNoInteractions(userQueryService, friendQueryService, productQueryService);
     }
 
     @Test
     @DisplayName("활성 수신자가 없으면 RECIPIENT_NOT_FOUND가 발생한다")
     void preflight_throwsRecipientNotFound_whenRecipientIsNotActive() {
         GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 1);
-        when(userRepository.findByIdAndStatusAndDeletedAtIsNull(2L, UserStatus.ACTIVE))
-                .thenReturn(Optional.empty());
+        when(userQueryService.findActiveUser(2L)).thenReturn(Optional.empty());
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.RECIPIENT_NOT_FOUND);
 
-        verifyNoInteractions(friendQueryService, productRepository);
+        verifyNoInteractions(friendQueryService, productQueryService);
     }
 
     @Test
     @DisplayName("수신자가 친구가 아니면 RECIPIENT_NOT_FRIEND가 발생한다")
     void preflight_throwsRecipientNotFriend_whenRelationshipDoesNotExist() {
         GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 1);
-        User recipient = mock(User.class);
-        when(recipient.getId()).thenReturn(2L);
-        when(userRepository.findByIdAndStatusAndDeletedAtIsNull(2L, UserStatus.ACTIVE))
-                .thenReturn(Optional.of(recipient));
+        when(userQueryService.findActiveUser(2L))
+                .thenReturn(Optional.of(new ActiveUserSummary(2L, "수신자")));
         when(friendQueryService.areFriends(1L, 2L)).thenReturn(false);
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.RECIPIENT_NOT_FRIEND);
 
-        verifyNoInteractions(productRepository);
+        verifyNoInteractions(productQueryService);
     }
 
     @Test
@@ -129,19 +121,7 @@ class GiftServiceTest {
     void preflight_throwsProductNotFound_whenProductDoesNotExist() {
         GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 1);
         stubValidRecipientAndFriend();
-        when(productRepository.findById(3L)).thenReturn(Optional.empty());
-
-        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.PRODUCT_NOT_FOUND);
-    }
-
-    @Test
-    @DisplayName("삭제된 상품이면 PRODUCT_NOT_FOUND가 발생한다")
-    void preflight_throwsProductNotFound_whenProductIsDeleted() {
-        GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 1);
-        Product product = mock(Product.class);
-        stubValidRecipientAndFriend();
-        when(productRepository.findById(3L)).thenReturn(Optional.of(product));
-        when(product.isDeleted()).thenReturn(true);
+        when(productQueryService.findAvailableProduct(3L)).thenReturn(Optional.empty());
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.PRODUCT_NOT_FOUND);
     }
@@ -152,8 +132,7 @@ class GiftServiceTest {
         GiftPreflightRequest request = new GiftPreflightRequest(3L, 2L, 3);
         Product product = mock(Product.class);
         stubValidRecipientAndFriend();
-        when(productRepository.findById(3L)).thenReturn(Optional.of(product));
-        when(product.isDeleted()).thenReturn(false);
+        when(productQueryService.findAvailableProduct(3L)).thenReturn(Optional.of(product));
         when(product.getQuantity()).thenReturn(2);
 
         assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.INSUFFICIENT_STOCK);
@@ -204,10 +183,8 @@ class GiftServiceTest {
     }
 
     private void stubValidRecipientAndFriend() {
-        User recipient = mock(User.class);
-        when(recipient.getId()).thenReturn(2L);
-        when(userRepository.findByIdAndStatusAndDeletedAtIsNull(2L, UserStatus.ACTIVE))
-                .thenReturn(Optional.of(recipient));
+        when(userQueryService.findActiveUser(2L))
+                .thenReturn(Optional.of(new ActiveUserSummary(2L, "수신자")));
         when(friendQueryService.areFriends(1L, 2L)).thenReturn(true);
     }
 

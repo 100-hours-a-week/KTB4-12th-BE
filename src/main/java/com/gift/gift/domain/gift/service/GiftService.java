@@ -15,30 +15,29 @@ import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.gift.support.GiftPolicy;
 import com.gift.gift.domain.product.entity.Product;
-import com.gift.gift.domain.product.repository.ProductRepository;
-import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.entity.UserStatus;
-import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.domain.product.service.ProductQueryService;
+import com.gift.gift.domain.user.service.UserQueryService;
+import com.gift.gift.domain.user.support.ActiveUserSummary;
 import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 public class GiftService {
 
     private final GiftHistoryRepository giftHistoryRepository;
-    private final UserRepository userRepository;
+    private final UserQueryService userQueryService;
     private final FriendQueryService friendQueryService;
-    private final ProductRepository productRepository;
+    private final ProductQueryService productQueryService;
 
     public GiftService(
             GiftHistoryRepository giftHistoryRepository,
-            UserRepository userRepository,
+            UserQueryService userQueryService,
             FriendQueryService friendQueryService,
-            ProductRepository productRepository
+            ProductQueryService productQueryService
     ) {
         this.giftHistoryRepository = giftHistoryRepository;
-        this.userRepository = userRepository;
+        this.userQueryService = userQueryService;
         this.friendQueryService = friendQueryService;
-        this.productRepository = productRepository;
+        this.productQueryService = productQueryService;
     }
 
     @Transactional(readOnly = true)
@@ -47,18 +46,14 @@ public class GiftService {
             throw new GiftException(ErrorCode.INVALID_REQUEST);
         }
 
-        User recipient = userRepository.findByIdAndStatusAndDeletedAtIsNull(
-                        request.recipientUserId(),
-                        UserStatus.ACTIVE
-                )
+        ActiveUserSummary recipient = userQueryService.findActiveUser(request.recipientUserId())
                 .orElseThrow(() -> new GiftException(ErrorCode.RECIPIENT_NOT_FOUND));
 
-        if (!friendQueryService.areFriends(senderId, recipient.getId())) {
+        if (!friendQueryService.areFriends(senderId, recipient.userId())) {
             throw new GiftException(ErrorCode.RECIPIENT_NOT_FRIEND);
         }
 
-        Product product = productRepository.findById(request.productId())
-                .filter(foundProduct -> !foundProduct.isDeleted())
+        Product product = productQueryService.findAvailableProduct(request.productId())
                 .orElseThrow(() -> new GiftException(ErrorCode.PRODUCT_NOT_FOUND));
 
         if (product.getQuantity() < request.quantity()) {
@@ -69,7 +64,7 @@ public class GiftService {
         int maxOrderQuantity = Math.min(product.getQuantity(), GiftPolicy.MAX_QUANTITY);
 
         return GiftPreflightResponse.from(
-                new GiftPreflightResponse.Recipient(recipient.getId(), recipient.getName()),
+                new GiftPreflightResponse.Recipient(recipient.userId(), recipient.name()),
                 new GiftPreflightResponse.Product(
                         product.getId(),
                         product.getPrice(),
