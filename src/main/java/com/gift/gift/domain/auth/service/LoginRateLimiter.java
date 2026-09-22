@@ -5,11 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
+import com.gift.gift.domain.auth.exception.AuthErrorCode;
+import com.gift.gift.domain.auth.exception.AuthException;
 import com.gift.gift.domain.auth.exception.LoginRateLimitExceededException;
 import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
 import com.gift.gift.domain.auth.support.RateLimitIdentifierHasher;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 
 @Slf4j
 @Service
@@ -86,7 +86,7 @@ public class LoginRateLimiter {
         );
     }
 
-    private BusinessException storageUnavailable(
+    private AuthException storageUnavailable(
             DataAccessException exception
     ) {
         log.error(
@@ -94,8 +94,8 @@ public class LoginRateLimiter {
                 exception
         );
 
-        return new BusinessException(
-                ErrorCode.AUTHENTICATION_TEMPORARILY_UNAVAILABLE
+        return new AuthException(
+                AuthErrorCode.AUTHENTICATION_TEMPORARILY_UNAVAILABLE
         );
     }
 }

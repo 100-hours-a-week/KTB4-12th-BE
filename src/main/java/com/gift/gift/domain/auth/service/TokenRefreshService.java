@@ -11,10 +11,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.auth.entity.UserSession;
+import com.gift.gift.domain.auth.exception.AuthErrorCode;
+import com.gift.gift.domain.auth.exception.AuthException;
 import com.gift.gift.domain.auth.repository.UserSessionRepository;
 import com.gift.gift.domain.auth.support.TokenRefreshResult;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.security.AccessTokenProvider;
 import com.gift.gift.global.security.IssuedAccessToken;
 import com.gift.gift.global.security.RefreshTokenProvider;
@@ -104,8 +104,8 @@ public class TokenRefreshService {
                 PessimisticLockingFailureException
                 | QueryTimeoutException exception
         ) {
-            throw new BusinessException(
-                    ErrorCode.TOKEN_REFRESH_CONFLICT
+            throw new AuthException(
+                    AuthErrorCode.TOKEN_REFRESH_CONFLICT
             );
         }
     }
@@ -120,9 +120,9 @@ public class TokenRefreshService {
         }
     }
 
-    private BusinessException invalidRefreshToken() {
-        return new BusinessException(
-                ErrorCode.INVALID_REFRESH_TOKEN
+    private AuthException invalidRefreshToken() {
+        return new AuthException(
+                AuthErrorCode.INVALID_REFRESH_TOKEN
         );
     }
 }

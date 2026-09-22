@@ -13,8 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.gift.gift.domain.user.dto.request.CheckEmailAvailabilityRequest;
 import com.gift.gift.domain.user.dto.response.EmailAvailabilityResponse;
 import com.gift.gift.domain.user.dto.response.SignupTermsResponse;
+import com.gift.gift.domain.user.exception.UserErrorCode;
 import com.gift.gift.domain.user.service.SignupPreflightService;
-import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.RequestValidationException;
 import com.gift.gift.global.response.ApiResponse;
 
@@ -43,7 +43,7 @@ public class SignupPreflightController {
     ) {
         if (bindingResult.hasErrors()) {
             throw new RequestValidationException(
-                    ErrorCode.INVALID_EMAIL_FORMAT
+                    UserErrorCode.INVALID_EMAIL_FORMAT.errorCode()
             );
         }
 

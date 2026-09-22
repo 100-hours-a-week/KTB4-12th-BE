@@ -14,9 +14,9 @@ import com.gift.gift.domain.user.dto.response.UpdateUserProfileResponse;
 import com.gift.gift.domain.user.dto.response.UserProfileResponse;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
+import com.gift.gift.domain.user.exception.UserErrorCode;
+import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 @RequiredArgsConstructor
@@ -76,8 +76,8 @@ public class UserProfileService {
                         userId,
                         UserStatus.ACTIVE
                 )
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.USER_NOT_FOUND
+                .orElseThrow(() -> new UserException(
+                        UserErrorCode.USER_NOT_FOUND
                 ));
     }
 }
