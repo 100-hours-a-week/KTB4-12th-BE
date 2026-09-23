@@ -336,6 +336,62 @@ class GiftControllerTest {
     }
 
     @Test
+    @DisplayName("사전 검증에서 자기 자신에게 선물하면 422 GIFT_CANNOT_SEND_TO_SELF를 반환한다")
+    void preflight_returnsGiftCannotSendToSelf_whenServiceThrows() throws Exception {
+        when(giftService.preflight(eq(USER_ID), any()))
+                .thenThrow(new GiftException(ErrorCode.GIFT_CANNOT_SEND_TO_SELF));
+
+        mockMvc.perform(post("/gifts/preflight")
+                        .contentType(APPLICATION_JSON)
+                        .content(preflightBody()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("GIFT_CANNOT_SEND_TO_SELF"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("수신자가 친구가 아니면 422 RECIPIENT_NOT_FRIEND를 반환한다")
+    void preflight_returnsRecipientNotFriend_whenRecipientIsNotFriend() throws Exception {
+        when(giftService.preflight(eq(USER_ID), any()))
+                .thenThrow(new GiftException(ErrorCode.RECIPIENT_NOT_FRIEND));
+
+        mockMvc.perform(post("/gifts/preflight")
+                        .contentType(APPLICATION_JSON)
+                        .content(preflightBody()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("RECIPIENT_NOT_FRIEND"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("상품이 없으면 404 PRODUCT_NOT_FOUND를 반환한다")
+    void preflight_returnsProductNotFound_whenProductDoesNotExist() throws Exception {
+        when(giftService.preflight(eq(USER_ID), any()))
+                .thenThrow(new GiftException(ErrorCode.PRODUCT_NOT_FOUND));
+
+        mockMvc.perform(post("/gifts/preflight")
+                        .contentType(APPLICATION_JSON)
+                        .content(preflightBody()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("PRODUCT_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("재고가 부족하면 422 INSUFFICIENT_STOCK을 반환한다")
+    void preflight_returnsInsufficientStock_whenStockIsNotEnough() throws Exception {
+        when(giftService.preflight(eq(USER_ID), any()))
+                .thenThrow(new GiftException(ErrorCode.INSUFFICIENT_STOCK));
+
+        mockMvc.perform(post("/gifts/preflight")
+                        .contentType(APPLICATION_JSON)
+                        .content(preflightBody()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("INSUFFICIENT_STOCK"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
     @DisplayName("선물 생성은 인증 사용자·멱등 키·요청 본문으로 생성하고 201과 결과를 반환한다")
     void createGift_returnsCreated_forValidRequest() throws Exception {
         GiftCreateResponse response = GiftCreateResponse.from(new GiftCreateResponse.Gift(
