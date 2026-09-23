@@ -69,4 +69,24 @@ class UserProfileSecurityTest {
                 .andExpect(jsonPath("$.error.details")
                         .doesNotExist());
     }
+
+    @Test
+    @DisplayName("Access Token 없이 회원을 검색하면 401을 반환한다")
+    void searchUser_returnsUnauthorizedWithoutToken()
+            throws Exception {
+        mockMvc.perform(
+                        get("/users/search")
+                                .param(
+                                        "email",
+                                        "user@example.com"
+                                )
+                )
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message")
+                        .value("로그인이 필요합니다."))
+                .andExpect(jsonPath("$.error.code")
+                        .value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.error.details")
+                        .doesNotExist());
+    }
 }

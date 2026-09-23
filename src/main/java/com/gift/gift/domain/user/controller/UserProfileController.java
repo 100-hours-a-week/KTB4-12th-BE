@@ -15,7 +15,6 @@ import com.gift.gift.domain.user.dto.request.UpdateUserProfileRequest;
 import com.gift.gift.domain.user.dto.response.CompleteOnboardingResponse;
 import com.gift.gift.domain.user.dto.response.UpdateUserProfileResponse;
 import com.gift.gift.domain.user.dto.response.UserProfileResponse;
-import com.gift.gift.domain.user.response.UserSuccessCode;
 import com.gift.gift.domain.user.service.OnboardingService;
 import com.gift.gift.domain.user.service.UserProfileService;
 import com.gift.gift.global.response.ApiResponse;

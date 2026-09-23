@@ -11,7 +11,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
-import com.gift.gift.domain.user.dto.response.UserSearchResponse;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserSearchService;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
