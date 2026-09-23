@@ -90,15 +90,28 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = exception.getErrorCode();
         String traceId = resolveTraceId();
 
-        log.warn(
-                "비즈니스 예외가 발생했습니다. traceId={}, code={}",
-                traceId,
-                errorCode.code()
-        );
+        if (errorCode.status().is5xxServerError()) {
+            log.error(
+                    "비즈니스 처리 중 서버 오류가 발생했습니다. traceId={}, code={}",
+                    traceId,
+                    errorCode.code(),
+                    exception
+            );
+        } else {
+            log.warn(
+                    "비즈니스 예외가 발생했습니다. traceId={}, code={}",
+                    traceId,
+                    errorCode.code()
+            );
+        }
 
         return ResponseEntity
                 .status(errorCode.status())
-                .body(ApiResponse.error(errorCode, exception.getMessage(), traceId));
+                .body(ApiResponse.error(
+                        errorCode,
+                        exception.getMessage(),
+                        traceId
+                ));
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
