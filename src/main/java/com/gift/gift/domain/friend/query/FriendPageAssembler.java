@@ -20,6 +20,10 @@ public class FriendPageAssembler {
     }
 
     public FriendPage assemble(List<FriendQueryRow> fetched) {
+        return assemble(fetched, null);
+    }
+
+    public FriendPage assemble(List<FriendQueryRow> fetched, String query) {
         Objects.requireNonNull(fetched, "친구 조회 결과는 필수입니다.");
 
         if (fetched.size() > PaginationPolicy.CURSOR_FETCH_SIZE) {
@@ -41,7 +45,7 @@ public class FriendPageAssembler {
                 lastItem.name(),
                 lastItem.email(),
                 lastItem.friendId(),
-                null
+                query
         );
 
         return new FriendPage(items, true, cursorCodec.encode(nextCursor));
