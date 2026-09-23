@@ -1,19 +1,20 @@
 package com.gift.gift.domain.gift.service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.dto.request.GiftPreflightRequest;
+import com.gift.gift.domain.gift.dto.response.GiftCreateResponse;
 import com.gift.gift.domain.gift.dto.response.GiftPreflightResponse;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
@@ -33,6 +34,7 @@ import com.gift.gift.global.exception.ErrorCode;
 public class GiftService {
 
     private static final String IDEMPOTENCY_KEY_CONSTRAINT_NAME = "uk_gift_histories_sender_idempotency";
+    private static final String DELETED_USER_NAME = "탈퇴한 사용자";
 
     private final GiftHistoryRepository giftHistoryRepository;
     private final UserQueryService userQueryService;
@@ -125,6 +127,34 @@ public class GiftService {
             return findExistingGift(senderId, idempotencyKey, requestFingerprint)
                     .orElseThrow(() -> new GiftException(ErrorCode.INTERNAL_SERVER_ERROR));
         }
+    }
+
+    public GiftCreateResponse createGiftResponse(Long senderId, UUID idempotencyKey, GiftCreateRequest request) {
+        GiftHistory giftHistory = createGift(senderId, idempotencyKey, request);
+
+        Long recipientId = giftHistory.getRecipient().getId();
+        String recipientName = userQueryService.findActiveUser(recipientId)
+                .map(ActiveUserSummary::name)
+                .orElse(DELETED_USER_NAME);
+
+        Long productId = giftHistory.getProduct().getId();
+        String imageUrl = productQueryService.findThumbnailUrls(List.of(productId)).get(productId);
+
+        BigDecimal totalPrice = giftHistory.getProductPriceSnapshot()
+                .multiply(BigDecimal.valueOf(giftHistory.getQuantity()));
+
+        return GiftCreateResponse.from(new GiftCreateResponse.Gift(
+                giftHistory.getId(),
+                giftHistory.getCompletedAt(),
+                recipientName,
+                new GiftCreateResponse.Product(
+                        giftHistory.getProductNameSnapshot(),
+                        giftHistory.getQuantity(),
+                        giftHistory.getProductPriceSnapshot(),
+                        totalPrice,
+                        imageUrl
+                )
+        ));
     }
 
     private boolean isIdempotencyKeyUniqueViolation(Throwable exception) {

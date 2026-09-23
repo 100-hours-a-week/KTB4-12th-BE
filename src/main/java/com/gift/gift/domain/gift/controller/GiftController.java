@@ -1,16 +1,22 @@
 package com.gift.gift.domain.gift.controller;
 
+import java.util.UUID;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.dto.request.GiftPreflightRequest;
 import com.gift.gift.domain.gift.dto.response.*;
+import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.service.GiftQueryService;
 import com.gift.gift.domain.gift.service.GiftService;
+import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
@@ -77,6 +83,30 @@ public class GiftController {
         GiftPreflightResponse response = giftService.preflight(senderId, request);
 
         return ResponseEntity.ok(ApiResponse.success("선물 사전 검증을 완료했습니다.", response));
+    }
+
+    @PostMapping
+    public ResponseEntity<ApiResponse<GiftCreateResponse>> createGift(
+            @CurrentUserId Long senderId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKeyHeader,
+            @Valid @RequestBody GiftCreateRequest request
+    ) {
+        UUID idempotencyKey = parseIdempotencyKey(idempotencyKeyHeader);
+        GiftCreateResponse response = giftService.createGiftResponse(senderId, idempotencyKey, request);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("선물을 보냈습니다.", response));
+    }
+
+    private UUID parseIdempotencyKey(String idempotencyKeyHeader) {
+        if (idempotencyKeyHeader == null || idempotencyKeyHeader.isBlank()) {
+            throw new GiftException(ErrorCode.INVALID_REQUEST);
+        }
+
+        try {
+            return UUID.fromString(idempotencyKeyHeader);
+        } catch (IllegalArgumentException exception) {
+            throw new GiftException(ErrorCode.INVALID_REQUEST);
+        }
     }
 
     private String listMessage(CursorPageResponse<?> response, String message, String emptyMessage) {
