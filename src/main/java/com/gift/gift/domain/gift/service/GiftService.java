@@ -16,6 +16,7 @@ import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.dto.request.GiftPreflightRequest;
 import com.gift.gift.domain.gift.dto.response.GiftPreflightResponse;
 import com.gift.gift.domain.gift.entity.GiftHistory;
+import com.gift.gift.domain.gift.exception.GiftErrorCode;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.gift.support.GiftPolicy;
@@ -45,7 +46,7 @@ public class GiftService {
     @Transactional(readOnly = true)
     public GiftPreflightResponse preflight(Long senderId, GiftPreflightRequest request) {
         if (senderId.equals(request.recipientUserId())) {
-            throw new GiftException(ErrorCode.INVALID_REQUEST);
+            throw new GiftException(GiftErrorCode.GIFT_CANNOT_SEND_TO_SELF);
         }
 
         ActiveUserSummary recipient = userQueryService.findActiveUser(request.recipientUserId())

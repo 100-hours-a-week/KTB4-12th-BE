@@ -136,11 +136,11 @@ class GiftServiceTest {
     }
 
     @Test
-    @DisplayName("자기 자신에게 선물하면 INVALID_REQUEST가 발생하고 조회하지 않는다")
-    void preflight_throwsInvalidRequest_whenSendingToSelf() {
+    @DisplayName("자기 자신에게 선물하면 GIFT_CANNOT_SEND_TO_SELF가 발생하고 조회하지 않는다")
+    void preflight_throwsGiftCannotSendToSelf_whenSendingToSelf() {
         GiftPreflightRequest request = new GiftPreflightRequest(3L, 1L, 1);
 
-        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.INVALID_REQUEST);
+        assertGiftError(() -> giftService.preflight(1L, request), ErrorCode.GIFT_CANNOT_SEND_TO_SELF);
 
         verifyNoInteractions(userQueryService, friendQueryService, productQueryService, preferenceQueryService);
     }

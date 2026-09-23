@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.entity.GiftHistory;
+import com.gift.gift.domain.gift.exception.GiftErrorCode;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.product.entity.Product;
@@ -37,7 +38,7 @@ public class GiftCommandService {
             GiftCreateRequest request
     ) {
         if (senderId.equals(request.recipientUserId())) {
-            throw new GiftException(ErrorCode.INVALID_REQUEST);
+            throw new GiftException(GiftErrorCode.GIFT_CANNOT_SEND_TO_SELF);
         }
 
         ActiveUserSummary recipient = userQueryService.findActiveUser(request.recipientUserId())
