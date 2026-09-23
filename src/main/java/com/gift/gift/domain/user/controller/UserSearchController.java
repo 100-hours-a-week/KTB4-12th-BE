@@ -18,6 +18,7 @@ import com.gift.gift.domain.user.dto.request.UserSearchRequest;
 import com.gift.gift.domain.user.dto.response.UserSearchResponse;
 import com.gift.gift.domain.user.exception.UserErrorCode;
 import com.gift.gift.domain.user.exception.UserException;
+import com.gift.gift.domain.user.response.UserSuccessCode;
 import com.gift.gift.domain.user.service.UserSearchService;
 import com.gift.gift.global.response.ApiResponse;
 

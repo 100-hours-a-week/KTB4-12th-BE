@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.response.SignupResponse;
+import com.gift.gift.domain.user.response.UserSuccessCode;
 import com.gift.gift.domain.user.service.SignupService;
 import com.gift.gift.global.response.ApiResponse;
 

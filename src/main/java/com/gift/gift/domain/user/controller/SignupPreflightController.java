@@ -15,6 +15,7 @@ import com.gift.gift.domain.user.dto.request.CheckEmailAvailabilityRequest;
 import com.gift.gift.domain.user.dto.response.EmailAvailabilityResponse;
 import com.gift.gift.domain.user.dto.response.SignupTermsResponse;
 import com.gift.gift.domain.user.exception.UserErrorCode;
+import com.gift.gift.domain.user.response.UserSuccessCode;
 import com.gift.gift.domain.user.service.SignupPreflightService;
 import com.gift.gift.global.exception.RequestValidationException;
 import com.gift.gift.global.response.ApiResponse;
