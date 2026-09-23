@@ -37,7 +37,7 @@ public class GiftCommandService {
             GiftCreateRequest request
     ) {
         if (senderId.equals(request.recipientUserId())) {
-            throw new GiftException(ErrorCode.INVALID_REQUEST);
+            throw new GiftException(ErrorCode.GIFT_CANNOT_SEND_TO_SELF);
         }
 
         ActiveUserSummary recipient = userQueryService.findActiveUser(request.recipientUserId())

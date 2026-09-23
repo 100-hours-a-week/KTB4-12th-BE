@@ -95,13 +95,13 @@ class GiftCommandServiceTest {
     }
 
     @Test
-    @DisplayName("자기 자신에게 선물하면 INVALID_REQUEST가 발생하고 아무것도 조회하지 않는다")
-    void createNewGift_throwsInvalidRequest_whenSendingToSelf() {
+    @DisplayName("자기 자신에게 선물하면 GIFT_CANNOT_SEND_TO_SELF가 발생하고 아무것도 조회하지 않는다")
+    void createNewGift_throwsGiftCannotSendToSelf_whenSendingToSelf() {
         GiftCreateRequest request = new GiftCreateRequest(PRODUCT_ID, SENDER_ID, 1, BigDecimal.valueOf(32_000));
 
         assertGiftError(
                 () -> giftCommandService.createNewGift(SENDER_ID, UUID.randomUUID(), "a".repeat(64), request),
-                ErrorCode.INVALID_REQUEST
+                ErrorCode.GIFT_CANNOT_SEND_TO_SELF
         );
 
         verifyNoInteractions(userQueryService, friendQueryService, productQueryService, productStockService,
