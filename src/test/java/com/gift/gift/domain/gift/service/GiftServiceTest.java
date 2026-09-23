@@ -2,6 +2,9 @@ package com.gift.gift.domain.gift.service;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,6 +17,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.dto.request.GiftPreflightRequest;
+import com.gift.gift.domain.gift.dto.response.GiftCreateResponse;
 import com.gift.gift.domain.gift.dto.response.GiftPreflightResponse;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
@@ -24,6 +28,7 @@ import com.gift.gift.domain.preference.service.PreferenceQueryService;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.service.ProductQueryService;
+import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.domain.user.support.ActiveUserSummary;
 import com.gift.gift.global.exception.ErrorCode;
@@ -381,6 +386,90 @@ class GiftServiceTest {
         );
 
         verify(giftHistoryRepository, times(1)).findBySender_IdAndIdempotencyKey(senderId, idempotencyKey);
+    }
+
+    @Test
+    @DisplayName("생성 결과를 현재 수신자 이름과 상품 대표 이미지를 포함한 응답으로 조립한다")
+    void createGiftResponse_assemblesResponse_withCurrentRecipientNameAndThumbnail() {
+        Long senderId = 1L;
+        Long recipientId = 2L;
+        Long productId = 3L;
+        UUID idempotencyKey = UUID.randomUUID();
+        String fingerprint = "a".repeat(64);
+        GiftCreateRequest request = new GiftCreateRequest(productId, recipientId, 2, BigDecimal.valueOf(10_000));
+        GiftHistory giftHistory = mock(GiftHistory.class);
+        User recipient = mock(User.class);
+        Product product = mock(Product.class);
+        LocalDateTime completedAt = LocalDateTime.of(2026, 8, 27, 14, 30, 15);
+
+        when(fingerprintGenerator.generate(request)).thenReturn(fingerprint);
+        when(giftHistoryRepository.findBySender_IdAndIdempotencyKey(senderId, idempotencyKey))
+                .thenReturn(Optional.empty());
+        when(giftCommandService.createNewGift(senderId, idempotencyKey, fingerprint, request))
+                .thenReturn(giftHistory);
+
+        when(giftHistory.getId()).thenReturn(501L);
+        when(giftHistory.getCompletedAt()).thenReturn(completedAt);
+        when(giftHistory.getRecipient()).thenReturn(recipient);
+        when(giftHistory.getProduct()).thenReturn(product);
+        when(giftHistory.getQuantity()).thenReturn(2);
+        when(giftHistory.getProductPriceSnapshot()).thenReturn(BigDecimal.valueOf(32_000));
+        when(giftHistory.getProductNameSnapshot()).thenReturn("이니스프리 그린티 수분 크림");
+        when(recipient.getId()).thenReturn(recipientId);
+        when(product.getId()).thenReturn(productId);
+
+        when(userQueryService.findActiveUser(recipientId))
+                .thenReturn(Optional.of(new ActiveUserSummary(recipientId, "김민지")));
+        when(productQueryService.findThumbnailUrls(List.of(productId)))
+                .thenReturn(Map.of(productId, "https://cdn.example.com/501.jpg"));
+
+        GiftCreateResponse response = giftService.createGiftResponse(senderId, idempotencyKey, request);
+
+        assertThat(response.gift().giftId()).isEqualTo(501L);
+        assertThat(response.gift().sentAt()).isEqualTo(completedAt);
+        assertThat(response.gift().recipientName()).isEqualTo("김민지");
+        assertThat(response.gift().product().productName()).isEqualTo("이니스프리 그린티 수분 크림");
+        assertThat(response.gift().product().quantity()).isEqualTo(2);
+        assertThat(response.gift().product().unitPrice()).isEqualByComparingTo(BigDecimal.valueOf(32_000));
+        assertThat(response.gift().product().totalPrice()).isEqualByComparingTo(BigDecimal.valueOf(64_000));
+        assertThat(response.gift().product().imageUrl()).isEqualTo("https://cdn.example.com/501.jpg");
+    }
+
+    @Test
+    @DisplayName("수신자가 더 이상 활성 상태가 아니면 탈퇴한 사용자로 표시한다")
+    void createGiftResponse_showsDeletedUserName_whenRecipientIsNoLongerActive() {
+        Long senderId = 1L;
+        Long recipientId = 2L;
+        Long productId = 3L;
+        UUID idempotencyKey = UUID.randomUUID();
+        String fingerprint = "a".repeat(64);
+        GiftCreateRequest request = new GiftCreateRequest(productId, recipientId, 1, BigDecimal.valueOf(10_000));
+        GiftHistory giftHistory = mock(GiftHistory.class);
+        User recipient = mock(User.class);
+        Product product = mock(Product.class);
+
+        when(fingerprintGenerator.generate(request)).thenReturn(fingerprint);
+        when(giftHistoryRepository.findBySender_IdAndIdempotencyKey(senderId, idempotencyKey))
+                .thenReturn(Optional.empty());
+        when(giftCommandService.createNewGift(senderId, idempotencyKey, fingerprint, request))
+                .thenReturn(giftHistory);
+
+        when(giftHistory.getCompletedAt()).thenReturn(LocalDateTime.now());
+        when(giftHistory.getRecipient()).thenReturn(recipient);
+        when(giftHistory.getProduct()).thenReturn(product);
+        when(giftHistory.getQuantity()).thenReturn(1);
+        when(giftHistory.getProductPriceSnapshot()).thenReturn(BigDecimal.valueOf(10_000));
+        when(giftHistory.getProductNameSnapshot()).thenReturn("상품");
+        when(recipient.getId()).thenReturn(recipientId);
+        when(product.getId()).thenReturn(productId);
+
+        when(userQueryService.findActiveUser(recipientId)).thenReturn(Optional.empty());
+        when(productQueryService.findThumbnailUrls(List.of(productId))).thenReturn(Map.of());
+
+        GiftCreateResponse response = giftService.createGiftResponse(senderId, idempotencyKey, request);
+
+        assertThat(response.gift().recipientName()).isEqualTo("탈퇴한 사용자");
+        assertThat(response.gift().product().imageUrl()).isNull();
     }
 
     private DataIntegrityViolationException idempotencyKeyUniqueViolation() {

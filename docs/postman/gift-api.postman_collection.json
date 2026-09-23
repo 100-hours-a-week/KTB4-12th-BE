@@ -333,7 +333,28 @@
               "host": ["{{baseUrl}}"],
               "path": ["gifts", "preflight"]
             },
-            "description": "선물 생성 전 수신자·친구 관계·상품·재고 조건을 검증하고 총금액과 최대 주문 수량을 반환한다. 데이터를 변경하지 않는다.\n\n자기 자신에게 보내면 400 INVALID_REQUEST, 활성 수신자가 아니면 404 RECIPIENT_NOT_FOUND, 상품이 없으면 404 PRODUCT_NOT_FOUND, 친구가 아니면 422 RECIPIENT_NOT_FRIEND, 재고가 부족하면 422 INSUFFICIENT_STOCK이다. 수신자가 상품 카테고리를 비선호로 등록했으면 응답의 `preferenceWarning`에 경고 정보가 채워지지만 선물 자체를 막지는 않는다."
+            "description": "선물 생성 전 수신자·친구 관계·상품·재고 조건을 검증하고 총금액과 최대 주문 수량을 반환한다. 데이터를 변경하지 않는다.\n\n자기 자신에게 보내면 422 GIFT_CANNOT_SEND_TO_SELF, 활성 수신자가 아니면 404 RECIPIENT_NOT_FOUND, 상품이 없으면 404 PRODUCT_NOT_FOUND, 친구가 아니면 422 RECIPIENT_NOT_FRIEND, 재고가 부족하면 422 INSUFFICIENT_STOCK이다. 수신자가 상품 카테고리를 비선호로 등록했으면 응답의 `preferenceWarning`에 경고 정보가 채워지지만 선물 자체를 막지는 않는다."
+          },
+          "response": []
+        },
+        {
+          "name": "선물 생성",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": 2,\n  \"expectedUnitPrice\": 32000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/gifts",
+              "host": ["{{baseUrl}}"],
+              "path": ["gifts"]
+            },
+            "description": "조건을 재검증하고 재고 차감·판매량 증가·선물 이력 저장을 하나의 트랜잭션으로 처리한다. `Idempotency-Key` 헤더는 UUID 형식이 필수이며, 같은 키로 같은 요청을 재시도하면 최초 결과를 그대로 반환한다(201).\n\n자기 자신에게 보내면 422 GIFT_CANNOT_SEND_TO_SELF, `Idempotency-Key` 누락·형식 오류나 Body 오류는 400 INVALID_REQUEST, 활성 수신자가 아니면 404 RECIPIENT_NOT_FOUND, 상품이 없으면 404 PRODUCT_NOT_FOUND, preflight 확인 후 가격이 바뀌었으면 409 GIFT_CONDITIONS_CHANGED, 같은 키로 다른 요청을 보내면 409 IDEMPOTENCY_KEY_CONFLICT, 친구가 아니면 422 RECIPIENT_NOT_FRIEND, 재고가 부족하면 422 INSUFFICIENT_STOCK이다."
           },
           "response": []
         }
