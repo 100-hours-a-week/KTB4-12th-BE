@@ -25,6 +25,7 @@ import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.response.FriendSuccessCode;
 import com.gift.gift.domain.friend.service.FriendService;
 import com.gift.gift.global.pagination.CursorPageResponse;
+import com.gift.gift.global.pagination.InvalidCursorException;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
 
@@ -168,10 +169,7 @@ public class FriendController {
                 queryParameters.get("cursor");
 
         if (cursors != null && cursors.size() != 1) {
-            throw new FriendException(
-                    FriendErrorCode
-                            .FRIEND_SEARCH_QUERY_REQUIRED
-            );
+            throw new InvalidCursorException();
         }
     }
 

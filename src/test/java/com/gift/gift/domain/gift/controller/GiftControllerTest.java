@@ -185,14 +185,14 @@ class GiftControllerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/gifts/sent", "/gifts/received"})
-    @DisplayName("잘못된 커서는 400 INVALID_CURSOR와 커서 확인 메시지를 반환한다")
+    @DisplayName("잘못된 커서는 400 INVALID_CURSOR와 페이지 정보 확인 메시지를 반환한다")
     void getGifts_returnsInvalidCursor_whenCursorIsMalformed(String path) throws Exception {
         when(giftQueryService.getSentGifts(USER_ID, "bad")).thenThrow(new InvalidCursorException());
         when(giftQueryService.getReceivedGifts(USER_ID, "bad")).thenThrow(new InvalidCursorException());
 
         mockMvc.perform(get(path).param("cursor", "bad"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("커서를 확인해 주세요."))
+                .andExpect(jsonPath("$.message").value("페이지 정보를 확인해 주세요."))
                 .andExpect(jsonPath("$.error.code").value("INVALID_CURSOR"))
                 .andExpect(jsonPath("$.data").doesNotExist());
     }

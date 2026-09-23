@@ -152,37 +152,21 @@ public class FriendService {
     }
 
     private FriendCursor decodeSearchCursor(String rawCursor, String query) {
+
         if (rawCursor == null) {
             return null;
         }
 
-        FriendCursor cursor;
-
-        try {
-            cursor = cursorCodec.decode(
-                    rawCursor,
-                    FriendCursor.class
-            );
-        } catch (InvalidCursorException exception) {
-            throw new FriendException(
-                    FriendErrorCode.FRIEND_SEARCH_INVALID_CURSOR,
-                    exception
-            );
-        }
+        FriendCursor cursor = cursorCodec.decode(rawCursor, FriendCursor.class);
 
         if (!query.equals(cursor.query())) {
-            throw new FriendException(
-                    FriendErrorCode.FRIEND_SEARCH_INVALID_CURSOR
-            );
+            throw new InvalidCursorException();
         }
 
         return cursor;
     }
 
-    private void validateNotSelf(
-            Long userId,
-            Long friendUserId
-    ) {
+    private void validateNotSelf(Long userId, Long friendUserId) {
         if (userId.equals(friendUserId)) {
             throw new FriendException(
                     FriendErrorCode.FRIEND_CANNOT_ADD_SELF

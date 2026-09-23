@@ -67,7 +67,7 @@ class FriendControllerTest {
     @DisplayName("친구 목록은 인증 사용자와 커서로 조회하고 항목과 페이지 정보를 반환한다")
     void getFriends_returnsPage_forAuthenticatedUser() throws Exception {
         when(friendService.getFriends(USER_ID, "cursor-1")).thenReturn(CursorPageResponse.from(
-                List.of(new FriendListItem(31L, 27L, "김민지", "minji@example.com", "03-14")),
+                List.of(new FriendListItem(31L, 27L, "김민지", "minji@example.com", "2000-03-14")),
                 "next-cursor",
                 true
         ));
@@ -79,7 +79,7 @@ class FriendControllerTest {
                 .andExpect(jsonPath("$.data.items[0].userId").value(27))
                 .andExpect(jsonPath("$.data.items[0].name").value("김민지"))
                 .andExpect(jsonPath("$.data.items[0].email").value("minji@example.com"))
-                .andExpect(jsonPath("$.data.items[0].birth").value("03-14"))
+                .andExpect(jsonPath("$.data.items[0].birth").value("2000-03-14"))
                 .andExpect(jsonPath("$.data.pagination.nextCursor").value("next-cursor"))
                 .andExpect(jsonPath("$.data.pagination.hasNext").value(true))
                 .andExpect(jsonPath("$.error").doesNotExist());

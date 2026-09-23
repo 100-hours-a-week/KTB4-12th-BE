@@ -14,10 +14,6 @@ public enum FriendErrorCode {
             ErrorCode.INVALID_REQUEST,
             "검색어를 입력해 주세요."
     ),
-    FRIEND_SEARCH_INVALID_CURSOR(
-            ErrorCode.INVALID_CURSOR,
-            "페이지 정보를 확인해 주세요."
-    ),
     FRIEND_SEARCH_FAILED(
             ErrorCode.INTERNAL_SERVER_ERROR,
             "친구 검색에 실패했습니다. 다시 시도해 주세요."

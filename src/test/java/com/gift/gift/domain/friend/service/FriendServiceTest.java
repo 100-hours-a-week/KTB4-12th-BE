@@ -64,7 +64,7 @@ class FriendServiceTest {
         CursorPageResponse<FriendListItem> result = friendService.getFriends(USER_ID, null);
 
         assertThat(result.items()).containsExactly(
-                new FriendListItem(31L, 27L, "김민지", "minji@example.com", "03-14")
+                new FriendListItem(31L, 27L, "김민지", "minji@example.com", "2000-03-14")
         );
         assertThat(result.pagination().hasNext()).isTrue();
         assertThat(result.pagination().nextCursor()).isEqualTo("next");
