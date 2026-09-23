@@ -78,4 +78,20 @@ class UserQueryServiceTest {
                         UserStatus.ACTIVE
                 );
     }
+
+    @Test
+    @DisplayName("참조를 요청하면 조회 없이 Repository의 프록시 참조를 그대로 반환한다")
+    void getReference_returnsRepositoryProxy_withoutQuery() {
+        Long userId = 5L;
+        User reference = mock(User.class);
+
+        when(userRepository.getReferenceById(userId)).thenReturn(reference);
+
+        User result = userQueryService.getReference(userId);
+
+        assertThat(result).isSameAs(reference);
+
+        verify(userRepository).getReferenceById(userId);
+        verifyNoMoreInteractions(userRepository);
+    }
 }

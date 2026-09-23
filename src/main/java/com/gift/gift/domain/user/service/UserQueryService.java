@@ -38,4 +38,8 @@ public class UserQueryService {
                 UserStatus.ACTIVE
         );
     }
+
+    public User getReference(Long userId) {
+        return userRepository.getReferenceById(userId);
+    }
 }
