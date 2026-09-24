@@ -8,7 +8,7 @@ import com.gift.gift.global.exception.ValidationErrorReason;
 public record FriendCreateRequest(
 
         @NotNull(message = ValidationErrorReason.Message.REQUIRED)
-        @Positive(message = ValidationErrorReason.Message.OUT_OF_RANGE)
+        @Positive(message = ValidationErrorReason.Message.INVALID_FORMAT)
         Long friendUserId
 
 ) {

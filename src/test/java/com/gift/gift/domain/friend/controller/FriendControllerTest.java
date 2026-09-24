@@ -75,13 +75,14 @@ class FriendControllerTest {
         mockMvc.perform(get("/friends").param("cursor", "cursor-1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("친구 목록을 조회했습니다."))
-                .andExpect(jsonPath("$.data.items[0].friendId").value(31))
-                .andExpect(jsonPath("$.data.items[0].userId").value(27))
-                .andExpect(jsonPath("$.data.items[0].name").value("김민지"))
-                .andExpect(jsonPath("$.data.items[0].email").value("minji@example.com"))
-                .andExpect(jsonPath("$.data.items[0].birth").value("2000-03-14"))
+                .andExpect(jsonPath("$.data.friends[0].friendId").value(31))
+                .andExpect(jsonPath("$.data.friends[0].userId").value(27))
+                .andExpect(jsonPath("$.data.friends[0].name").value("김민지"))
+                .andExpect(jsonPath("$.data.friends[0].email").value("minji@example.com"))
+                .andExpect(jsonPath("$.data.friends[0].birth").value("2000-03-14"))
                 .andExpect(jsonPath("$.data.pagination.nextCursor").value("next-cursor"))
                 .andExpect(jsonPath("$.data.pagination.hasNext").value(true))
+                .andExpect(jsonPath("$.data.items").doesNotExist())
                 .andExpect(jsonPath("$.error").doesNotExist());
 
         verify(friendService).getFriends(USER_ID, "cursor-1");
@@ -111,7 +112,7 @@ class FriendControllerTest {
 
         mockMvc.perform(get("/friends"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].birth").value(nullValue()));
+                .andExpect(jsonPath("$.data.friends[0].birth").value(nullValue()));
     }
 
     @Test
@@ -123,7 +124,7 @@ class FriendControllerTest {
         mockMvc.perform(get("/friends"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("친구 목록을 조회했습니다."))
-                .andExpect(jsonPath("$.data.items").isEmpty())
+                .andExpect(jsonPath("$.data.friends").isEmpty())
                 .andExpect(jsonPath("$.data.pagination.nextCursor").value(nullValue()))
                 .andExpect(jsonPath("$.data.pagination.hasNext").value(false));
     }

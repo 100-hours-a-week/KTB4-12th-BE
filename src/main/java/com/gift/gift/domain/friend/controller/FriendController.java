@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.gift.gift.domain.friend.dto.request.FriendCreateRequest;
 import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
+import com.gift.gift.domain.friend.dto.response.FriendListResponse;
 import com.gift.gift.domain.friend.dto.response.FriendSearchResponse;
 import com.gift.gift.domain.friend.exception.FriendErrorCode;
 import com.gift.gift.domain.friend.exception.FriendException;
@@ -44,8 +45,7 @@ public class FriendController {
     private final FriendService friendService;
 
     @GetMapping
-    public ResponseEntity<
-            ApiResponse<CursorPageResponse<FriendListItem>>>
+    public ResponseEntity<ApiResponse<FriendListResponse>>
     getFriends(
             @CurrentUserId Long userId,
             @RequestParam(required = false) String cursor
@@ -63,7 +63,7 @@ public class FriendController {
                 .status(successCode.status())
                 .body(ApiResponse.success(
                         successCode.message(),
-                        response
+                        FriendListResponse.from(response)
                 ));
     }
 

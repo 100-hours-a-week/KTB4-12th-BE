@@ -23,6 +23,7 @@ import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.exception.UserErrorCode;
 import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.InvalidCursorException;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -43,14 +44,22 @@ public class FriendService {
             String rawCursor
     ) {
         FriendCursor cursor = decodeListCursor(rawCursor);
-        FriendPage page = pageAssembler.assemble(
-                friendQueryRepository.findFriends(
-                        userId,
-                        cursor
-                )
-        );
 
-        return toPageResponse(page);
+        try {
+            FriendPage page = pageAssembler.assemble(
+                    friendQueryRepository.findFriends(
+                            userId,
+                            cursor
+                    )
+            );
+
+            return toPageResponse(page);
+        } catch (RuntimeException exception) {
+            throw new FriendException(
+                    FriendErrorCode.FRIEND_LIST_RETRIEVAL_FAILED,
+                    exception
+            );
+        }
     }
 
     public CursorPageResponse<FriendListItem> searchFriends(
@@ -89,27 +98,36 @@ public class FriendService {
             Long userId,
             FriendCreateRequest request
     ) {
-        Long friendUserId = request.friendUserId();
+        try {
+            Long friendUserId = request.friendUserId();
 
-        validateNotSelf(
-                userId,
-                friendUserId
-        );
+            validateNotSelf(
+                    userId,
+                    friendUserId
+            );
 
-        User user = findActiveUser(userId);
-        User friendUser = findActiveUser(friendUserId);
+            User user = findActiveUser(userId);
+            User friendUser = findActiveFriendTarget(friendUserId);
 
-        validateNotAlreadyFriend(
-                userId,
-                friendUserId
-        );
+            validateNotAlreadyFriend(
+                    userId,
+                    friendUserId
+            );
 
-        saveFriend(
-                user,
-                friendUser
-        );
+            saveFriend(
+                    user,
+                    friendUser
+            );
 
-        return FriendCreateResponse.from(friendUser);
+            return FriendCreateResponse.from(friendUser);
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new FriendException(
+                    FriendErrorCode.FRIEND_CREATE_FAILED,
+                    exception
+            );
+        }
     }
 
     private CursorPageResponse<FriendListItem> toPageResponse(FriendPage page) {
@@ -182,6 +200,17 @@ public class FriendService {
                 )
                 .orElseThrow(() -> new UserException(
                         UserErrorCode.USER_NOT_FOUND
+                ));
+    }
+
+    private User findActiveFriendTarget(Long friendUserId) {
+        return userRepository
+                .findByIdAndStatusAndDeletedAtIsNull(
+                        friendUserId,
+                        UserStatus.ACTIVE
+                )
+                .orElseThrow(() -> new FriendException(
+                        FriendErrorCode.FRIEND_CREATE_TARGET_NOT_FOUND
                 ));
     }
 
