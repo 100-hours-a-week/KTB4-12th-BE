@@ -23,10 +23,4 @@ public interface TermRepository extends JpaRepository<Term, Long> {
             ORDER BY term.termCode ASC, term.id ASC
             """)
     List<Term> findCurrentTerms();
-
-    default List<Term> findCurrentRequiredTerms() {
-        return findCurrentTerms().stream()
-                .filter(Term::isRequired)
-                .toList();
-    }
 }

@@ -38,13 +38,23 @@ public class SignupService {
     public SignupResponse signup(SignupRequest request) {
         LocalDate birth = LocalDate.parse(request.birth());
 
-        List<Term> requiredTerms = termRepository.findCurrentRequiredTerms();
+        List<Term> currentTerms = termRepository.findCurrentTerms();
+        List<Term> requiredTerms = currentTerms.stream()
+                .filter(Term::isRequired)
+                .toList();
 
         if (requiredTerms.isEmpty()) {
             throw new SignupTermsConfigurationException();
         }
 
-        validateTermConsents(requiredTerms, request.termConsents());
+        Map<Long, Term> currentTermsById = currentTerms.stream()
+                .collect(Collectors.toMap(Term::getId, Function.identity()));
+
+        validateTermConsents(
+                currentTermsById,
+                requiredTerms,
+                request.termConsents()
+        );
 
         if (userRepository.existsByEmail(request.email())) {
             throw new UserException(UserErrorCode.EMAIL_ALREADY_IN_USE);
@@ -61,8 +71,12 @@ public class SignupService {
 
         User savedUser = saveUser(user);
 
-        List<TermConsent> consents = requiredTerms.stream()
-                .map(term -> new TermConsent(savedUser, term, true))
+        List<TermConsent> consents = request.termConsents().stream()
+                .map(consent -> new TermConsent(
+                        savedUser,
+                        currentTermsById.get(consent.termId()),
+                        consent.isAgreed()
+                ))
                 .toList();
 
         termConsentRepository.saveAllAndFlush(consents);
@@ -71,13 +85,10 @@ public class SignupService {
     }
 
     private void validateTermConsents(
+            Map<Long, Term> currentTermsById,
             List<Term> requiredTerms,
             List<SignupTermConsentRequest> requestedConsents
     ) {
-
-        Map<Long, Term> currentTermsById = requiredTerms.stream()
-                .collect(Collectors.toMap(Term::getId, Function.identity()));
-
         for (SignupTermConsentRequest consent : requestedConsents) {
             Term currentTerm = currentTermsById.get(consent.termId());
 

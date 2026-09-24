@@ -1,5 +1,6 @@
 package com.gift.gift.domain.user.service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -60,23 +61,36 @@ class SignupPersistenceTest {
     private PasswordEncoder passwordEncoder;
 
     private String email;
-    private Long createdTermId;
+    private List<Long> createdTermIds;
     private List<Term> requiredTerms;
+    private Term optionalTerm;
 
     @BeforeEach
     void setUp() {
         email = "signup-" + UUID.randomUUID() + "@example.com";
+        createdTermIds = new ArrayList<>();
 
-        Term term = termRepository.saveAndFlush(new Term(
+        Term requiredTerm = termRepository.saveAndFlush(new Term(
                 "TEST_" + UUID.randomUUID(),
                 1,
                 "테스트 약관",
                 "테스트 본문",
                 true
         ));
+        optionalTerm = termRepository.saveAndFlush(new Term(
+                "TEST_OPTIONAL_" + UUID.randomUUID(),
+                1,
+                "테스트 선택 약관",
+                "테스트 선택 약관 본문",
+                false
+        ));
 
-        createdTermId = term.getId();
-        requiredTerms = termRepository.findCurrentRequiredTerms();
+        createdTermIds.add(requiredTerm.getId());
+        createdTermIds.add(optionalTerm.getId());
+
+        requiredTerms = termRepository.findCurrentTerms().stream()
+                .filter(Term::isRequired)
+                .toList();
     }
 
     @AfterEach
@@ -92,8 +106,8 @@ class SignupPersistenceTest {
 
         jdbcTemplate.update("DELETE FROM users WHERE email = ?", email);
 
-        if (createdTermId != null) {
-            jdbcTemplate.update("DELETE FROM terms WHERE id = ?", createdTermId);
+        for (Long termId : createdTermIds) {
+            jdbcTemplate.update("DELETE FROM terms WHERE id = ?", termId);
         }
     }
 
@@ -129,6 +143,45 @@ class SignupPersistenceTest {
                 """, Integer.class, user.getId());
 
         assertEquals(0, invalidCount.intValue());
+
+        Integer optionalConsentCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM term_consents
+                WHERE user_id = ?
+                  AND term_id = ?
+                """, Integer.class, user.getId(), optionalTerm.getId());
+
+        assertEquals(0, optionalConsentCount.intValue());
+    }
+
+    @Test
+    @DisplayName("선택 약관 동의를 실제 MySQL에 true로 저장한다")
+    void signup_persistsOptionalConsentAsAgreed() {
+        var response = service.signup(request(optionalConsent(true)));
+
+        Boolean agreed = jdbcTemplate.queryForObject("""
+                SELECT is_agreed
+                FROM term_consents
+                WHERE user_id = ?
+                  AND term_id = ?
+                """, Boolean.class, response.userId(), optionalTerm.getId());
+
+        assertTrue(agreed);
+    }
+
+    @Test
+    @DisplayName("선택 약관 미동의를 실제 MySQL에 false로 저장한다")
+    void signup_persistsOptionalConsentAsNotAgreed() {
+        var response = service.signup(request(optionalConsent(false)));
+
+        Boolean agreed = jdbcTemplate.queryForObject("""
+                SELECT is_agreed
+                FROM term_consents
+                WHERE user_id = ?
+                  AND term_id = ?
+                """, Boolean.class, response.userId(), optionalTerm.getId());
+
+        assertFalse(agreed);
     }
 
     @Test
@@ -213,13 +266,22 @@ class SignupPersistenceTest {
     }
 
     private SignupRequest request() {
-        List<SignupTermConsentRequest> consents = requiredTerms.stream()
-                .map(term -> new SignupTermConsentRequest(
-                        term.getId(),
-                        term.getVersion(),
-                        true
-                ))
-                .toList();
+        return request(List.of());
+    }
+
+    private SignupRequest request(
+            List<SignupTermConsentRequest> optionalConsents
+    ) {
+        List<SignupTermConsentRequest> consents = new ArrayList<>(
+                requiredTerms.stream()
+                        .map(term -> new SignupTermConsentRequest(
+                                term.getId(),
+                                term.getVersion(),
+                                true
+                        ))
+                        .toList()
+        );
+        consents.addAll(optionalConsents);
 
         return new SignupRequest(
                 "김선물",
@@ -228,5 +290,13 @@ class SignupPersistenceTest {
                 "Password1!",
                 consents
         );
+    }
+
+    private List<SignupTermConsentRequest> optionalConsent(boolean agreed) {
+        return List.of(new SignupTermConsentRequest(
+                optionalTerm.getId(),
+                optionalTerm.getVersion(),
+                agreed
+        ));
     }
 }

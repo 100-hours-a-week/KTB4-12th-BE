@@ -5,11 +5,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
+import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.response.SignupResponse;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.SignupService;
@@ -18,8 +20,11 @@ import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 import com.gift.gift.support.TestValidatorFactory;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -69,6 +74,36 @@ class SignupControllerTest {
                 .andExpect(jsonPath("$.data.passwordHash").doesNotExist())
                 .andExpect(jsonPath("$.data.accessToken").doesNotExist())
                 .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("선택 약관 미동의 값도 가입 서비스에 전달한다")
+    void signup_acceptsOptionalTermNotAgreed() throws Exception {
+        User user = new User(
+                "user@example.com", "hash", "김선물", LocalDate.of(2000, 1, 1)
+        );
+        ReflectionTestUtils.setField(user, "id", 10L);
+
+        when(service.signup(any())).thenReturn(SignupResponse.from(user));
+
+        mockMvc.perform(post("/auth/signup")
+                        .contentType(APPLICATION_JSON)
+                        .content(body().replace(
+                                "{\"termId\": 1, \"version\": 3, \"isAgreed\": true}",
+                                "{\"termId\": 1, \"version\": 3, \"isAgreed\": true},"
+                                        + "{\"termId\": 2, \"version\": 1, "
+                                        + "\"isAgreed\": false}"
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.userId").value(10));
+
+        ArgumentCaptor<SignupRequest> requestCaptor =
+                ArgumentCaptor.forClass(SignupRequest.class);
+        verify(service).signup(requestCaptor.capture());
+
+        SignupRequest request = requestCaptor.getValue();
+        assertTrue(request.termConsents().getFirst().isAgreed());
+        assertFalse(request.termConsents().get(1).isAgreed());
     }
 
     @Test
