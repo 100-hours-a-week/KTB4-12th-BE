@@ -49,6 +49,7 @@ public class SignupPreflightController {
             @Valid @RequestBody CheckEmailAvailabilityRequest request,
             BindingResult bindingResult
     ) {
+
         if (bindingResult.hasErrors()) {
             throw new RequestValidationException(
                     UserErrorCode.INVALID_EMAIL_FORMAT.errorCode()

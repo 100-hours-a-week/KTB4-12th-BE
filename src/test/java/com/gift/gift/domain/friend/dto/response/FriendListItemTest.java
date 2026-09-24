@@ -25,11 +25,11 @@ class FriendListItemTest {
     }
 
     @Test
-    @DisplayName("생일을 공개한 친구는 출생 연도 없이 MM-dd 문자열로 반환한다")
+    @DisplayName("생일을 공개한 친구는 출생 연도 없이 YYYY-MM-dd 문자열로 반환한다")
     void from_returnsMonthAndDay_whenBirthdayIsPublic() {
         FriendListItem item = FriendListItem.from(row(LocalDate.of(2000, 3, 14), true));
 
-        assertThat(item.birth()).isEqualTo("03-14");
+        assertThat(item.birth()).isEqualTo("2000-03-14");
     }
 
     @Test
@@ -37,7 +37,7 @@ class FriendListItemTest {
     void from_padsMonthAndDay_whenValuesAreSingleDigit() {
         FriendListItem item = FriendListItem.from(row(LocalDate.of(2000, 1, 5), true));
 
-        assertThat(item.birth()).isEqualTo("01-05");
+        assertThat(item.birth()).isEqualTo("2000-01-05");
     }
 
     @Test

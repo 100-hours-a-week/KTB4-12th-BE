@@ -5,14 +5,12 @@ import com.gift.gift.global.exception.ErrorCode;
 
 public class InvalidCursorException extends BusinessException {
 
-    private static final String MESSAGE = "커서를 확인해 주세요.";
-
     public InvalidCursorException() {
-        super(ErrorCode.INVALID_CURSOR, MESSAGE);
+        super(ErrorCode.INVALID_CURSOR);
     }
 
     public InvalidCursorException(Throwable cause) {
-        super(ErrorCode.INVALID_CURSOR, MESSAGE);
+        super(ErrorCode.INVALID_CURSOR);
         initCause(cause);
     }
 }

@@ -42,7 +42,7 @@ public class FriendService {
             Long userId,
             String rawCursor
     ) {
-        FriendCursor cursor = decode(rawCursor);
+        FriendCursor cursor = decodeListCursor(rawCursor);
         FriendPage page = pageAssembler.assemble(
                 friendQueryRepository.findFriends(
                         userId,
@@ -50,16 +50,38 @@ public class FriendService {
                 )
         );
 
-        List<FriendListItem> items = page.items()
-                .stream()
-                .map(FriendListItem::from)
-                .toList();
+        return toPageResponse(page);
+    }
 
-        return CursorPageResponse.from(
-                items,
-                page.nextCursor(),
-                page.hasNext()
+    public CursorPageResponse<FriendListItem> searchFriends(
+            Long userId,
+            String query,
+            String rawCursor
+    ) {
+        validateSearchQuery(query);
+
+        FriendCursor cursor = decodeSearchCursor(
+                rawCursor,
+                query
         );
+
+        try {
+            FriendPage page = pageAssembler.assemble(
+                    friendQueryRepository.findFriendsByName(
+                            userId,
+                            query,
+                            cursor
+                    ),
+                    query
+            );
+
+            return toPageResponse(page);
+        } catch (RuntimeException exception) {
+            throw new FriendException(
+                    FriendErrorCode.FRIEND_SEARCH_FAILED,
+                    exception
+            );
+        }
     }
 
     @Transactional
@@ -90,10 +112,61 @@ public class FriendService {
         return FriendCreateResponse.from(friendUser);
     }
 
-    private void validateNotSelf(
-            Long userId,
-            Long friendUserId
-    ) {
+    private CursorPageResponse<FriendListItem> toPageResponse(FriendPage page) {
+
+        List<FriendListItem> items = page.items()
+                .stream()
+                .map(FriendListItem::from)
+                .toList();
+
+        return CursorPageResponse.from(
+                items,
+                page.nextCursor(),
+                page.hasNext()
+        );
+    }
+
+    private void validateSearchQuery(String query) {
+        if (query == null || query.isBlank()) {
+            throw new FriendException(
+                    FriendErrorCode.FRIEND_SEARCH_QUERY_REQUIRED
+            );
+        }
+    }
+
+    private FriendCursor decodeListCursor(String rawCursor) {
+        if (rawCursor == null) {
+            return null;
+        }
+
+        FriendCursor cursor = cursorCodec.decode(
+                rawCursor,
+                FriendCursor.class
+        );
+
+        if (cursor.query() != null) {
+            throw new InvalidCursorException();
+        }
+
+        return cursor;
+    }
+
+    private FriendCursor decodeSearchCursor(String rawCursor, String query) {
+
+        if (rawCursor == null) {
+            return null;
+        }
+
+        FriendCursor cursor = cursorCodec.decode(rawCursor, FriendCursor.class);
+
+        if (!query.equals(cursor.query())) {
+            throw new InvalidCursorException();
+        }
+
+        return cursor;
+    }
+
+    private void validateNotSelf(Long userId, Long friendUserId) {
         if (userId.equals(friendUserId)) {
             throw new FriendException(
                     FriendErrorCode.FRIEND_CANNOT_ADD_SELF
@@ -191,23 +264,5 @@ public class FriendService {
         }
 
         return false;
-    }
-
-    private FriendCursor decode(String rawCursor) {
-        if (rawCursor == null) {
-            return null;
-        }
-
-        FriendCursor cursor =
-                cursorCodec.decode(
-                        rawCursor,
-                        FriendCursor.class
-                );
-
-        if (cursor.query() != null) {
-            throw new InvalidCursorException();
-        }
-
-        return cursor;
     }
 }
