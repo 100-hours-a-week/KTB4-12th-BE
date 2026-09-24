@@ -33,38 +33,71 @@ class SignupPreflightServiceTest {
     private SignupPreflightService signupPreflightService;
 
     @Test
-    @DisplayName("현재 필수 약관을 응답 DTO로 변환한다")
-    void getSignupTerms_returnsCurrentRequiredTerms() {
-        Term term = new Term(
+    @DisplayName("현재 필수·선택 약관을 응답 DTO로 변환한다")
+    void getSignupTerms_returnsCurrentTerms() {
+        Term requiredTerm = new Term(
                 "PRIVACY_COLLECTION_USE",
                 3,
                 "개인정보 수집 및 이용 동의서",
                 "약관 본문",
                 true
         );
+        Term optionalTerm = new Term(
+                "MARKETING",
+                2,
+                "마케팅 정보 수신 동의서",
+                "선택 약관 본문",
+                false
+        );
 
-        when(termRepository.findCurrentRequiredTerms())
-                .thenReturn(List.of(term));
+        when(termRepository.findCurrentTerms())
+                .thenReturn(List.of(optionalTerm, requiredTerm));
 
         SignupTermsResponse response =
                 signupPreflightService.getSignupTerms();
 
-        assertEquals(1, response.terms().size());
+        assertEquals(2, response.terms().size());
         assertEquals(
-                "PRIVACY_COLLECTION_USE",
+                "MARKETING",
                 response.terms().getFirst().termCode()
         );
-        assertEquals(3, response.terms().getFirst().version());
-        assertTrue(response.terms().getFirst().isRequired());
+        assertEquals(2, response.terms().getFirst().version());
+        assertFalse(response.terms().getFirst().isRequired());
+        assertTrue(response.terms().get(1).isRequired());
 
-        verify(termRepository).findCurrentRequiredTerms();
+        verify(termRepository).findCurrentTerms();
     }
 
     @Test
     @DisplayName("현재 필수 약관이 없으면 약관 없음 예외를 발생시킨다")
     void getSignupTerms_fails_whenCurrentRequiredTermsAreMissing() {
-        when(termRepository.findCurrentRequiredTerms())
+        when(termRepository.findCurrentTerms())
                 .thenReturn(List.of());
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                signupPreflightService::getSignupTerms
+        );
+
+        assertEquals(
+                ErrorCode.SIGNUP_TERMS_NOT_FOUND,
+                exception.getErrorCode()
+        );
+    }
+
+    @Test
+    @DisplayName("현재 선택 약관만 있으면 약관 설정 오류로 처리한다")
+    void getSignupTerms_fails_whenRequiredTermsAreMissing() {
+        Term optionalTerm = new Term(
+                "MARKETING",
+                2,
+                "마케팅 정보 수신 동의서",
+                "선택 약관 본문",
+                false
+        );
+
+        when(termRepository.findCurrentTerms())
+                .thenReturn(List.of(optionalTerm));
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
