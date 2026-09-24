@@ -71,10 +71,10 @@ class FriendControllerSecurityTest {
                         .with(jwt().jwt(token -> token.subject(owner.getId().toString()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("친구 목록을 조회했습니다."))
-                .andExpect(jsonPath("$.data.items.length()").value(2))
-                .andExpect(jsonPath("$.data.items[0].userId").value(first.getId()))
-                .andExpect(jsonPath("$.data.items[0].birth").value(nullValue()))
-                .andExpect(jsonPath("$.data.items[1].userId").value(second.getId()))
+                .andExpect(jsonPath("$.data.friends.length()").value(2))
+                .andExpect(jsonPath("$.data.friends[0].userId").value(first.getId()))
+                .andExpect(jsonPath("$.data.friends[0].birth").value(nullValue()))
+                .andExpect(jsonPath("$.data.friends[1].userId").value(second.getId()))
                 .andExpect(jsonPath("$.data.pagination.hasNext").value(false));
     }
 

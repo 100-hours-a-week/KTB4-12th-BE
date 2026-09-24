@@ -43,14 +43,22 @@ public class FriendService {
             String rawCursor
     ) {
         FriendCursor cursor = decodeListCursor(rawCursor);
-        FriendPage page = pageAssembler.assemble(
-                friendQueryRepository.findFriends(
-                        userId,
-                        cursor
-                )
-        );
 
-        return toPageResponse(page);
+        try {
+            FriendPage page = pageAssembler.assemble(
+                    friendQueryRepository.findFriends(
+                            userId,
+                            cursor
+                    )
+            );
+
+            return toPageResponse(page);
+        } catch (RuntimeException exception) {
+            throw new FriendException(
+                    FriendErrorCode.FRIEND_LIST_RETRIEVAL_FAILED,
+                    exception
+            );
+        }
     }
 
     public CursorPageResponse<FriendListItem> searchFriends(

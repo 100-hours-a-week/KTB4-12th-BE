@@ -10,6 +10,10 @@ public enum FriendErrorCode {
     FRIEND_CANNOT_ADD_SELF(
             ErrorCode.FRIEND_CANNOT_ADD_SELF
     ),
+    FRIEND_LIST_RETRIEVAL_FAILED(
+            ErrorCode.INTERNAL_SERVER_ERROR,
+            "친구 목록 조회에 실패했습니다. 다시 시도해 주세요."
+    ),
     FRIEND_SEARCH_QUERY_REQUIRED(
             ErrorCode.INVALID_REQUEST,
             "검색어를 입력해 주세요."
