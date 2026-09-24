@@ -19,7 +19,6 @@ import com.gift.gift.domain.friend.repository.FriendQueryRepository;
 import com.gift.gift.domain.friend.repository.FriendRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
-import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -94,8 +93,8 @@ class FriendCreateServiceTest {
     }
 
     @Test
-    @DisplayName("대상 사용자가 없으면 사용자 도메인 예외로 거부한다")
-    void createFriend_rejectsMissingUserWithUserException() {
+    @DisplayName("대상 사용자가 없으면 친구 생성 대상 없음 예외로 거부한다")
+    void createFriend_rejectsMissingTargetWithFriendException() {
         User user = user(
                 USER_ID,
                 "등록자"
@@ -125,12 +124,42 @@ class FriendCreateServiceTest {
                 )
         )
                 .isInstanceOfSatisfying(
-                        UserException.class,
-                        exception -> assertThat(
-                                exception.getErrorCode()
-                        ).isEqualTo(
-                                ErrorCode.USER_NOT_FOUND
-                        )
+                        FriendException.class,
+                        exception -> {
+                            assertThat(exception.getErrorCode())
+                                    .isEqualTo(ErrorCode.USER_NOT_FOUND);
+                            assertThat(exception.getMessage())
+                                    .isEqualTo("추가할 사용자를 찾을 수 없습니다.");
+                        }
+                );
+
+        verifyNoInteractions(friendRepository);
+    }
+
+    @Test
+    @DisplayName("친구 생성 중 예상하지 못한 오류는 생성 실패 예외로 변환한다")
+    void createFriend_translatesUnexpectedFailure() {
+        when(userRepository
+                .findByIdAndStatusAndDeletedAtIsNull(
+                        USER_ID,
+                        UserStatus.ACTIVE
+                ))
+                .thenThrow(new IllegalStateException("조회 실패"));
+
+        assertThatThrownBy(() ->
+                friendService.createFriend(
+                        USER_ID,
+                        new FriendCreateRequest(FRIEND_USER_ID)
+                )
+        )
+                .isInstanceOfSatisfying(
+                        FriendException.class,
+                        exception -> {
+                            assertThat(exception.getErrorCode())
+                                    .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
+                            assertThat(exception.getMessage())
+                                    .isEqualTo("친구를 추가하지 못했습니다. 다시 시도해 주세요.");
+                        }
                 );
 
         verifyNoInteractions(friendRepository);

@@ -16,12 +16,16 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
+import com.gift.gift.domain.friend.exception.FriendErrorCode;
+import com.gift.gift.domain.friend.exception.FriendException;
+import com.gift.gift.domain.friend.exception.FriendRequestExceptionHandler;
 import com.gift.gift.domain.friend.service.FriendService;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -44,7 +48,10 @@ class FriendCreateControllerTest {
                 .setCustomArgumentResolvers(
                         new AuthenticationPrincipalArgumentResolver()
                 )
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(
+                        new FriendRequestExceptionHandler(),
+                        new GlobalExceptionHandler()
+                )
                 .build();
 
         Jwt jwt = Jwt.withTokenValue("access-token")
@@ -110,10 +117,18 @@ class FriendCreateControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("추가할 사용자 정보를 확인해 주세요."))
                 .andExpect(jsonPath("$.error.code")
                         .value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.error.details")
-                        .isArray());
+                .andExpect(jsonPath("$.error.details[0].field")
+                        .value("friendUserId"))
+                .andExpect(jsonPath("$.error.details[0].reason")
+                        .value("REQUIRED"))
+                .andExpect(jsonPath("$.data")
+                        .doesNotExist());
+
+        verifyNoInteractions(friendService);
     }
 
     @Test
@@ -129,7 +144,100 @@ class FriendCreateControllerTest {
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("추가할 사용자 정보를 확인해 주세요."))
                 .andExpect(jsonPath("$.error.code")
-                        .value("INVALID_REQUEST"));
+                        .value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.details[0].field")
+                        .value("friendUserId"))
+                .andExpect(jsonPath("$.error.details[0].reason")
+                        .value("INVALID_FORMAT"))
+                .andExpect(jsonPath("$.data")
+                        .doesNotExist());
+
+        verifyNoInteractions(friendService);
+    }
+
+    @Test
+    @DisplayName("friendUserId 타입이 잘못되면 INVALID_FORMAT 상세를 반환한다")
+    void createFriend_rejectsInvalidFriendUserIdType()
+            throws Exception {
+
+        mockMvc.perform(post("/friends")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "friendUserId": "invalid"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("추가할 사용자 정보를 확인해 주세요."))
+                .andExpect(jsonPath("$.error.code")
+                        .value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.details[0].field")
+                        .value("friendUserId"))
+                .andExpect(jsonPath("$.error.details[0].reason")
+                        .value("INVALID_FORMAT"))
+                .andExpect(jsonPath("$.data")
+                        .doesNotExist());
+
+        verifyNoInteractions(friendService);
+    }
+
+    @Test
+    @DisplayName("대상 회원이 없으면 404와 친구 추가 대상 없음 메시지를 반환한다")
+    void createFriend_returnsTargetNotFound() throws Exception {
+        when(friendService.createFriend(any(), any()))
+                .thenThrow(new FriendException(
+                        FriendErrorCode.FRIEND_CREATE_TARGET_NOT_FOUND
+                ));
+
+        mockMvc.perform(post("/friends")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "friendUserId": 27
+                                }
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("추가할 사용자를 찾을 수 없습니다."))
+                .andExpect(jsonPath("$.error.code")
+                        .value("USER_NOT_FOUND"))
+                .andExpect(jsonPath("$.error.traceId")
+                        .isNotEmpty())
+                .andExpect(jsonPath("$.error.details")
+                        .doesNotExist())
+                .andExpect(jsonPath("$.data")
+                        .doesNotExist());
+    }
+
+    @Test
+    @DisplayName("친구 생성에 실패하면 500과 친구 추가 실패 메시지를 반환한다")
+    void createFriend_returnsCreateFailed() throws Exception {
+        when(friendService.createFriend(any(), any()))
+                .thenThrow(new FriendException(
+                        FriendErrorCode.FRIEND_CREATE_FAILED
+                ));
+
+        mockMvc.perform(post("/friends")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "friendUserId": 27
+                                }
+                                """))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message")
+                        .value("친구를 추가하지 못했습니다. 다시 시도해 주세요."))
+                .andExpect(jsonPath("$.error.code")
+                        .value("INTERNAL_SERVER_ERROR"))
+                .andExpect(jsonPath("$.error.traceId")
+                        .isNotEmpty())
+                .andExpect(jsonPath("$.error.details")
+                        .doesNotExist())
+                .andExpect(jsonPath("$.data")
+                        .doesNotExist());
     }
 }
