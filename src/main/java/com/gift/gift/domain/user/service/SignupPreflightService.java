@@ -25,9 +25,9 @@ public class SignupPreflightService {
     private final UserRepository userRepository;
 
     public SignupTermsResponse getSignupTerms() {
-        List<Term> terms = termRepository.findCurrentRequiredTerms();
+        List<Term> terms = termRepository.findCurrentTerms();
 
-        if (terms.isEmpty()) {
+        if (terms.stream().noneMatch(Term::isRequired)) {
             throw new UserException(
                     UserErrorCode.SIGNUP_TERMS_NOT_FOUND
             );

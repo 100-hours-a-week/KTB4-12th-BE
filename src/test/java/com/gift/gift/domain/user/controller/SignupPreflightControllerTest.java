@@ -55,18 +55,28 @@ class SignupPreflightControllerTest {
     @Test
     @DisplayName("약관 조회에 성공하면 정수 버전과 공통 성공 응답을 반환한다")
     void getSignupTerms_returnsSuccessResponse() throws Exception {
-        Term term = new Term(
+        Term requiredTerm = new Term(
                 "PRIVACY_COLLECTION_USE",
                 3,
                 "개인정보 수집 및 이용 동의서",
                 "약관 본문",
                 true
         );
+        Term optionalTerm = new Term(
+                "MARKETING",
+                2,
+                "마케팅 정보 수신 동의서",
+                "선택 약관 본문",
+                false
+        );
 
         when(signupPreflightService.getSignupTerms())
                 .thenReturn(
                         SignupTermsResponse.from(
-                                List.of(SignupTermResponse.from(term))
+                                List.of(
+                                        SignupTermResponse.from(requiredTerm),
+                                        SignupTermResponse.from(optionalTerm)
+                                )
                         )
                 );
 
@@ -76,6 +86,11 @@ class SignupPreflightControllerTest {
                         .value("회원가입 약관을 조회했습니다."))
                 .andExpect(jsonPath("$.data.terms[0].version").value(3))
                 .andExpect(jsonPath("$.data.terms[0].version").isNumber())
+                .andExpect(jsonPath("$.data.terms[0].isRequired").value(true))
+                .andExpect(jsonPath("$.data.terms[1].termCode")
+                        .value("MARKETING"))
+                .andExpect(jsonPath("$.data.terms[1].version").value(2))
+                .andExpect(jsonPath("$.data.terms[1].isRequired").value(false))
                 .andExpect(jsonPath("$.error").doesNotExist());
     }
 

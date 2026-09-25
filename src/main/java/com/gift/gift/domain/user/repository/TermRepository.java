@@ -13,7 +13,6 @@ public interface TermRepository extends JpaRepository<Term, Long> {
             SELECT term
             FROM Term term
             WHERE term.deletedAt IS NULL
-              AND term.isRequired = true
               AND NOT EXISTS (
                   SELECT newer.id
                   FROM Term newer
@@ -23,5 +22,5 @@ public interface TermRepository extends JpaRepository<Term, Long> {
               )
             ORDER BY term.termCode ASC, term.id ASC
             """)
-    List<Term> findCurrentRequiredTerms();
+    List<Term> findCurrentTerms();
 }
