@@ -131,16 +131,14 @@ public class ProductQueryService {
     }
 
     private ProductSort resolveSort(ProductListRequest request) {
-        if (request.sort() != null) {
-            return request.sort();
+        if (request.sort() == null) {
+            return ProductSort.POPULAR;
         }
 
-        if (request.recipientUserId() != null) {
-            throw new UnsupportedOperationException(
-                    "AI 추천 상품 조회는 후속 연동 범위입니다."
-            );
+        if (request.sort() == ProductSort.AI_RECOMMENDED) {
+            return ProductSort.POPULAR;
         }
 
-        return ProductSort.POPULAR;
+        return request.sort();
     }
 }
