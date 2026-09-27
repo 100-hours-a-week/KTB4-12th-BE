@@ -33,6 +33,13 @@ jobs:
     env:
       AWS_REGION: ap-northeast-2
       PRODUCT_IMAGE_BUCKET: ci-test-product-images
+      AI_PROFILE_BASE_URL: http://localhost:8000
+      PROFILING_SERVICE_TOKEN: ci-profiling-token
+      AI_PROFILE_CONNECT_TIMEOUT: 3s
+      AI_PROFILE_READ_TIMEOUT: 10s
+      AI_PROFILE_BATCH_SIZE: 100
+      AI_PROFILE_DISPATCH_INTERVAL: 1m
+      SCHEDULING_ENABLED: false
 
     steps:
       - name: Check out repository
@@ -119,6 +126,13 @@ jobs:
             --env LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64 \
             --env JWT_ISSUER \
             --env CORS_ALLOWED_ORIGINS \
+            --env AI_PROFILE_BASE_URL \
+            --env PROFILING_SERVICE_TOKEN \
+            --env AI_PROFILE_CONNECT_TIMEOUT \
+            --env AI_PROFILE_READ_TIMEOUT \
+            --env AI_PROFILE_BATCH_SIZE \
+            --env AI_PROFILE_DISPATCH_INTERVAL \
+            --env SCHEDULING_ENABLED \
             seonjalal-be:ci
 
           HOST_PORT="$(docker port "$APP_CONTAINER" 8080/tcp | sed 's/.*://')"
