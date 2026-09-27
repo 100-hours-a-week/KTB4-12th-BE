@@ -35,6 +35,9 @@ storage:
     bucket: ${PRODUCT_IMAGE_BUCKET}
 
 app:
+  scheduling:
+    enabled: ${SCHEDULING_ENABLED:true}
+
   security:
     jwt:
       secret-base64: ${JWT_SECRET_BASE64}
@@ -43,6 +46,16 @@ app:
       allowed-origins: ${CORS_ALLOWED_ORIGINS}
     login-rate-limit:
       hmac-secret-base64: ${LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64}
+
+  ai-profile:
+    base-url: ${AI_PROFILE_BASE_URL}
+    service-token: ${PROFILING_SERVICE_TOKEN}
+    connect-timeout: ${AI_PROFILE_CONNECT_TIMEOUT:3s}
+    read-timeout: ${AI_PROFILE_READ_TIMEOUT:10s}
+    quiet-period: 1h
+    maximum-window: 6h
+    batch-size: ${AI_PROFILE_BATCH_SIZE:100}
+    dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
 
 management:
   endpoints:
