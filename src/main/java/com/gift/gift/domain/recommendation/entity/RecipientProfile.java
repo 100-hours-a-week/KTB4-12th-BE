@@ -259,4 +259,73 @@ public class RecipientProfile extends BaseTimeEntity {
             );
         }
     }
+
+    public boolean isDispatchDue(
+            LocalDateTime now,
+            java.time.Duration quietPeriod,
+            java.time.Duration maximumWindow
+    ) {
+        Objects.requireNonNull(now, "현재 시각은 null일 수 없습니다.");
+        Objects.requireNonNull(
+                quietPeriod,
+                "디바운스 시간은 null일 수 없습니다."
+        );
+        Objects.requireNonNull(
+                maximumWindow,
+                "최대 대기 시간은 null일 수 없습니다."
+        );
+
+        if (lastChangedAt == null || windowStartedAt == null) {
+            return false;
+        }
+
+        if (profileStatus == RecipientProfileStatus.PENDING) {
+            return false;
+        }
+
+        LocalDateTime quietPeriodCutoff = now.minus(quietPeriod);
+        LocalDateTime maximumWindowCutoff = now.minus(maximumWindow);
+
+        return !lastChangedAt.isAfter(quietPeriodCutoff)
+                || !windowStartedAt.isAfter(maximumWindowCutoff);
+    }
+
+    public void applyAcceptedResponse(
+            long acceptedSourceVersion,
+            LocalDateTime snapshottedLastChangedAt,
+            LocalDateTime acceptedAt
+    ) {
+        Objects.requireNonNull(
+                snapshottedLastChangedAt,
+                "요청 당시 변경 시각은 null일 수 없습니다."
+        );
+        Objects.requireNonNull(
+                acceptedAt,
+                "AI 요청 접수 시각은 null일 수 없습니다."
+        );
+
+        if (acceptedSourceVersion != sourceVersion) {
+            throw new IllegalStateException(
+                    "접수된 요청 버전이 현재 프로파일 버전과 일치하지 않습니다."
+            );
+        }
+
+        /*
+         * 빠른 콜백으로 같은 버전이 이미 완료됐다면
+         * COMPLETED를 PENDING으로 되돌리지 않는다.
+         */
+        if (analyzedSourceVersion < acceptedSourceVersion) {
+            profileStatus = RecipientProfileStatus.PENDING;
+            pendingSince = acceptedAt;
+        }
+
+        /*
+         * 요청 중 사용자가 다시 변경하지 않은 경우에만
+         * 처리 대기 변경 시각을 제거한다.
+         */
+        if (Objects.equals(lastChangedAt, snapshottedLastChangedAt)) {
+            lastChangedAt = null;
+            windowStartedAt = null;
+        }
+    }
 }

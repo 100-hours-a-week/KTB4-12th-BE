@@ -54,4 +54,18 @@ public interface UserDislikeCategoryRepository
     List<UserDislikeCategory> findAllByUserIdIncludingDeleted(
             @Param("userId") Long userId
     );
+
+    @Query("""
+            select dislike
+            from UserDislikeCategory dislike
+            join fetch dislike.category category
+            where dislike.user.id = :userId
+              and dislike.deletedAt is null
+              and category.deletedAt is null
+              and category.parent is null
+            order by category.id asc
+            """)
+    List<UserDislikeCategory> findAllActiveByUserIdWithCategory(
+            @Param("userId") Long userId
+    );
 }

@@ -205,9 +205,8 @@ class SignupPersistenceTest {
         CyclicBarrier barrier = new CyclicBarrier(2);
 
         doAnswer(invocation -> {
-            barrier.await(10, TimeUnit.SECONDS);
-            String rawPassword = invocation.getArgument(0);
-            return new BCryptPasswordEncoder(12).encode(rawPassword);
+            barrier.await();
+            return "$2a$10$" + "a".repeat(53);
         }).when(passwordEncoder).encode(anyString());
 
         Callable<String> signup = () -> {

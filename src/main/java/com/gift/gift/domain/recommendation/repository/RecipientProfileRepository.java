@@ -18,11 +18,19 @@ import com.gift.gift.domain.recommendation.entity.RecipientProfileStatus;
 public interface RecipientProfileRepository
         extends JpaRepository<RecipientProfile, Long> {
 
-    Optional<RecipientProfile> findByRecipient_Id(
-            Long recipientId
-    );
+    Optional<RecipientProfile> findByRecipient_Id(Long recipientId);
 
     boolean existsByRecipient_Id(Long recipientId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select profile
+            from RecipientProfile profile
+            where profile.id = :profileId
+            """)
+    Optional<RecipientProfile> findByIdForUpdate(
+            @Param("profileId") Long profileId
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
@@ -32,6 +40,28 @@ public interface RecipientProfileRepository
             """)
     Optional<RecipientProfile> findByRecipientIdForUpdate(
             @Param("recipientId") Long recipientId
+    );
+
+    @Query("""
+            select profile.id
+            from RecipientProfile profile
+            where profile.lastChangedAt is not null
+              and profile.windowStartedAt is not null
+              and profile.profileStatus <> :pendingStatus
+              and (
+                    profile.lastChangedAt <= :quietPeriodCutoff
+                    or profile.windowStartedAt <= :maxWindowCutoff
+              )
+            order by profile.windowStartedAt asc, profile.id asc
+            """)
+    List<Long> findDispatchCandidateIds(
+            @Param("pendingStatus")
+            RecipientProfileStatus pendingStatus,
+            @Param("quietPeriodCutoff")
+            LocalDateTime quietPeriodCutoff,
+            @Param("maxWindowCutoff")
+            LocalDateTime maxWindowCutoff,
+            Pageable pageable
     );
 
     @Query("""
