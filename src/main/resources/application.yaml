@@ -53,6 +53,7 @@ app:
       hmac-secret-base64: ${LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64}
 
   ai-profile:
+    scheduling-enabled: ${AI_PROFILE_SCHEDULING_ENABLED:false}
     base-url: ${AI_PROFILE_BASE_URL}
     service-token: ${PROFILING_SERVICE_TOKEN}
     connect-timeout: ${AI_PROFILE_CONNECT_TIMEOUT:3s}
