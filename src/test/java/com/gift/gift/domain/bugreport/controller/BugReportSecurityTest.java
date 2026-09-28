@@ -21,7 +21,7 @@ class BugReportSecurityTest {
     @Test
     @DisplayName("버그 제보는 인증 토큰 없이도 401이 아닌 검증 단계에 도달한다")
     void bugReport_allowsAnonymousRequest_reachesValidation() throws Exception {
-        mockMvc.perform(multipart("/api/bug-report"))
+        mockMvc.perform(multipart("/bug-report"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
     }

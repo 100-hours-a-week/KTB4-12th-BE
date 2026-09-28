@@ -87,7 +87,7 @@ public class SecurityConfig {
                 .permitAll()
                 .requestMatchers(
                         HttpMethod.POST,
-                        "/api/bug-report"
+                        "/bug-report"
                 )
                 .permitAll()
                 .anyRequest()
