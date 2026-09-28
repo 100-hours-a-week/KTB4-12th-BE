@@ -21,7 +21,7 @@ import com.gift.gift.domain.bugreport.exception.BugReportException;
 import com.gift.gift.domain.bugreport.service.BugReportService;
 
 @RestController
-@RequestMapping("/api/bug-report")
+@RequestMapping("/bug-report")
 @RequiredArgsConstructor
 public class BugReportController {
 
