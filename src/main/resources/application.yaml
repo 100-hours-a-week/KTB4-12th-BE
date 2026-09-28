@@ -29,6 +29,11 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 10MB
+
 storage:
   s3:
     region: ${AWS_REGION}
@@ -56,6 +61,9 @@ app:
     maximum-window: 6h
     batch-size: ${AI_PROFILE_BATCH_SIZE:100}
     dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
+
+  bug-report:
+    webhook-url: ${DISCORD_WEBHOOK_URL:}
 
 management:
   endpoints:
