@@ -82,7 +82,11 @@ class ProductQueryServiceTest {
 
     // 2. 요청 정렬 적용 테스트
     @ParameterizedTest
-    @EnumSource(ProductSort.class)
+    @EnumSource(
+            value = ProductSort.class,
+            names = "AI_RECOMMENDED",
+            mode = EnumSource.Mode.EXCLUDE
+    )
     @DisplayName("요청한 정렬을 조회 조건과 응답에 적용한다")
     void getProducts_appliesRequestedSort(ProductSort sort) {
         stubFirstPage(List.of());
@@ -280,7 +284,11 @@ class ProductQueryServiceTest {
 
     // 10. 다음 커서 생성 테스트
     @ParameterizedTest
-    @EnumSource(ProductSort.class)
+    @EnumSource(
+            value = ProductSort.class,
+            names = "AI_RECOMMENDED",
+            mode = EnumSource.Mode.EXCLUDE
+    )
     @DisplayName("다음 커서는 20번째 응답 상품과 정규화된 조회 조건으로 생성한다")
     void getProducts_createsCursorFromLastReturnedProduct(
             ProductSort sort
@@ -392,5 +400,28 @@ class ProductQueryServiceTest {
         }
 
         return List.copyOf(list); // 읽기 전용 리스트로 반환
+    }
+
+    @Test
+    @DisplayName("AI 추천순 요청은 인기순으로 대체한다")
+    void getProducts_fallsBackToPopularForAiRecommended() {
+        stubFirstPage(List.of());
+
+        ProductListRequest request = new ProductListRequest(
+                null,
+                null,
+                ProductSort.AI_RECOMMENDED,
+                null,
+                null
+        );
+
+        ProductListResponse response =
+                productQueryService.getProducts(request);
+
+        ProductSearchCondition condition = captureCondition();
+
+        assertThat(condition.sort()).isEqualTo(ProductSort.POPULAR);
+        assertThat(response.appliedSort())
+                .isEqualTo(ProductSort.POPULAR);
     }
 }

@@ -27,7 +27,7 @@ public class AccessTokenProvider {
     public IssuedAccessToken issue(Long userId) {
         if (userId == null || userId <= 0) {
             throw new IllegalArgumentException(
-                    "userId must be positive"
+                    "사용자 식별자는 양수여야 합니다."
             );
         }
 

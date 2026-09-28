@@ -70,7 +70,7 @@ public class UpdateUserProfileRequest {
     public LocalDate birthValue() {
         if (!birthProvided || birth == null || !birth.isTextual()) {
             throw new IllegalStateException(
-                    "birth must be validated before access"
+                    "생년월일은 검증을 완료한 후 조회해야 합니다."
             );
         }
 
@@ -85,7 +85,7 @@ public class UpdateUserProfileRequest {
                 || isBirthdayPublic == null
                 || !isBirthdayPublic.isBoolean()) {
             throw new IllegalStateException(
-                    "isBirthdayPublic must be validated before access"
+                    "생일 공개 여부는 검증을 완료한 후 조회해야 합니다."
             );
         }
 

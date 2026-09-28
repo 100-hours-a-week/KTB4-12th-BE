@@ -70,7 +70,11 @@ class ProductCursorPaginationIntegrationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(ProductSort.class)
+    @EnumSource(
+            value = ProductSort.class,
+            names = "AI_RECOMMENDED",
+            mode = EnumSource.Mode.EXCLUDE
+    )
     @DisplayName("정렬 우선순위와 동점일 때 ID 내림차순을 적용한다")
     void orderBySortAndId(ProductSort sort) {
         Long a = saveProduct(100, 1, BASE_TIME);
@@ -83,6 +87,9 @@ class ProductCursorPaginationIntegrationTest {
         entityManager.clear();
 
         List<Long> expected = switch (sort) {
+            case AI_RECOMMENDED -> throw new IllegalArgumentException(
+                    "AI 추천 정렬은 일반 상품 정렬 테스트 대상이 아닙니다."
+            );
             case POPULAR -> List.of(e, d, c, a, b);
             case MOST_GIFTED -> List.of(b, e, d, c, a);
             case NEWEST -> List.of(e, d, c, b, a);
@@ -208,7 +215,11 @@ class ProductCursorPaginationIntegrationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(ProductSort.class)
+    @EnumSource(
+            value = ProductSort.class,
+            names = "AI_RECOMMENDED",
+            mode = EnumSource.Mode.EXCLUDE
+    )
     @DisplayName("모든 정렬값이 같아도 ID로 다음 페이지를 이어간다")
     void paginateWhenAllSortValuesAreEqual(ProductSort sort) {
         List<Long> ids = new ArrayList<>();
@@ -257,6 +268,7 @@ class ProductCursorPaginationIntegrationTest {
 
     private static Stream<Arguments> pageCases() {
         return Stream.of(ProductSort.values())
+                .filter(sort -> sort != ProductSort.AI_RECOMMENDED)
                 .flatMap(sort -> Stream.of(0, 20, 21, 40, 41)
                         .map(count -> Arguments.of(sort, count)));
     }
@@ -305,6 +317,9 @@ class ProductCursorPaginationIntegrationTest {
 
     private static Comparator<Fixture> expectedOrder(ProductSort sort) {
         Comparator<Fixture> ascending = switch (sort) {
+            case AI_RECOMMENDED -> throw new IllegalArgumentException(
+                    "AI 추천 정렬은 일반 상품 정렬 테스트 대상이 아닙니다."
+            );
             case POPULAR -> Comparator.comparingInt(Fixture::views)
                     .thenComparingInt(Fixture::sales)
                     .thenComparing(Fixture::createdAt)

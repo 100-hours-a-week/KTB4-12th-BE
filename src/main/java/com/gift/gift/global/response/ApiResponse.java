@@ -16,17 +16,22 @@ public record ApiResponse<T>(
         ErrorBody error
 ) {
     public ApiResponse {
-        Objects.requireNonNull(message, "message must not be null");
+        Objects.requireNonNull(message, "응답 메시지는 null일 수 없습니다.");
 
         if ((data == null) == (error == null)) {
-            throw new IllegalArgumentException("Either data or error must be provided");
+            throw new IllegalArgumentException(
+                    "응답 데이터와 오류 정보 중 하나만 제공해야 합니다."
+            );
         }
     }
 
     public static <T> ApiResponse<T> success(String message, T data) {
         return new ApiResponse<>(
                 message,
-                Objects.requireNonNull(data, "data must not be null"),
+                Objects.requireNonNull(
+                        data,
+                        "응답 데이터는 null일 수 없습니다."
+                ),
                 null
         );
     }

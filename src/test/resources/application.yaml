@@ -9,6 +9,10 @@ spring:
   # datasource는 MySqlTestContainerInitializer가 Testcontainers MySQL 값으로 주입한다.
   datasource:
     hikari:
+      # 여러 Spring TestContext가 각자 Pool을 생성해도
+      # Testcontainers MySQL의 연결 한도를 소진하지 않도록 제한한다.
+      maximum-pool-size: 4
+      minimum-idle: 0
       data-source-properties:
         useAffectedRows: true
         compensateOnDuplicateKeyUpdateCounts: false
@@ -50,3 +54,17 @@ logging:
     com.gift.gift: INFO
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
+
+app:
+  scheduling:
+    enabled: false
+
+  ai-profile:
+    base-url: http://localhost:18080
+    service-token: test-profiling-token
+    connect-timeout: 1s
+    read-timeout: 1s
+    quiet-period: 1h
+    maximum-window: 6h
+    batch-size: 100
+    dispatch-interval: 1h

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-import com.gift.gift.domain.user.exception.LoginRateLimitExceededException;
+import com.gift.gift.domain.auth.exception.LoginRateLimitExceededException;
 import com.gift.gift.global.response.ApiResponse;
 
 @Slf4j
@@ -61,7 +61,7 @@ public class GlobalExceptionHandler {
         String traceId = resolveTraceId();
 
         log.warn(
-                "Login request rate limited. traceId={}, retryAfterSeconds={}",
+                "로그인 요청이 제한되었습니다. traceId={}, retryAfterSeconds={}",
                 traceId,
                 exception.getRetryAfterSeconds()
         );
@@ -77,7 +77,7 @@ public class GlobalExceptionHandler {
                 .body(
                         ApiResponse.error(
                                 errorCode,
-                                errorCode.message(),
+                                exception.getMessage(),
                                 traceId
                         )
                 );
@@ -90,15 +90,28 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = exception.getErrorCode();
         String traceId = resolveTraceId();
 
-        log.warn(
-                "Business exception occurred. traceId={}, code={}",
-                traceId,
-                errorCode.code()
-        );
+        if (errorCode.status().is5xxServerError()) {
+            log.error(
+                    "비즈니스 처리 중 서버 오류가 발생했습니다. traceId={}, code={}",
+                    traceId,
+                    errorCode.code(),
+                    exception
+            );
+        } else {
+            log.warn(
+                    "비즈니스 예외가 발생했습니다. traceId={}, code={}",
+                    traceId,
+                    errorCode.code()
+            );
+        }
 
         return ResponseEntity
                 .status(errorCode.status())
-                .body(ApiResponse.error(errorCode, exception.getMessage(), traceId));
+                .body(ApiResponse.error(
+                        errorCode,
+                        exception.getMessage(),
+                        traceId
+                ));
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -133,7 +146,7 @@ public class GlobalExceptionHandler {
         String traceId = resolveTraceId();
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
 
-        log.error("Unexpected error occurred. traceId={}", traceId, exception);
+        log.error("예상하지 못한 오류가 발생했습니다. traceId={}", traceId, exception);
 
         return ResponseEntity
                 .status(errorCode.status())
@@ -147,7 +160,7 @@ public class GlobalExceptionHandler {
         String traceId = resolveTraceId();
 
         log.warn(
-                "Request rejected. traceId={}, code={}, detailCount={}",
+                "요청이 거부되었습니다. traceId={}, code={}, detailCount={}",
                 traceId,
                 errorCode.code(),
                 details.size()

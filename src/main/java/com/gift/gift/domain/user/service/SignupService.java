@@ -19,11 +19,11 @@ import com.gift.gift.domain.user.entity.Term;
 import com.gift.gift.domain.user.entity.TermConsent;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.exception.SignupTermsConfigurationException;
+import com.gift.gift.domain.user.exception.UserErrorCode;
+import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.TermConsentRepository;
 import com.gift.gift.domain.user.repository.TermRepository;
 import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 @RequiredArgsConstructor
@@ -38,16 +38,26 @@ public class SignupService {
     public SignupResponse signup(SignupRequest request) {
         LocalDate birth = LocalDate.parse(request.birth());
 
-        List<Term> requiredTerms = termRepository.findCurrentRequiredTerms();
+        List<Term> currentTerms = termRepository.findCurrentTerms();
+        List<Term> requiredTerms = currentTerms.stream()
+                .filter(Term::isRequired)
+                .toList();
 
         if (requiredTerms.isEmpty()) {
             throw new SignupTermsConfigurationException();
         }
 
-        validateTermConsents(requiredTerms, request.termConsents());
+        Map<Long, Term> currentTermsById = currentTerms.stream()
+                .collect(Collectors.toMap(Term::getId, Function.identity()));
+
+        validateTermConsents(
+                currentTermsById,
+                requiredTerms,
+                request.termConsents()
+        );
 
         if (userRepository.existsByEmail(request.email())) {
-            throw new BusinessException(ErrorCode.EMAIL_ALREADY_IN_USE);
+            throw new UserException(UserErrorCode.EMAIL_ALREADY_IN_USE);
         }
 
         String passwordHash = passwordEncoder.encode(request.password());
@@ -61,8 +71,12 @@ public class SignupService {
 
         User savedUser = saveUser(user);
 
-        List<TermConsent> consents = requiredTerms.stream()
-                .map(term -> new TermConsent(savedUser, term, true))
+        List<TermConsent> consents = request.termConsents().stream()
+                .map(consent -> new TermConsent(
+                        savedUser,
+                        currentTermsById.get(consent.termId()),
+                        consent.isAgreed()
+                ))
                 .toList();
 
         termConsentRepository.saveAllAndFlush(consents);
@@ -71,19 +85,16 @@ public class SignupService {
     }
 
     private void validateTermConsents(
+            Map<Long, Term> currentTermsById,
             List<Term> requiredTerms,
             List<SignupTermConsentRequest> requestedConsents
     ) {
-
-        Map<Long, Term> currentTermsById = requiredTerms.stream()
-                .collect(Collectors.toMap(Term::getId, Function.identity()));
-
         for (SignupTermConsentRequest consent : requestedConsents) {
             Term currentTerm = currentTermsById.get(consent.termId());
 
             if (currentTerm == null
                     || currentTerm.getVersion() != consent.version()) {
-                throw new BusinessException(ErrorCode.INVALID_TERM_VERSION);
+                throw new UserException(UserErrorCode.INVALID_TERM_VERSION);
             }
         }
 
@@ -98,7 +109,7 @@ public class SignupService {
             SignupTermConsentRequest consent = requestedById.get(term.getId());
 
             if (consent == null || !Boolean.TRUE.equals(consent.isAgreed())) {
-                throw new BusinessException(ErrorCode.REQUIRED_TERMS_NOT_AGREED);
+                throw new UserException(UserErrorCode.REQUIRED_TERMS_NOT_AGREED);
             }
         }
     }
@@ -108,7 +119,7 @@ public class SignupService {
             return userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
             if (isEmailUniqueViolation(exception)) {
-                throw new BusinessException(ErrorCode.EMAIL_ALREADY_IN_USE);
+                throw new UserException(UserErrorCode.EMAIL_ALREADY_IN_USE);
             }
 
             throw exception;

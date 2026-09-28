@@ -31,7 +31,7 @@ public class JwtConfig {
 
         if (keyBytes.length < 32) {
             throw new IllegalArgumentException(
-                    "JWT signing key must contain at least 32 bytes"
+                    "JWT 서명 키는 32바이트 이상이어야 합니다."
             );
         }
 

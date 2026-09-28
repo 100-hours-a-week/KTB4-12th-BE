@@ -33,7 +33,7 @@ public class RefreshTokenProvider {
     public String hash(String token) {
         Objects.requireNonNull(
                 token,
-                "token must not be null"
+                "토큰은 null일 수 없습니다."
         );
 
         try {
@@ -48,7 +48,7 @@ public class RefreshTokenProvider {
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(
-                    "SHA-256 is unavailable",
+                    "SHA-256 알고리즘을 사용할 수 없습니다.",
                     exception
             );
         }

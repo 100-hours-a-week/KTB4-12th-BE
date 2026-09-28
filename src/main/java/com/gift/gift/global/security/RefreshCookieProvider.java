@@ -18,7 +18,7 @@ public class RefreshCookieProvider {
     public ResponseCookie create(String refreshToken) {
         Objects.requireNonNull(
                 refreshToken,
-                "refreshToken must not be null"
+                "리프레시 토큰은 null일 수 없습니다."
         );
 
         return baseCookie(refreshToken)

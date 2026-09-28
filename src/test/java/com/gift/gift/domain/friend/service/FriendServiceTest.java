@@ -9,11 +9,15 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
+import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.query.FriendPage;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
 import com.gift.gift.domain.friend.repository.FriendQueryRow;
+import com.gift.gift.domain.friend.repository.FriendRepository;
 import com.gift.gift.domain.friend.support.FriendCursor;
+import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.InvalidCursorException;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -30,6 +34,8 @@ class FriendServiceTest {
     private static final Long USER_ID = 1L;
 
     private FriendQueryRepository friendQueryRepository;
+    private FriendRepository friendRepository;
+    private UserRepository userRepository;
     private OpaqueCursorCodec cursorCodec;
     private FriendPageAssembler pageAssembler;
     private FriendService friendService;
@@ -37,9 +43,17 @@ class FriendServiceTest {
     @BeforeEach
     void setUp() {
         friendQueryRepository = mock(FriendQueryRepository.class);
+        friendRepository = mock(FriendRepository.class);
+        userRepository = mock(UserRepository.class);
         cursorCodec = mock(OpaqueCursorCodec.class);
         pageAssembler = mock(FriendPageAssembler.class);
-        friendService = new FriendService(friendQueryRepository, cursorCodec, pageAssembler);
+        friendService = new FriendService(
+                friendQueryRepository,
+                friendRepository,
+                userRepository,
+                cursorCodec,
+                pageAssembler
+        );
     }
 
     @Test
@@ -52,7 +66,7 @@ class FriendServiceTest {
         CursorPageResponse<FriendListItem> result = friendService.getFriends(USER_ID, null);
 
         assertThat(result.items()).containsExactly(
-                new FriendListItem(31L, 27L, "김민지", "minji@example.com", "03-14")
+                new FriendListItem(31L, 27L, "김민지", "minji@example.com", "2000-03-14")
         );
         assertThat(result.pagination().hasNext()).isTrue();
         assertThat(result.pagination().nextCursor()).isEqualTo("next");
@@ -112,6 +126,8 @@ class FriendServiceTest {
     void getFriends_throwsInvalidCursor_whenCursorIsBlank() {
         FriendService serviceWithRealCodec = new FriendService(
                 friendQueryRepository,
+                friendRepository,
+                userRepository,
                 new OpaqueCursorCodec(JsonMapper.builder().build()),
                 pageAssembler
         );
@@ -119,6 +135,24 @@ class FriendServiceTest {
         assertThatThrownBy(() -> serviceWithRealCodec.getFriends(USER_ID, ""))
                 .isInstanceOf(InvalidCursorException.class);
         verifyNoInteractions(friendQueryRepository);
+    }
+
+    @Test
+    @DisplayName("친구 목록 조회 중 예상하지 못한 오류는 목록 조회 실패 예외로 변환한다")
+    void getFriends_translatesUnexpectedFailure() {
+        when(friendQueryRepository.findFriends(USER_ID, null))
+                .thenThrow(new IllegalStateException("조회 실패"));
+
+        assertThatThrownBy(() -> friendService.getFriends(USER_ID, null))
+                .isInstanceOfSatisfying(
+                        FriendException.class,
+                        exception -> {
+                            assertThat(exception.getErrorCode())
+                                    .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
+                            assertThat(exception.getMessage())
+                                    .isEqualTo("친구 목록 조회에 실패했습니다. 다시 시도해 주세요.");
+                        }
+                );
     }
 
     private FriendQueryRow row() {

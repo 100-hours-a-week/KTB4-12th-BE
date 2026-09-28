@@ -12,18 +12,18 @@ public record ActiveUserSummary(
     public ActiveUserSummary {
         Objects.requireNonNull(
                 userId,
-                "userId must not be null"
+                "사용자 식별자는 null일 수 없습니다."
         );
         Objects.requireNonNull(
                 name,
-                "name must not be null"
+                "사용자 이름은 null일 수 없습니다."
         );
     }
 
     public static ActiveUserSummary from(User user) {
         Objects.requireNonNull(
                 user,
-                "user must not be null"
+                "사용자는 null일 수 없습니다."
         );
 
         return new ActiveUserSummary(

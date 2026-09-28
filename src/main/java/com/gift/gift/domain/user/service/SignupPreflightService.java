@@ -10,11 +10,11 @@ import com.gift.gift.domain.user.dto.response.EmailAvailabilityResponse;
 import com.gift.gift.domain.user.dto.response.SignupTermResponse;
 import com.gift.gift.domain.user.dto.response.SignupTermsResponse;
 import com.gift.gift.domain.user.entity.Term;
+import com.gift.gift.domain.user.exception.UserErrorCode;
+import com.gift.gift.domain.user.exception.UserException;
 import com.gift.gift.domain.user.repository.TermRepository;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.domain.user.support.EmailNormalizer;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 @RequiredArgsConstructor
@@ -25,11 +25,11 @@ public class SignupPreflightService {
     private final UserRepository userRepository;
 
     public SignupTermsResponse getSignupTerms() {
-        List<Term> terms = termRepository.findCurrentRequiredTerms();
+        List<Term> terms = termRepository.findCurrentTerms();
 
-        if (terms.isEmpty()) {
-            throw new BusinessException(
-                    ErrorCode.SIGNUP_TERMS_NOT_FOUND
+        if (terms.stream().noneMatch(Term::isRequired)) {
+            throw new UserException(
+                    UserErrorCode.SIGNUP_TERMS_NOT_FOUND
             );
         }
 

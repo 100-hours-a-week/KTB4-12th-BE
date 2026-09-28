@@ -12,7 +12,8 @@ public record FriendListItem(
         String birth
 ) {
 
-    private static final DateTimeFormatter BIRTH_FORMAT = DateTimeFormatter.ofPattern("MM-dd");
+    private static final DateTimeFormatter BIRTH_FORMAT =
+            DateTimeFormatter.ISO_LOCAL_DATE;
 
     public static FriendListItem from(FriendQueryRow row) {
         return new FriendListItem(
@@ -20,7 +21,9 @@ public record FriendListItem(
                 row.userId(),
                 row.name(),
                 row.email(),
-                row.birthdayPublic() ? BIRTH_FORMAT.format(row.birth()) : null
+                row.birthdayPublic()
+                        ? BIRTH_FORMAT.format(row.birth())
+                        : null
         );
     }
 }

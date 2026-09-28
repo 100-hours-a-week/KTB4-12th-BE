@@ -120,6 +120,10 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
     private static List<String> sortFields(ProductSort sort) {
         return switch (sort) {
+            case AI_RECOMMENDED ->
+                    throw new IllegalArgumentException(
+                            "AI 추천 정렬은 일반 상품 조회에 사용할 수 없습니다."
+                    );
             case POPULAR ->
                     List.of("views", "sales", "createdAt", "id");
             case MOST_GIFTED ->

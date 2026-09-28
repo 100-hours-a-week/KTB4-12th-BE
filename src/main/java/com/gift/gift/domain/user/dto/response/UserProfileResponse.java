@@ -24,13 +24,13 @@ public record UserProfileResponse(
             LocalDate today,
             ZoneId zoneId
     ) {
-        Objects.requireNonNull(user, "user must not be null");
+        Objects.requireNonNull(user, "사용자는 null일 수 없습니다.");
         Objects.requireNonNull(
                 giftCount,
-                "giftCount must not be null"
+                "선물 건수는 null일 수 없습니다."
         );
-        Objects.requireNonNull(today, "today must not be null");
-        Objects.requireNonNull(zoneId, "zoneId must not be null");
+        Objects.requireNonNull(today, "기준 날짜는 null일 수 없습니다.");
+        Objects.requireNonNull(zoneId, "시간대는 null일 수 없습니다.");
 
         OffsetDateTime from = today.withDayOfYear(1)
                 .atStartOfDay(zoneId)

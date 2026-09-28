@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import com.gift.gift.domain.user.support.LoginRateLimitProperties;
+import com.gift.gift.domain.auth.support.LoginRateLimitProperties;
 
 @Configuration
 @EnableConfigurationProperties(
@@ -33,14 +33,14 @@ public class LoginRateLimitConfig {
             );
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException(
-                    "Login rate limit HMAC key must be Base64",
+                    "로그인 요청 제한 HMAC 키는 Base64 형식이어야 합니다.",
                     exception
             );
         }
 
         if (keyBytes.length < MINIMUM_KEY_BYTES) {
             throw new IllegalArgumentException(
-                    "Login rate limit HMAC key must contain at least 32 bytes"
+                    "로그인 요청 제한 HMAC 키는 32바이트 이상이어야 합니다."
             );
         }
 

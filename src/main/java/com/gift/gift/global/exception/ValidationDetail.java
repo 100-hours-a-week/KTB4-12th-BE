@@ -7,11 +7,11 @@ public record ValidationDetail(
         ValidationErrorReason reason
 ) {
     public ValidationDetail {
-        Objects.requireNonNull(field, "field must not be null");
-        Objects.requireNonNull(reason, "reason must not be null");
+        Objects.requireNonNull(field, "필드명은 null일 수 없습니다.");
+        Objects.requireNonNull(reason, "검증 실패 사유는 null일 수 없습니다.");
 
         if (field.isBlank()) {
-            throw new IllegalArgumentException("field must not be blank");
+            throw new IllegalArgumentException("필드명은 비어 있을 수 없습니다.");
         }
     }
 }

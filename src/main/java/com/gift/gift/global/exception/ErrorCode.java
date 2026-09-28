@@ -37,6 +37,7 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자 정보를 찾을 수 없습니다."),
     FRIEND_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 등록된 친구입니다."),
     FRIEND_CANNOT_ADD_SELF(HttpStatus.UNPROCESSABLE_CONTENT, "본인은 친구로 추가할 수 없습니다."),
+    GIFT_CANNOT_SEND_TO_SELF(HttpStatus.UNPROCESSABLE_CONTENT, "자기 자신에게는 선물을 보낼 수 없습니다."),
     RECIPIENT_NOT_FOUND(HttpStatus.NOT_FOUND, "수신자를 찾을 수 없습니다."),
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "상품을 찾을 수 없습니다."),
     TOO_MANY_DISLIKE_CATEGORIES(

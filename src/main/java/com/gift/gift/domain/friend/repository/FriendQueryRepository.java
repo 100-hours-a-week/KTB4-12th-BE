@@ -1,6 +1,8 @@
 package com.gift.gift.domain.friend.repository;
 
 import java.util.List;
+import java.util.Locale;
+
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
@@ -28,6 +30,10 @@ public class FriendQueryRepository {
                 AND f.deletedAt IS NULL
                 AND friendUser.status = com.gift.gift.domain.user.entity.UserStatus.ACTIVE
                 AND friendUser.deletedAt IS NULL
+            """;
+
+    private static final String NAME_SEARCH_CONDITION = """
+            AND LOWER(friendUser.name) LIKE :queryPattern ESCAPE '!'
             """;
 
     // 정렬 키(이름 → 이메일 → 친구 관계 ID)와 같은 순서여야 페이지 경계에서 항목이 중복되거나 누락되지 않는다.
@@ -61,12 +67,57 @@ public class FriendQueryRepository {
                 .setParameter("userId", userId)
                 .setMaxResults(PaginationPolicy.CURSOR_FETCH_SIZE);
 
-        if (cursor != null) {
-            query.setParameter("cursorName", cursor.name());
-            query.setParameter("cursorEmail", cursor.email());
-            query.setParameter("cursorFriendId", cursor.friendId());
-        }
+        applyCursor(query, cursor);
 
         return query.getResultList();
+    }
+
+    public List<FriendQueryRow> findFriendsByName(
+            Long userId,
+            String nameQuery,
+            FriendCursor cursor
+    ) {
+        String jpql = SELECT_FRIENDS
+                + NAME_SEARCH_CONDITION
+                + (cursor == null ? "" : CURSOR_CONDITION)
+                + ORDER_BY;
+
+        TypedQuery<FriendQueryRow> query =
+                entityManager.createQuery(
+                                jpql,
+                                FriendQueryRow.class
+                        )
+                        .setParameter("userId", userId)
+                        .setParameter(
+                                "queryPattern",
+                                toLiteralContainsPattern(nameQuery)
+                        )
+                        .setMaxResults(
+                                PaginationPolicy.CURSOR_FETCH_SIZE
+                        );
+
+        applyCursor(query, cursor);
+
+        return query.getResultList();
+    }
+
+    private void applyCursor(TypedQuery<FriendQueryRow> query, FriendCursor cursor) {
+        if(cursor == null) {
+            return;
+        }
+
+        query.setParameter("cursorName", cursor.name());
+        query.setParameter("cursorEmail", cursor.email());
+        query.setParameter("cursorFriendId", cursor.friendId());
+    }
+
+    private String toLiteralContainsPattern(String nameQuery) {
+        String escapedQuery = nameQuery
+                .toLowerCase(Locale.ROOT)
+                .replace("!", "!!")
+                .replace("%","!%")
+                .replace("_", "!_");
+
+        return "%" + escapedQuery + "%";
     }
 }
