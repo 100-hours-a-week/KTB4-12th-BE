@@ -81,3 +81,9 @@ logging:
     com.gift.gift: INFO
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
+
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:local}
+  send-default-pii: ${SENTRY_SEND_DEFAULT_PII:false}
+  traces-sample-rate: ${SENTRY_TRACES_SAMPLE_RATE:0.0}
