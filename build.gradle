@@ -2,6 +2,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
+    id 'io.sentry.jvm.gradle' version '6.22.0'
 }
 
 group = 'com.gift'
@@ -46,4 +47,16 @@ tasks.named('test') {
 	useJUnitPlatform()
 	// 테스트에서는 목 데이터(db/seed)를 제외하고 스키마 마이그레이션만 적용한다.
 	systemProperty 'spring.flyway.locations', 'classpath:db/migration'
+}
+
+def sentryAuthToken = providers.environmentVariable('SENTRY_AUTH_TOKEN')
+        .orNull
+        ?.trim()
+
+sentry {
+    includeSourceContext = sentryAuthToken != null && !sentryAuthToken.isEmpty()
+
+    org = 'ktb4-12th'
+    projectName = 'ktb4-12th-be'
+    authToken = sentryAuthToken
 }

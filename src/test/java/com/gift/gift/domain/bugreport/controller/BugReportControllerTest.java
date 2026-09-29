@@ -65,7 +65,7 @@ class BugReportControllerTest {
     @Test
     @DisplayName("스크린샷과 로그가 모두 있으면 204를 반환하고 서비스에 그대로 전달한다")
     void submitBugReport_returns204_withAllAttachments() throws Exception {
-        mockMvc.perform(multipart("/api/bug-report")
+        mockMvc.perform(multipart("/bug-report")
                         .file("payload_json", VALID_PAYLOAD.getBytes(
                                 java.nio.charset.StandardCharsets.UTF_8
                         ))
@@ -87,7 +87,7 @@ class BugReportControllerTest {
     void submitBugReport_returns204_forAnonymousRequest() throws Exception {
         SecurityContextHolder.clearContext();
 
-        mockMvc.perform(multipart("/api/bug-report")
+        mockMvc.perform(multipart("/bug-report")
                         .file("payload_json", VALID_PAYLOAD.getBytes(
                                 java.nio.charset.StandardCharsets.UTF_8
                         )))
@@ -105,7 +105,7 @@ class BugReportControllerTest {
     @Test
     @DisplayName("파일이 없어도 204를 반환한다")
     void submitBugReport_returns204_withoutFiles() throws Exception {
-        mockMvc.perform(multipart("/api/bug-report")
+        mockMvc.perform(multipart("/bug-report")
                         .file("payload_json", VALID_PAYLOAD.getBytes(
                                 java.nio.charset.StandardCharsets.UTF_8
                         )))
@@ -125,7 +125,7 @@ class BugReportControllerTest {
                         org.mockito.ArgumentMatchers.any()
                 );
 
-        mockMvc.perform(multipart("/api/bug-report")
+        mockMvc.perform(multipart("/bug-report")
                         .file("payload_json", VALID_PAYLOAD.getBytes(
                                 java.nio.charset.StandardCharsets.UTF_8
                         )))
@@ -146,7 +146,7 @@ class BugReportControllerTest {
                         org.mockito.ArgumentMatchers.any()
                 );
 
-        mockMvc.perform(multipart("/api/bug-report")
+        mockMvc.perform(multipart("/bug-report")
                         .file("payload_json", VALID_PAYLOAD.getBytes(
                                 java.nio.charset.StandardCharsets.UTF_8
                         )))
@@ -169,7 +169,7 @@ class BugReportControllerTest {
                         org.mockito.ArgumentMatchers.any()
                 );
 
-        mockMvc.perform(multipart("/api/bug-report")
+        mockMvc.perform(multipart("/bug-report")
                         .file("payload_json", VALID_PAYLOAD.getBytes(
                                 java.nio.charset.StandardCharsets.UTF_8
                         )))
