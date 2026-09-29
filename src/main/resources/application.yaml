@@ -29,6 +29,11 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 10MB
+
 storage:
   s3:
     region: ${AWS_REGION}
@@ -48,6 +53,7 @@ app:
       hmac-secret-base64: ${LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64}
 
   ai-profile:
+    scheduling-enabled: ${AI_PROFILE_SCHEDULING_ENABLED:false}
     base-url: ${AI_PROFILE_BASE_URL}
     service-token: ${PROFILING_SERVICE_TOKEN}
     connect-timeout: ${AI_PROFILE_CONNECT_TIMEOUT:3s}
@@ -56,6 +62,9 @@ app:
     maximum-window: 6h
     batch-size: ${AI_PROFILE_BATCH_SIZE:100}
     dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
+
+  bug-report:
+    webhook-url: ${DISCORD_WEBHOOK_URL:}
 
 management:
   endpoints:
@@ -72,3 +81,9 @@ logging:
     com.gift.gift: INFO
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
+
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:local}
+  send-default-pii: ${SENTRY_SEND_DEFAULT_PII:false}
+  traces-sample-rate: ${SENTRY_TRACES_SAMPLE_RATE:0.0}

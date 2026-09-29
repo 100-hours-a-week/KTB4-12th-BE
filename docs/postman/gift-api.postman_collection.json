@@ -405,6 +405,53 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "bug-report (인증 선택)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          { "key": "token", "value": "{{accessToken}}", "type": "string" }
+        ]
+      },
+      "item": [
+        {
+          "name": "버그 제보",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "payload_json",
+                  "type": "text",
+                  "value": "{\n  \"embeds\": [\n    {\n      \"title\": \"버그 제보\",\n      \"description\": \"여기에 버그 설명을 입력합니다.\",\n      \"color\": 15158332,\n      \"timestamp\": \"2026-01-01T00:00:00.000Z\",\n      \"fields\": [],\n      \"image\": { \"url\": \"attachment://screenshot.png\" }\n    }\n  ]\n}"
+                },
+                {
+                  "key": "files[0]",
+                  "type": "file",
+                  "src": [],
+                  "description": "스크린샷(image/png 또는 image/jpeg, 선택, 최대 8MB)"
+                },
+                {
+                  "key": "files[1]",
+                  "type": "file",
+                  "src": [],
+                  "description": "콘솔 에러 로그(errors.txt, 선택)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bug-report",
+              "host": ["{{baseUrl}}"],
+              "path": ["bug-report"]
+            },
+            "description": "프론트엔드 버그 제보 위젯이 전송한 Discord embed payload와 첨부 파일을 서버 환경변수의 Discord Webhook으로 그대로 재전송한다. 인증 없이도 호출 가능하며(로그인 상태면 사용자 ID를 함께 전달), 프론트는 `/api/bug-report`로 요청하고 nginx가 `/api` 접두사를 제거해 이 경로로 전달한다. description이 비어 있거나 payload_json이 없으면 400, 스크린샷 형식/크기가 맞지 않아도 400이다. 로그인 사용자 분당 5회·IP당 분당 20회를 초과하면 429, Webhook 미설정이면 503, Discord 전송 실패면 502를 반환한다. 성공 시 204 No Content."
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [

@@ -2,6 +2,7 @@ package com.gift.gift.domain.recommendation.scheduler;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -10,6 +11,10 @@ import com.gift.gift.domain.recommendation.service.ProfileDispatchService;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(
+        name = "app.ai-profile.scheduling-enabled",
+        havingValue = "true"
+)
 public class ProfileDispatchScheduler {
 
     private final ProfileDispatchService profileDispatchService;

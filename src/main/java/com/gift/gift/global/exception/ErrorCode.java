@@ -72,6 +72,15 @@ public enum ErrorCode {
     TOKEN_REFRESH_CONFLICT(
             HttpStatus.CONFLICT,
             "다른 토큰 재발급 요청이 처리 중입니다. 잠시 후 다시 시도해 주세요."
+    ),
+
+    BUG_REPORT_DELIVERY_FAILED(
+            HttpStatus.BAD_GATEWAY,
+            "버그 제보 전송에 실패했습니다."
+    ),
+    BUG_REPORT_WEBHOOK_NOT_CONFIGURED(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "버그 제보 기능을 일시적으로 사용할 수 없습니다."
     );
 
     private final HttpStatus status;

@@ -85,6 +85,11 @@ public class SecurityConfig {
                         "/products"
                 )
                 .permitAll()
+                .requestMatchers(
+                        HttpMethod.POST,
+                        "/bug-report"
+                )
+                .permitAll()
                 .anyRequest()
                 .authenticated()
         );

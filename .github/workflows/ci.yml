@@ -39,7 +39,8 @@ jobs:
       AI_PROFILE_READ_TIMEOUT: 10s
       AI_PROFILE_BATCH_SIZE: 100
       AI_PROFILE_DISPATCH_INTERVAL: 1m
-      SCHEDULING_ENABLED: false
+      AI_PROFILE_SCHEDULING_ENABLED: 'false'
+      SCHEDULING_ENABLED: 'true'
 
     steps:
       - name: Check out repository
@@ -132,6 +133,7 @@ jobs:
             --env AI_PROFILE_READ_TIMEOUT \
             --env AI_PROFILE_BATCH_SIZE \
             --env AI_PROFILE_DISPATCH_INTERVAL \
+            --env AI_PROFILE_SCHEDULING_ENABLED \
             --env SCHEDULING_ENABLED \
             seonjalal-be:ci
 
