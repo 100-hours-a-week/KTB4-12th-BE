@@ -16,6 +16,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -55,6 +56,11 @@ class GoogleBugReportClientTest {
                         "{\"values\":[[\"제보 ID\"]]}",
                         MediaType.APPLICATION_JSON
                 ));
+        server.expect(once(), requestTo(containsString("valueInputOption=RAW")))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(containsString("사용자 ID")))
+                .andExpect(content().string(containsString("이메일")))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
         server.expect(once(), requestTo(containsString(":append")))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));

@@ -37,7 +37,9 @@ public class GoogleBugReportClient {
             "User-Agent",
             "처리 상태",
             "담당자",
-            "처리 의견"
+            "처리 의견",
+            "사용자 ID",
+            "이메일"
     );
 
     private final BugReportGoogleSheetsProperties properties;
@@ -62,6 +64,7 @@ public class GoogleBugReportClient {
                 return false;
             }
 
+            writeHeaders(accessToken);
             appendRow(accessToken, entry.toRow());
             return true;
         } catch (RestClientException exception) {
@@ -84,11 +87,6 @@ public class GoogleBugReportClient {
                 : response.values().stream()
                 .flatMap(List::stream)
                 .toList();
-        if (firstColumn.isEmpty()) {
-            writeHeaders(accessToken);
-            return false;
-        }
-
         return firstColumn.stream().anyMatch(reportId::equals);
     }
 

@@ -50,8 +50,6 @@ public record BugReportSheetEntry(
     public List<String> toRow() {
         return List.of(
                 reportId,
-                userId,
-                email,
                 category,
                 reportedAt,
                 message,
@@ -61,7 +59,9 @@ public record BugReportSheetEntry(
                 userAgent,
                 "신규",
                 "",
-                ""
+                "",
+                userId,
+                email
         );
     }
 

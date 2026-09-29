@@ -43,8 +43,6 @@ class BugReportSheetEntryTest {
         assertThat(entry.toRow())
                 .containsExactly(
                         "2d01816c-86e7-46a9-a138-51ce3ad21da8",
-                        "1",
-                        "user@example.com",
                         "제안",
                         "2026-09-29T00:00:00Z",
                         "버그 설명",
@@ -54,7 +52,9 @@ class BugReportSheetEntryTest {
                         "test-agent",
                         "신규",
                         "",
-                        ""
+                        "",
+                        "1",
+                        "user@example.com"
                 );
     }
 }
