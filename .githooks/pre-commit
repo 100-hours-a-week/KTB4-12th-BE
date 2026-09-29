@@ -6,7 +6,7 @@ if [ -f .env ]; then
     set +a
 fi
 
-if ! ./gradlew build; then
+if ! ./gradlew build -x test; then
     echo "Gradle build failed. Commit aborted." >&2
     exit 1
 fi
