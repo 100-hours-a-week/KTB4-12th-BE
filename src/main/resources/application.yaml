@@ -65,6 +65,10 @@ app:
 
   bug-report:
     webhook-url: ${DISCORD_WEBHOOK_URL:}
+    google-sheets:
+      credentials-json-base64: ${GOOGLE_SERVICE_ACCOUNT_JSON_BASE64:}
+      spreadsheet-id: ${GOOGLE_SHEET_ID:}
+      sheet-name: ${GOOGLE_SHEET_TAB:}
 
 management:
   endpoints:

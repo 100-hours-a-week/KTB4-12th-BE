@@ -36,6 +36,9 @@ public enum BugReportErrorCode {
     WEBHOOK_NOT_CONFIGURED(
             ErrorCode.BUG_REPORT_WEBHOOK_NOT_CONFIGURED
     ),
+    GOOGLE_SHEETS_NOT_CONFIGURED(
+            ErrorCode.BUG_REPORT_INTEGRATION_NOT_CONFIGURED
+    ),
     DELIVERY_FAILED(ErrorCode.BUG_REPORT_DELIVERY_FAILED);
 
     private final ErrorCode errorCode;
