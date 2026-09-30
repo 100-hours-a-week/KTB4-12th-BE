@@ -3,6 +3,7 @@ package com.gift.gift.domain.bugreport.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,11 +14,17 @@ import org.springframework.mock.web.MockMultipartFile;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.bugreport.exception.BugReportException;
+import com.gift.gift.domain.bugreport.dto.BugReportSheetEntry;
+import com.gift.gift.domain.bugreport.support.BugReportGoogleSheetsProperties;
 import com.gift.gift.domain.bugreport.support.BugReportPayloadValidator;
 import com.gift.gift.domain.bugreport.support.BugReportRateLimiter;
 import com.gift.gift.domain.bugreport.support.BugReportWebhookProperties;
 import com.gift.gift.infrastructure.discord.DiscordAttachment;
 import com.gift.gift.infrastructure.discord.DiscordWebhookClient;
+import com.gift.gift.infrastructure.google.GoogleBugReportClient;
+import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.domain.user.entity.UserStatus;
+import com.gift.gift.domain.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -35,27 +42,57 @@ class BugReportServiceTest {
     private static final String CLIENT_IP = "127.0.0.1";
     private static final String WEBHOOK_URL =
             "https://discord.example.test/api/webhooks/1/token";
-    private static final String VALID_PAYLOAD =
-            "{\"embeds\":[{\"description\":\"버그 설명\"}]}";
+    private static final String VALID_PAYLOAD = """
+            {
+              "embeds": [{
+                "description": "버그 설명",
+                "timestamp": "2026-09-29T00:00:00Z",
+                "fields": [
+                  {"name": "카테고리", "value": "버그"},
+                  {"name": "제보 ID", "value": "2d01816c-86e7-46a9-a138-51ce3ad21da8"},
+                  {"name": "페이지 URL", "value": "https://gift.example/gifts"},
+                  {"name": "라우트", "value": "/gifts"},
+                  {"name": "뷰포트", "value": "390 x 844"},
+                  {"name": "User-Agent", "value": "test-agent"}
+                ]
+              }]
+            }
+            """;
 
     private DiscordWebhookClient discordWebhookClient;
+    private GoogleBugReportClient googleBugReportClient;
+    private UserRepository userRepository;
     private BugReportService service;
 
     @BeforeEach
     void setUp() {
         discordWebhookClient = mock(DiscordWebhookClient.class);
+        googleBugReportClient = mock(GoogleBugReportClient.class);
+        userRepository = mock(UserRepository.class);
+        User user = mock(User.class);
+        Mockito.when(user.getEmail()).thenReturn("user@example.com");
+        Mockito.when(userRepository.findByIdAndStatusAndDeletedAtIsNull(
+                        USER_ID,
+                        UserStatus.ACTIVE
+                ))
+                .thenReturn(Optional.of(user));
+        Mockito.when(googleBugReportClient.appendIfAbsent(any()))
+                .thenReturn(true);
         service = new BugReportService(
                 new BugReportRateLimiter(
                         Clock.fixed(Instant.now(), ZoneId.of("UTC"))
                 ),
                 new BugReportPayloadValidator(JsonMapper.builder().build()),
                 new BugReportWebhookProperties(WEBHOOK_URL),
-                discordWebhookClient
+                configuredGoogleSheetsProperties(),
+                userRepository,
+                discordWebhookClient,
+                googleBugReportClient
         );
     }
 
     @Test
-    @DisplayName("스크린샷과 로그가 모두 있으면 Discord로 그대로 전달한다")
+    @DisplayName("인증 사용자의 ID와 이메일을 Discord와 Sheet에 전달한다")
     void submitBugReport_sendsToDiscord_withAllAttachments() {
         MockMultipartFile screenshot = new MockMultipartFile(
                 "files[0]", "screenshot.png", "image/png", "png-bytes".getBytes()
@@ -75,7 +112,10 @@ class BugReportServiceTest {
 
         verify(discordWebhookClient).send(
                 eq(WEBHOOK_URL),
-                eq(VALID_PAYLOAD),
+                org.mockito.ArgumentMatchers.argThat(payload ->
+                        payload.contains("사용자 ID: 1")
+                                && payload.contains("이메일: user@example.com")
+                ),
                 screenshotCaptor.capture(),
                 errorLogCaptor.capture()
         );
@@ -94,6 +134,19 @@ class BugReportServiceTest {
         assertThat(capturedErrorLog.contentType())
                 .isEqualTo(org.springframework.http.MediaType.TEXT_PLAIN);
         assertThat(capturedErrorLog.content()).isEqualTo("log".getBytes());
+
+        org.mockito.ArgumentCaptor<BugReportSheetEntry> sheetEntryCaptor =
+                org.mockito.ArgumentCaptor.forClass(BugReportSheetEntry.class);
+        verify(googleBugReportClient).appendIfAbsent(
+                sheetEntryCaptor.capture()
+        );
+        assertThat(sheetEntryCaptor.getValue().reportId())
+                .isEqualTo("2d01816c-86e7-46a9-a138-51ce3ad21da8");
+        assertThat(sheetEntryCaptor.getValue().category()).isEqualTo("버그");
+        assertThat(sheetEntryCaptor.getValue().errorsText()).isEqualTo("log");
+        assertThat(sheetEntryCaptor.getValue().userId()).isEqualTo("1");
+        assertThat(sheetEntryCaptor.getValue().email())
+                .isEqualTo("user@example.com");
     }
 
     @Test
@@ -105,7 +158,9 @@ class BugReportServiceTest {
 
         verify(discordWebhookClient).send(
                 eq(WEBHOOK_URL),
-                eq(VALID_PAYLOAD),
+                org.mockito.ArgumentMatchers.argThat(payload ->
+                        payload.contains("익명")
+                ),
                 org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.isNull()
         );
@@ -122,7 +177,9 @@ class BugReportServiceTest {
 
         verify(discordWebhookClient, Mockito.times(6)).send(
                 eq(WEBHOOK_URL),
-                eq(VALID_PAYLOAD),
+                org.mockito.ArgumentMatchers.argThat(payload ->
+                        payload.contains("익명")
+                ),
                 org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.isNull()
         );
@@ -137,7 +194,10 @@ class BugReportServiceTest {
 
         verify(discordWebhookClient).send(
                 eq(WEBHOOK_URL),
-                eq(VALID_PAYLOAD),
+                org.mockito.ArgumentMatchers.argThat(payload ->
+                        payload.contains("사용자 ID: 1")
+                                && payload.contains("이메일: user@example.com")
+                ),
                 org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.isNull()
         );
@@ -213,7 +273,10 @@ class BugReportServiceTest {
                 ),
                 new BugReportPayloadValidator(JsonMapper.builder().build()),
                 new BugReportWebhookProperties(null),
-                discordWebhookClient
+                configuredGoogleSheetsProperties(),
+                userRepository,
+                discordWebhookClient,
+                googleBugReportClient
         );
 
         assertThatThrownBy(() -> unconfiguredService.submitBugReport(
@@ -221,6 +284,28 @@ class BugReportServiceTest {
         )).isInstanceOf(BugReportException.class);
 
         verifyNoInteractions(discordWebhookClient);
+    }
+
+    @Test
+    @DisplayName("Google Sheets 설정이 없으면 Discord에 전송하지 않고 예외를 던진다")
+    void submitBugReport_throws_whenGoogleSheetsNotConfigured() {
+        BugReportService unconfiguredService = new BugReportService(
+                new BugReportRateLimiter(
+                        Clock.fixed(Instant.now(), ZoneId.of("UTC"))
+                ),
+                new BugReportPayloadValidator(JsonMapper.builder().build()),
+                new BugReportWebhookProperties(WEBHOOK_URL),
+                new BugReportGoogleSheetsProperties(null, null, null),
+                userRepository,
+                discordWebhookClient,
+                googleBugReportClient
+        );
+
+        assertThatThrownBy(() -> unconfiguredService.submitBugReport(
+                USER_ID, CLIENT_IP, VALID_PAYLOAD, null, null
+        )).isInstanceOf(BugReportException.class);
+
+        verifyNoInteractions(discordWebhookClient, googleBugReportClient);
     }
 
     @Test
@@ -235,5 +320,13 @@ class BugReportServiceTest {
         assertThatThrownBy(() -> service.submitBugReport(
                 USER_ID, CLIENT_IP, VALID_PAYLOAD, null, null
         )).isInstanceOf(BugReportException.class);
+    }
+
+    private BugReportGoogleSheetsProperties configuredGoogleSheetsProperties() {
+        return new BugReportGoogleSheetsProperties(
+                "credentials",
+                "spreadsheet-id",
+                "버그 제보"
+        );
     }
 }

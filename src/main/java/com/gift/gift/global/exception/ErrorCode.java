@@ -81,6 +81,10 @@ public enum ErrorCode {
     BUG_REPORT_WEBHOOK_NOT_CONFIGURED(
             HttpStatus.SERVICE_UNAVAILABLE,
             "버그 제보 기능을 일시적으로 사용할 수 없습니다."
+    ),
+    BUG_REPORT_INTEGRATION_NOT_CONFIGURED(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "버그 제보 저장 기능을 일시적으로 사용할 수 없습니다."
     );
 
     private final HttpStatus status;
