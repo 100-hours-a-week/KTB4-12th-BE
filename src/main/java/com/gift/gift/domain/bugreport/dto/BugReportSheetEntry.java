@@ -29,7 +29,7 @@ public record BugReportSheetEntry(
 
         return new BugReportSheetEntry(
                 normalizeReportId(embed.fieldValue("제보 ID")),
-                userId == null ? "" : userId.toString(),
+                userId == null ? "익명" : userId.toString(),
                 valueOrEmpty(email),
                 valueOrDefault(
                         embed.fieldValue("카테고리"),

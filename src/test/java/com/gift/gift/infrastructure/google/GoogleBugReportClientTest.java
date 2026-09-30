@@ -58,8 +58,25 @@ class GoogleBugReportClientTest {
                 ));
         server.expect(once(), requestTo(containsString("valueInputOption=RAW")))
                 .andExpect(method(HttpMethod.PUT))
-                .andExpect(content().string(containsString("사용자 ID")))
-                .andExpect(content().string(containsString("이메일")))
+                .andExpect(content().json("""
+                        {
+                          "values": [[
+                            "제보 ID",
+                            "카테고리",
+                            "발생 시각",
+                            "제보 내용",
+                            "페이지·라우트",
+                            "수집된 오류",
+                            "화면 크기",
+                            "User-Agent",
+                            "처리 상태",
+                            "담당자",
+                            "처리 의견",
+                            "사용자 ID",
+                            "이메일"
+                          ]]
+                        }
+                        """))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
         server.expect(once(), requestTo(containsString(":append")))
                 .andExpect(method(HttpMethod.POST))

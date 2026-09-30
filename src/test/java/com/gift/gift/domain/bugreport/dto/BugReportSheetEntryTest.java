@@ -57,4 +57,24 @@ class BugReportSheetEntryTest {
                         "user@example.com"
                 );
     }
+
+    @Test
+    @DisplayName("익명 제보는 사용자 ID를 익명으로 표시하고 이메일은 비워 둔다")
+    void from_marksAnonymousReporterInSheetEntry() {
+        BugReportPayload payload = new BugReportPayload(List.of(
+                new BugReportPayload.Embed(
+                        "버그 설명",
+                        "2026-09-30T00:00:00Z",
+                        List.of(new BugReportPayload.Field(
+                                "제보 ID",
+                                "2d01816c-86e7-46a9-a138-51ce3ad21da8"
+                        ))
+                )
+        ));
+
+        BugReportSheetEntry entry = BugReportSheetEntry.from(payload, "", null, null);
+
+        assertThat(entry.userId()).isEqualTo("익명");
+        assertThat(entry.email()).isEmpty();
+    }
 }

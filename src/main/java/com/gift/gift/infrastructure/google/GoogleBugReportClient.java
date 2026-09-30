@@ -26,8 +26,6 @@ public class GoogleBugReportClient {
             "https://sheets.googleapis.com/v4/spreadsheets/";
     private static final List<String> SHEET_HEADERS = List.of(
             "제보 ID",
-            "사용자 ID",
-            "이메일",
             "카테고리",
             "발생 시각",
             "제보 내용",
