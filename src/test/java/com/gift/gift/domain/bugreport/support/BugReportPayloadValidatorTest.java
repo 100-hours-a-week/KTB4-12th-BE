@@ -7,6 +7,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.bugreport.exception.BugReportException;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -64,5 +65,32 @@ class BugReportPayloadValidatorTest {
 
         assertThatCode(() -> validator.validate(payload))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("인증 사용자의 ID와 이메일을 Discord embed에 추가한다")
+    void addReporter_addsUserIdAndEmailToEmbed() {
+        String payload = "{\"embeds\":[{\"description\":\"버그 설명\"}]}";
+
+        String enriched = validator.addReporter(
+                payload,
+                1L,
+                "user@example.com"
+        );
+
+        assertThat(enriched)
+                .contains("제보자")
+                .contains("사용자 ID: 1")
+                .contains("이메일: user@example.com");
+    }
+
+    @Test
+    @DisplayName("비로그인 제보는 Discord embed에 익명으로 표시한다")
+    void addReporter_marksAnonymousReporter() {
+        String payload = "{\"embeds\":[{\"description\":\"버그 설명\"}]}";
+
+        String enriched = validator.addReporter(payload, null, "");
+
+        assertThat(enriched).contains("제보자").contains("익명");
     }
 }
