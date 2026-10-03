@@ -1,0 +1,215 @@
+{
+  "info": {
+    "name": "Review API Test v2",
+    "description": "로컬 시드 사용자·친구·상품을 사용해 선물을 만든 뒤 리뷰 등록과 조회 API를 순서대로 테스트한다.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 발신자 로그인",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"발신자 로그인에 성공한다\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    const response = pm.response.json();",
+              "    pm.environment.set(\"accessToken\", response.data.accessToken);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{senderEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        },
+        "description": "시드 사용자 김민수(userId=1)로 로그인한다. 이 사용자는 수신자 userId=2를 이미 친구로 등록한 상태다."
+      },
+      "response": []
+    },
+    {
+      "name": "02 선물 생성",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"선물 생성에 성공한다\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "if (pm.response.code === 201) {",
+              "    const response = pm.response.json();",
+              "    pm.environment.set(\"giftId\", String(response.data.gift.giftId));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json", "type": "text" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": 1,\n  \"expectedUnitPrice\": {{expectedUnitPrice}}\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/gifts",
+          "host": ["{{baseUrl}}"],
+          "path": ["gifts"]
+        },
+        "description": "시드 친구 userId=2에게 재고가 있는 productId=1 상품을 보내고 생성된 giftId를 저장한다."
+      },
+      "response": []
+    },
+    {
+      "name": "03 수신자 로그인",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"수신자 로그인에 성공한다\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    const response = pm.response.json();",
+              "    pm.environment.set(\"accessToken\", response.data.accessToken);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{recipientEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        },
+        "description": "선물 수신자인 시드 사용자 이지연(userId=2)으로 로그인해 accessToken을 교체한다."
+      },
+      "response": []
+    },
+    {
+      "name": "04 리뷰 등록",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"리뷰 등록에 성공한다\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "if (pm.response.code === 201) {",
+              "    const response = pm.response.json();",
+              "    const review = response.data.review;",
+              "    pm.expect(review.giftId).to.eql(Number(pm.environment.get(\"giftId\")));",
+              "    pm.expect(review.rating).to.eql(Number(pm.environment.get(\"rating\")));",
+              "    pm.expect(review.content).to.eql(pm.environment.get(\"reviewContent\"));",
+              "    pm.environment.set(\"reviewId\", String(review.reviewId));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rating\": {{rating}},\n  \"content\": \"{{reviewContent}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/gifts/{{giftId}}/review",
+          "host": ["{{baseUrl}}"],
+          "path": ["gifts", "{{giftId}}", "review"]
+        },
+        "description": "수신자가 방금 받은 선물에 리뷰를 등록하고 reviewId를 저장한다."
+      },
+      "response": []
+    },
+    {
+      "name": "05 리뷰 조회",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"리뷰 조회에 성공한다\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    const response = pm.response.json();",
+              "    const review = response.data.review;",
+              "    pm.expect(response.message).to.eql(\"리뷰를 조회했습니다.\");",
+              "    pm.expect(review.reviewId).to.eql(Number(pm.environment.get(\"reviewId\")));",
+              "    pm.expect(review.giftId).to.eql(Number(pm.environment.get(\"giftId\")));",
+              "    pm.expect(review.rating).to.eql(Number(pm.environment.get(\"rating\")));",
+              "    pm.expect(review.content).to.eql(pm.environment.get(\"reviewContent\"));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/gifts/{{giftId}}/review",
+          "host": ["{{baseUrl}}"],
+          "path": ["gifts", "{{giftId}}", "review"]
+        },
+        "description": "앞 단계에서 등록한 활성 리뷰를 조회하고 등록 결과와 비교한다."
+      },
+      "response": []
+    }
+  ]
+}

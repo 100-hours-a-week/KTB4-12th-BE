@@ -168,6 +168,87 @@ class ReviewServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("완료된 받은 선물에 작성한 활성 리뷰를 조회한다")
+    void getReview_returnsActiveReview() {
+        GiftHistory giftHistory = mock(GiftHistory.class);
+        Review review = savedReview(giftHistory);
+
+        when(giftHistoryRepository
+                .findByIdAndRecipient_IdAndStatusAndDeletedAtIsNull(GIFT_ID, USER_ID, GiftStatus.COMPLETED))
+                .thenReturn(Optional.of(giftHistory));
+
+        when(reviewRepository
+                .findByGiftHistory_IdAndUser_IdAndDeletedAtIsNull(GIFT_ID, USER_ID))
+                .thenReturn(Optional.of(review));
+
+        ReviewResponse response = reviewService.getReview(GIFT_ID, USER_ID);
+
+        assertThat(response.review().reviewId()).isEqualTo(71L);
+        assertThat(response.review().giftId()).isEqualTo(GIFT_ID);
+        assertThat(response.review().rating()).isEqualTo(5);
+        assertThat(response.review().content()).isEqualTo("좋아요");
+    }
+
+    @Test
+    @DisplayName("조회할 수 없는 선물이면 GIFT_NOT_FOUND를 반환한다")
+    void getReview_rejectsUnavailableGift() {
+        when(giftHistoryRepository
+                .findByIdAndRecipient_IdAndStatusAndDeletedAtIsNull(
+                        GIFT_ID,
+                        USER_ID,
+                        GiftStatus.COMPLETED
+                ))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(
+                () -> reviewService.getReview(
+                        GIFT_ID,
+                        USER_ID
+                )
+        ).isInstanceOfSatisfying(
+                ReviewException.class,
+                exception -> assertThat(
+                        exception.getErrorCode()
+                ).isEqualTo(ErrorCode.GIFT_NOT_FOUND)
+        );
+
+        verifyNoInteractions(reviewRepository);
+    }
+
+    @Test
+    @DisplayName("활성 리뷰가 없으면 REVIEW_NOT_FOUND를 반환한다")
+    void getReview_returnsReviewNotFound() {
+        GiftHistory giftHistory = mock(GiftHistory.class);
+
+        when(giftHistoryRepository
+                .findByIdAndRecipient_IdAndStatusAndDeletedAtIsNull(
+                        GIFT_ID,
+                        USER_ID,
+                        GiftStatus.COMPLETED
+                ))
+                .thenReturn(Optional.of(giftHistory));
+
+        when(reviewRepository
+                .findByGiftHistory_IdAndUser_IdAndDeletedAtIsNull(
+                        GIFT_ID,
+                        USER_ID
+                ))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(
+                () -> reviewService.getReview(
+                        GIFT_ID,
+                        USER_ID
+                )
+        ).isInstanceOfSatisfying(
+                ReviewException.class,
+                exception -> assertThat(
+                        exception.getErrorCode()
+                ).isEqualTo(ErrorCode.REVIEW_NOT_FOUND)
+        );
+    }
+
     private GiftHistory arrangeAvailableGift() {
         User recipient = mock(User.class);
         GiftHistory giftHistory = mock(GiftHistory.class);

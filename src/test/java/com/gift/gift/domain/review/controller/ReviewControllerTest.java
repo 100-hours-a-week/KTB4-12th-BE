@@ -33,6 +33,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 class ReviewControllerTest {
 
@@ -113,7 +114,7 @@ class ReviewControllerTest {
     }
 
     @Test
-    @DisplayName("별점이 누락되면 글로벌 검증 오류를 반환한다")
+    @DisplayName("별점이 누락되면 상세 정보 없이 400을 반환한다")
     void createReview_rejectsMissingRating() throws Exception {
         mockMvc.perform(post(
                         "/gifts/{giftId}/review",
@@ -128,9 +129,7 @@ class ReviewControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("입력값을 확인해 주세요."))
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.error.details[0].field").value("rating"))
-                .andExpect(jsonPath("$.error.details[0].reason").value("REQUIRED"));
-
+                .andExpect(jsonPath("$.error.details").doesNotExist());
         verifyNoInteractions(reviewService);
     }
 
@@ -194,6 +193,39 @@ class ReviewControllerTest {
                         .value("REVIEW_ALREADY_EXISTS"));
     }
 
+    @Test
+    @DisplayName("활성 리뷰 조회 요청은 200과 리뷰를 반환한다")
+    void getReview_returnsActiveReview() throws Exception {
+        when(reviewService.getReview(GIFT_ID, USER_ID))
+                .thenReturn(response());
+
+        mockMvc.perform(get("/gifts/{giftId}/review", GIFT_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("리뷰를 조회했습니다."))
+                .andExpect(jsonPath("$.data.review.reviewId").value(71))
+                .andExpect(jsonPath("$.data.review.giftId").value(10))
+                .andExpect(jsonPath("$.data.review.rating").value(5))
+                .andExpect(jsonPath("$.data.review.content").value("좋아요"))
+                .andExpect(jsonPath("$.data.review.createdAt").value("2026-10-03T12:00:00"))
+                .andExpect(jsonPath("$.data.review.updatedAt").value("2026-10-03T12:00:00"))
+                .andExpect(jsonPath("$.error").doesNotExist());
+
+        verify(reviewService).getReview(GIFT_ID, USER_ID);
+    }
+
+    @Test
+    @DisplayName("선물 ID가 양수가 아니면 400을 반환한다")
+    void getReview_rejectsNonPositiveGiftId() throws Exception {
+        mockMvc.perform(
+                        get("/gifts/{giftId}/review", 0)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("입력값을 확인해 주세요."))
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(reviewService);
+    }
+
     private ReviewResponse response() {
         return new ReviewResponse(
                 new ReviewResponse.ReviewDetail(
@@ -201,20 +233,8 @@ class ReviewControllerTest {
                         GIFT_ID,
                         5,
                         "좋아요",
-                        LocalDateTime.of(
-                                2026,
-                                10,
-                                3,
-                                12,
-                                0
-                        ),
-                        LocalDateTime.of(
-                                2026,
-                                10,
-                                3,
-                                12,
-                                0
-                        )
+                        LocalDateTime.of(2026, 10, 3, 12, 0),
+                        LocalDateTime.of(2026, 10, 3, 12, 0)
                 )
         );
     }
