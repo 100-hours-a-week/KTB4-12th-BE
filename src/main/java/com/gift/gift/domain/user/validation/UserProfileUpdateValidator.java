@@ -1,6 +1,5 @@
 package com.gift.gift.domain.user.validation;
 
-import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
@@ -20,12 +19,6 @@ public class UserProfileUpdateValidator
 
     private static final Pattern BIRTH_PATTERN =
             Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
-
-    private final Clock clock;
-
-    public UserProfileUpdateValidator(Clock clock) {
-        this.clock = clock;
-    }
 
     @Override
     public boolean isValid(
@@ -107,10 +100,9 @@ public class UserProfileUpdateValidator
             return false;
         }
 
-        LocalDate birthDate;
-
         try {
-            birthDate = LocalDate.parse(value);
+            LocalDate.parse(value);
+            return true;
         } catch (DateTimeParseException exception) {
             addFieldViolation(
                     context,
@@ -119,29 +111,6 @@ public class UserProfileUpdateValidator
             );
             return false;
         }
-
-        LocalDate today = LocalDate.now(clock);
-
-        if (birthDate.isAfter(today)
-                || birthDate.isBefore(today.minusYears(120))) {
-            addFieldViolation(
-                    context,
-                    "birth",
-                    ValidationErrorReason.Message.OUT_OF_RANGE
-            );
-            return false;
-        }
-
-        if (birthDate.isAfter(today.minusYears(14))) {
-            addFieldViolation(
-                    context,
-                    "birth",
-                    ValidationErrorReason.Message.AGE_REQUIREMENT_NOT_MET
-            );
-            return false;
-        }
-
-        return true;
     }
 
     private boolean validateBirthdayPublic(
