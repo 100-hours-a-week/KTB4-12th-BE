@@ -4,24 +4,38 @@ import java.util.Set;
 
 import tools.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
-import jakarta.validation.Validation;
-import jakarta.validation.Validator;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+
+import com.gift.gift.support.TestValidatorFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class UpdateUserProfileRequestTest {
 
+    private static LocalValidatorFactoryBean validator;
+
     private ObjectMapper objectMapper;
-    private Validator validator;
+
+    @BeforeAll
+    static void setUpValidator() {
+        validator = TestValidatorFactory.create();
+    }
+
+    @AfterAll
+    static void closeValidator() {
+        validator.close();
+    }
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        validator = Validation.buildDefaultValidatorFactory()
-                .getValidator();
     }
 
     @Test
@@ -125,6 +139,49 @@ class UpdateUserProfileRequestTest {
                 "birth",
                 "INVALID_DATE"
         );
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "2099-12-31, OUT_OF_RANGE",
+            "2026-09-19, OUT_OF_RANGE",
+            "1906-09-17, OUT_OF_RANGE",
+            "2025-05-05, AGE_REQUIREMENT_NOT_MET",
+            "2012-09-19, AGE_REQUIREMENT_NOT_MET"
+    })
+    @DisplayName("생년월일의 날짜 범위와 만 14세 정책을 검증한다")
+    void birthPolicyViolation_isInvalid(
+            String birth,
+            String reason
+    ) throws Exception {
+        UpdateUserProfileRequest request = read(
+                """
+                {
+                  "birth": "%s"
+                }
+                """.formatted(birth)
+        );
+
+        assertViolation(request, "birth", reason);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "2012-09-18",
+            "1906-09-18"
+    })
+    @DisplayName("만 14세와 120년 경계에 포함되는 생년월일을 허용한다")
+    void birthPolicyBoundary_isValid(String birth)
+            throws Exception {
+        UpdateUserProfileRequest request = read(
+                """
+                {
+                  "birth": "%s"
+                }
+                """.formatted(birth)
+        );
+
+        assertThat(validator.validate(request)).isEmpty();
     }
 
     @Test
