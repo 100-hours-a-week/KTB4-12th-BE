@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Review API Test v2",
-    "description": "로컬 시드 사용자·친구·상품을 사용해 선물을 만든 뒤 리뷰 등록과 조회 API를 순서대로 테스트한다.",
+    "description": "로컬 시드 사용자·친구·상품을 사용해 선물을 만든 뒤 리뷰 등록과 조회 API를 순서대로 테스트한다. 리뷰 등록 시 content는 필수이며 null·빈 문자열·공백 전용 문자열을 허용하지 않는다.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -170,7 +170,7 @@
           "host": ["{{baseUrl}}"],
           "path": ["gifts", "{{giftId}}", "review"]
         },
-        "description": "수신자가 방금 받은 선물에 리뷰를 등록하고 reviewId를 저장한다."
+        "description": "수신자가 방금 받은 선물에 필수 리뷰 내용을 등록하고 reviewId를 저장한다. content가 null·빈 문자열·공백 전용 문자열이면 INVALID_REQUEST와 content/BLANK_NOT_ALLOWED 상세 오류를 반환한다."
       },
       "response": []
     },
