@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Review API Test v2",
-    "description": "로컬 시드 사용자·친구·상품을 사용해 선물을 만든 뒤 리뷰 등록과 조회 API를 순서대로 테스트한다. 리뷰 등록 시 content는 필수이며 null·빈 문자열·공백 전용 문자열을 허용하지 않는다.",
+    "description": "로컬 시드 사용자·친구·상품을 사용해 선물을 만든 뒤 리뷰 등록·조회·수정·삭제 API를 순서대로 테스트한다. 리뷰 본문은 선택 값이며 null·빈 문자열·공백 전용 문자열은 본문 없음으로 저장한다.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -170,7 +170,7 @@
           "host": ["{{baseUrl}}"],
           "path": ["gifts", "{{giftId}}", "review"]
         },
-        "description": "수신자가 방금 받은 선물에 필수 리뷰 내용을 등록하고 reviewId를 저장한다. content가 null·빈 문자열·공백 전용 문자열이면 INVALID_REQUEST와 content/BLANK_NOT_ALLOWED 상세 오류를 반환한다."
+        "description": "수신자가 방금 받은 선물에 리뷰를 등록하고 reviewId를 저장한다. content는 선택 값이며 null·빈 문자열·공백 전용 문자열은 본문 없음으로 저장한다."
       },
       "response": []
     },
@@ -208,6 +208,83 @@
           "path": ["gifts", "{{giftId}}", "review"]
         },
         "description": "앞 단계에서 등록한 활성 리뷰를 조회하고 등록 결과와 비교한다."
+      },
+      "response": []
+    },
+    {
+      "name": "06 리뷰 수정",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"리뷰 수정에 성공한다\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    const response = pm.response.json();",
+              "    const review = response.data.review;",
+              "    pm.expect(response.message).to.eql(\"리뷰를 수정했습니다.\");",
+              "    pm.expect(review.reviewId).to.eql(Number(pm.environment.get(\"reviewId\")));",
+              "    pm.expect(review.rating).to.eql(Number(pm.environment.get(\"updatedRating\")));",
+              "    pm.expect(review.content).to.eql(pm.environment.get(\"updatedReviewContent\"));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rating\": {{updatedRating}},\n  \"content\": \"{{updatedReviewContent}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/gifts/{{giftId}}/review",
+          "host": ["{{baseUrl}}"],
+          "path": ["gifts", "{{giftId}}", "review"]
+        },
+        "description": "활성 리뷰의 별점과 본문을 수정한다. rating이 null이면 기존 별점을 유지하고, content가 null·빈 문자열·공백 전용 문자열이면 본문을 삭제한다."
+      },
+      "response": []
+    },
+    {
+      "name": "07 리뷰 삭제",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"리뷰 삭제에 성공한다\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.message).to.eql(\"리뷰를 삭제했습니다.\");",
+              "    pm.expect(response.data.giftId).to.eql(Number(pm.environment.get(\"giftId\")));",
+              "    pm.expect(response.data.reviewStatus).to.eql(\"NOT_WRITTEN\");",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/gifts/{{giftId}}/review",
+          "host": ["{{baseUrl}}"],
+          "path": ["gifts", "{{giftId}}", "review"]
+        },
+        "description": "활성 리뷰를 소프트 삭제하고 리뷰 작성 전 상태를 반환한다."
       },
       "response": []
     }
