@@ -15,8 +15,7 @@ public enum ValidationErrorReason {
     INVALID_TYPE,
     INVALID_DATE,
     UNKNOWN_FIELD,
-    EMPTY_UPDATE_FIELDS,
-    BLANK_NOT_ALLOWED;
+    EMPTY_UPDATE_FIELDS;
 
     public static final class Message {
 
@@ -39,8 +38,6 @@ public enum ValidationErrorReason {
         public static final String UNKNOWN_FIELD = "UNKNOWN_FIELD";
         public static final String EMPTY_UPDATE_FIELDS =
                 "EMPTY_UPDATE_FIELDS";
-        public static final String BLANK_NOT_ALLOWED =
-                "BLANK_NOT_ALLOWED";
 
         private Message() {
         }

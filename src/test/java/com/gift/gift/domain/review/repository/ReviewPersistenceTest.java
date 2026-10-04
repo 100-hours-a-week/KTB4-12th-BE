@@ -258,6 +258,33 @@ class ReviewPersistenceTest {
         ).isEmpty();
     }
 
+    @Test
+    @DisplayName("수정과 삭제를 위해 활성 리뷰를 쓰기 락으로 조회한다")
+    void findActiveReviewForUpdate_returnsActiveReview() {
+        Fixture fixture = persistFixture();
+
+        Review activeReview = reviewRepository.saveAndFlush(
+                new Review(
+                        fixture.giftHistory(),
+                        fixture.recipient(),
+                        5,
+                        "수정 전 리뷰"
+                )
+        );
+
+        entityManager.clear();
+
+        Review foundReview = reviewRepository
+                .findActiveReviewForUpdate(
+                        fixture.giftHistory().getId(),
+                        fixture.recipient().getId()
+                )
+                .orElseThrow();
+
+        assertThat(foundReview.getId()).isEqualTo(activeReview.getId());
+        assertThat(foundReview.getDeletedAt()).isNull();
+    }
+
     private Fixture persistFixture() {
         String suffix = UUID.randomUUID().toString();
 

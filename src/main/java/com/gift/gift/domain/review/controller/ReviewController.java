@@ -9,6 +9,8 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import com.gift.gift.domain.review.dto.request.CreateReviewRequest;
+import com.gift.gift.domain.review.dto.request.UpdateReviewRequest;
+import com.gift.gift.domain.review.dto.response.DeleteReviewResponse;
 import com.gift.gift.domain.review.dto.response.ReviewResponse;
 import com.gift.gift.domain.review.response.ReviewSuccessCode;
 import com.gift.gift.domain.review.service.ReviewService;
@@ -49,6 +51,44 @@ public class ReviewController {
     ) {
         ReviewResponse response = reviewService.getReview(giftId, userId);
         ReviewSuccessCode successCode = ReviewSuccessCode.REVIEW_RETRIEVED;
+
+        return ResponseEntity
+                .status(successCode.status())
+                .body(
+                        ApiResponse.success(successCode.message(), response)
+                );
+    }
+
+    @PatchMapping("/{giftId}/review")
+    public ResponseEntity<ApiResponse<ReviewResponse>> updateReview(
+            @CurrentUserId Long userId,
+            @PathVariable @Positive Long giftId,
+            @Valid @RequestBody UpdateReviewRequest request
+    ) {
+        ReviewResponse response = reviewService.updateReview(
+                giftId,
+                userId,
+                request
+        );
+        ReviewSuccessCode successCode = ReviewSuccessCode.REVIEW_UPDATED;
+
+        return ResponseEntity
+                .status(successCode.status())
+                .body(
+                        ApiResponse.success(successCode.message(), response)
+                );
+    }
+
+    @DeleteMapping("/{giftId}/review")
+    public ResponseEntity<ApiResponse<DeleteReviewResponse>> deleteReview(
+            @CurrentUserId Long userId,
+            @PathVariable @Positive Long giftId
+    ) {
+        DeleteReviewResponse response = reviewService.deleteReview(
+                giftId,
+                userId
+        );
+        ReviewSuccessCode successCode = ReviewSuccessCode.REVIEW_DELETED;
 
         return ResponseEntity
                 .status(successCode.status())

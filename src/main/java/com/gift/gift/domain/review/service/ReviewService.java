@@ -1,6 +1,8 @@
 package com.gift.gift.domain.review.service;
 
 import java.sql.SQLException;
+import java.time.Clock;
+import java.time.LocalDateTime;
 
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -12,6 +14,8 @@ import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.review.dto.request.CreateReviewRequest;
+import com.gift.gift.domain.review.dto.request.UpdateReviewRequest;
+import com.gift.gift.domain.review.dto.response.DeleteReviewResponse;
 import com.gift.gift.domain.review.dto.response.ReviewResponse;
 import com.gift.gift.domain.review.entity.Review;
 import com.gift.gift.domain.review.exception.ReviewErrorCode;
@@ -28,6 +32,7 @@ public class ReviewService {
 
     private final GiftHistoryRepository giftHistoryRepository;
     private final ReviewRepository reviewRepository;
+    private final Clock clock;
 
     @Transactional
     public ReviewResponse createReview(Long giftId, Long userId, CreateReviewRequest request) {
@@ -78,16 +83,95 @@ public class ReviewService {
         }
     }
 
+    @Transactional
+    public ReviewResponse updateReview(
+            Long giftId,
+            Long userId,
+            UpdateReviewRequest request
+    ) {
+        try {
+            validateGift(
+                    giftId,
+                    userId,
+                    ReviewErrorCode.REVIEW_UPDATE_GIFT_NOT_FOUND
+            );
+
+            Review review = reviewRepository
+                    .findActiveReviewForUpdate(giftId, userId)
+                    .orElseThrow(() -> new ReviewException(
+                            ReviewErrorCode.REVIEW_UPDATE_NOT_FOUND
+                    ));
+
+            if (request.rating() != null) {
+                review.updateRating(request.rating());
+            }
+
+            review.updateContent(request.content());
+            reviewRepository.flush();
+
+            return ReviewResponse.from(review);
+        } catch (ReviewException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new ReviewException(
+                    ReviewErrorCode.REVIEW_UPDATE_FAILED,
+                    exception
+            );
+        }
+    }
+
+    @Transactional
+    public DeleteReviewResponse deleteReview(
+            Long giftId,
+            Long userId
+    ) {
+        try {
+            validateGift(
+                    giftId,
+                    userId,
+                    ReviewErrorCode.REVIEW_DELETE_GIFT_NOT_FOUND
+            );
+
+            Review review = reviewRepository
+                    .findActiveReviewForUpdate(giftId, userId)
+                    .orElseThrow(() -> new ReviewException(
+                            ReviewErrorCode.REVIEW_DELETE_NOT_FOUND
+                    ));
+
+            review.softDelete(LocalDateTime.now(clock));
+            reviewRepository.flush();
+
+            return DeleteReviewResponse.from(giftId);
+        } catch (ReviewException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new ReviewException(
+                    ReviewErrorCode.REVIEW_DELETE_FAILED,
+                    exception
+            );
+        }
+    }
+
     private void validateReadableGift(Long giftId, Long userId) {
+        validateGift(
+                giftId,
+                userId,
+                ReviewErrorCode.REVIEW_QUERY_GIFT_NOT_FOUND
+        );
+    }
+
+    private void validateGift(
+            Long giftId,
+            Long userId,
+            ReviewErrorCode errorCode
+    ) {
         giftHistoryRepository
                 .findByIdAndRecipient_IdAndStatusAndDeletedAtIsNull(
                         giftId,
                         userId,
                         GiftStatus.COMPLETED
                 )
-                .orElseThrow(
-                        () -> new ReviewException(ReviewErrorCode.REVIEW_QUERY_GIFT_NOT_FOUND)
-                );
+                .orElseThrow(() -> new ReviewException(errorCode));
     }
 
     private Review saveReview(Review review) {

@@ -2,15 +2,13 @@ package com.gift.gift.domain.review.dto.request;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 
-import com.gift.gift.domain.review.validation.ValidCreateReviewRequest;
+import com.gift.gift.domain.review.validation.ValidUpdateReviewRequest;
 import com.gift.gift.global.exception.ValidationErrorReason;
 
-@ValidCreateReviewRequest
-public record CreateReviewRequest(
+@ValidUpdateReviewRequest
+public record UpdateReviewRequest(
 
-        @NotNull(message = ValidationErrorReason.Message.REQUIRED)
         @Min(
                 value = 1,
                 message = ValidationErrorReason.Message.OUT_OF_RANGE

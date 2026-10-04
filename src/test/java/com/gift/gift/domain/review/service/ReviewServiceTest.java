@@ -1,7 +1,10 @@
 package com.gift.gift.domain.review.service;
 
 import java.sql.SQLException;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -15,6 +18,8 @@ import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.review.dto.request.CreateReviewRequest;
+import com.gift.gift.domain.review.dto.request.UpdateReviewRequest;
+import com.gift.gift.domain.review.dto.response.DeleteReviewResponse;
 import com.gift.gift.domain.review.dto.response.ReviewResponse;
 import com.gift.gift.domain.review.entity.Review;
 import com.gift.gift.domain.review.exception.ReviewException;
@@ -35,16 +40,26 @@ class ReviewServiceTest {
 
     private static final Long GIFT_ID = 10L;
     private static final Long USER_ID = 20L;
+    private static final Instant NOW =
+            Instant.parse("2026-10-03T03:00:00Z");
+    private static final ZoneId ZONE_ID =
+            ZoneId.of("Asia/Seoul");
 
     private GiftHistoryRepository giftHistoryRepository;
     private ReviewRepository reviewRepository;
     private ReviewService reviewService;
+    private Clock clock;
 
     @BeforeEach
     void setUp() {
         giftHistoryRepository = mock(GiftHistoryRepository.class);
         reviewRepository = mock(ReviewRepository.class);
-        reviewService = new ReviewService(giftHistoryRepository, reviewRepository);
+        clock = Clock.fixed(NOW, ZONE_ID);
+        reviewService = new ReviewService(
+                giftHistoryRepository,
+                reviewRepository,
+                clock
+        );
     }
 
     @Test
@@ -246,6 +261,120 @@ class ReviewServiceTest {
                 exception -> assertThat(
                         exception.getErrorCode()
                 ).isEqualTo(ErrorCode.REVIEW_NOT_FOUND)
+        );
+    }
+
+    @Test
+    @DisplayName("활성 리뷰의 별점과 내용을 수정한다")
+    void updateReview_updatesRatingAndContent() {
+        GiftHistory giftHistory = arrangeAvailableGift();
+        Review review = new Review(
+                giftHistory,
+                giftHistory.getRecipient(),
+                5,
+                "수정 전"
+        );
+
+        when(reviewRepository.findActiveReviewForUpdate(GIFT_ID, USER_ID))
+                .thenReturn(Optional.of(review));
+
+        ReviewResponse response = reviewService.updateReview(
+                GIFT_ID,
+                USER_ID,
+                new UpdateReviewRequest(4, "수정 후")
+        );
+
+        assertThat(review.getRating()).isEqualTo(4);
+        assertThat(review.getReviewText()).isEqualTo("수정 후");
+        assertThat(response.review().rating()).isEqualTo(4);
+        assertThat(response.review().content()).isEqualTo("수정 후");
+        verify(reviewRepository).flush();
+    }
+
+    @Test
+    @DisplayName("수정 별점이 null이면 기존 별점을 유지하고 공백 본문은 삭제한다")
+    void updateReview_keepsRatingAndDeletesBlankContent() {
+        GiftHistory giftHistory = arrangeAvailableGift();
+        Review review = new Review(
+                giftHistory,
+                giftHistory.getRecipient(),
+                5,
+                "기존 내용"
+        );
+
+        when(reviewRepository.findActiveReviewForUpdate(GIFT_ID, USER_ID))
+                .thenReturn(Optional.of(review));
+
+        ReviewResponse response = reviewService.updateReview(
+                GIFT_ID,
+                USER_ID,
+                new UpdateReviewRequest(null, "   ")
+        );
+
+        assertThat(review.getRating()).isEqualTo(5);
+        assertThat(review.getReviewText()).isNull();
+        assertThat(response.review().rating()).isEqualTo(5);
+        assertThat(response.review().content()).isNull();
+    }
+
+    @Test
+    @DisplayName("수정할 활성 리뷰가 없으면 REVIEW_NOT_FOUND를 반환한다")
+    void updateReview_returnsReviewNotFound() {
+        arrangeAvailableGift();
+        when(reviewRepository.findActiveReviewForUpdate(GIFT_ID, USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reviewService.updateReview(
+                GIFT_ID,
+                USER_ID,
+                new UpdateReviewRequest(4, "수정 후")
+        )).isInstanceOfSatisfying(
+                ReviewException.class,
+                exception -> assertThat(exception.getErrorCode())
+                        .isEqualTo(ErrorCode.REVIEW_NOT_FOUND)
+        );
+    }
+
+    @Test
+    @DisplayName("활성 리뷰를 현재 시각으로 소프트 삭제한다")
+    void deleteReview_softDeletesActiveReview() {
+        GiftHistory giftHistory = arrangeAvailableGift();
+        Review review = new Review(
+                giftHistory,
+                giftHistory.getRecipient(),
+                5,
+                "삭제할 내용"
+        );
+
+        when(reviewRepository.findActiveReviewForUpdate(GIFT_ID, USER_ID))
+                .thenReturn(Optional.of(review));
+
+        DeleteReviewResponse response = reviewService.deleteReview(
+                GIFT_ID,
+                USER_ID
+        );
+
+        assertThat(review.getDeletedAt())
+                .isEqualTo(LocalDateTime.of(2026, 10, 3, 12, 0));
+        assertThat(response.giftId()).isEqualTo(GIFT_ID);
+        assertThat(response.reviewStatus()).isEqualTo("NOT_WRITTEN");
+        verify(reviewRepository).flush();
+    }
+
+    @Test
+    @DisplayName("삭제할 활성 리뷰가 없으면 REVIEW_NOT_FOUND를 반환한다")
+    void deleteReview_returnsReviewNotFound() {
+        arrangeAvailableGift();
+        when(reviewRepository.findActiveReviewForUpdate(GIFT_ID, USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reviewService.deleteReview(
+                GIFT_ID,
+                USER_ID
+        )).isInstanceOfSatisfying(
+                ReviewException.class,
+                exception -> assertThat(exception.getErrorCode())
+                        .isEqualTo(ErrorCode.REVIEW_NOT_FOUND)
         );
     }
 
