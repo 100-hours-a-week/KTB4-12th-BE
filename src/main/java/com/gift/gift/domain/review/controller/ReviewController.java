@@ -6,11 +6,7 @@ import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import com.gift.gift.domain.review.dto.request.CreateReviewRequest;
 import com.gift.gift.domain.review.dto.response.ReviewResponse;
@@ -19,7 +15,6 @@ import com.gift.gift.domain.review.service.ReviewService;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
 
-@Validated
 @RestController
 @RequestMapping("/gifts")
 @RequiredArgsConstructor
@@ -39,6 +34,21 @@ public class ReviewController {
                 request
         );
         ReviewSuccessCode successCode = ReviewSuccessCode.REVIEW_CREATED;
+
+        return ResponseEntity
+                .status(successCode.status())
+                .body(
+                        ApiResponse.success(successCode.message(), response)
+                );
+    }
+
+    @GetMapping("/{giftId}/review")
+    public ResponseEntity<ApiResponse<ReviewResponse>> getReview(
+            @CurrentUserId Long userId,
+            @PathVariable @Positive Long giftId
+    ) {
+        ReviewResponse response = reviewService.getReview(giftId, userId);
+        ReviewSuccessCode successCode = ReviewSuccessCode.REVIEW_RETRIEVED;
 
         return ResponseEntity
                 .status(successCode.status())

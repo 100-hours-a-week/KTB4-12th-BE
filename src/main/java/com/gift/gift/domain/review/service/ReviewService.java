@@ -59,6 +59,37 @@ public class ReviewService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public ReviewResponse getReview(Long giftId, Long userId) {
+        try {
+            validateReadableGift(giftId, userId);
+
+            Review review = reviewRepository
+                    .findByGiftHistory_IdAndUser_IdAndDeletedAtIsNull(giftId, userId)
+                    .orElseThrow(
+                            () -> new ReviewException(ReviewErrorCode.REVIEW_NOT_FOUND)
+                    );
+
+            return ReviewResponse.from(review);
+        } catch (ReviewException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new ReviewException(ReviewErrorCode.REVIEW_QUERY_FAILED, exception);
+        }
+    }
+
+    private void validateReadableGift(Long giftId, Long userId) {
+        giftHistoryRepository
+                .findByIdAndRecipient_IdAndStatusAndDeletedAtIsNull(
+                        giftId,
+                        userId,
+                        GiftStatus.COMPLETED
+                )
+                .orElseThrow(
+                        () -> new ReviewException(ReviewErrorCode.REVIEW_QUERY_GIFT_NOT_FOUND)
+                );
+    }
+
     private Review saveReview(Review review) {
         try {
             return reviewRepository.saveAndFlush(review);

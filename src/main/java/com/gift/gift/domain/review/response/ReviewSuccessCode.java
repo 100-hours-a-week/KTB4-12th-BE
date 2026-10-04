@@ -7,6 +7,11 @@ public enum ReviewSuccessCode {
     REVIEW_CREATED(
             HttpStatus.CREATED,
             "리뷰를 등록했습니다."
+    ),
+
+    REVIEW_RETRIEVED(
+            HttpStatus.OK,
+            "리뷰를 조회했습니다."
     );
 
     private final HttpStatus status;

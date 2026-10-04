@@ -176,6 +176,88 @@ class ReviewPersistenceTest {
                 .isEqualTo("현재 활성 리뷰");
     }
 
+    @Test
+    @DisplayName("선물과 작성자로 활성 리뷰를 조회한다")
+    void findActiveReview_returnsReview() {
+        Fixture fixture = persistFixture();
+
+        Review activeReview = reviewRepository.saveAndFlush(
+                new Review(
+                        fixture.giftHistory(),
+                        fixture.recipient(),
+                        5,
+                        "현재 리뷰"
+                )
+        );
+
+        entityManager.clear();
+
+        Review foundReview = reviewRepository
+                .findByGiftHistory_IdAndUser_IdAndDeletedAtIsNull(
+                        fixture.giftHistory().getId(),
+                        fixture.recipient().getId()
+                )
+                .orElseThrow();
+
+        assertThat(foundReview.getId()).isEqualTo(activeReview.getId());
+        assertThat(foundReview.getReviewText()).isEqualTo("현재 리뷰");
+        assertThat(foundReview.getDeletedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("삭제된 리뷰는 활성 리뷰 조회에서 제외한다")
+    void findActiveReview_ignoresDeletedReview() {
+        Fixture fixture = persistFixture();
+
+        Review deletedReview = reviewRepository.saveAndFlush(
+                new Review(
+                        fixture.giftHistory(),
+                        fixture.recipient(),
+                        5,
+                        "삭제된 리뷰"
+                )
+        );
+
+        deletedReview.softDelete(
+                LocalDateTime.of(2026, 10, 3, 12, 0)
+        );
+        reviewRepository.saveAndFlush(deletedReview);
+        entityManager.clear();
+
+        assertThat(
+                reviewRepository
+                        .findByGiftHistory_IdAndUser_IdAndDeletedAtIsNull(
+                                fixture.giftHistory().getId(),
+                                fixture.recipient().getId()
+                        )
+        ).isEmpty();
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 ID로는 활성 리뷰를 조회할 수 없다")
+    void findActiveReview_rejectsDifferentUser() {
+        Fixture fixture = persistFixture();
+
+        reviewRepository.saveAndFlush(
+                new Review(
+                        fixture.giftHistory(),
+                        fixture.recipient(),
+                        5,
+                        "수신자의 리뷰"
+                )
+        );
+
+        entityManager.clear();
+
+        assertThat(
+                reviewRepository
+                        .findByGiftHistory_IdAndUser_IdAndDeletedAtIsNull(
+                                fixture.giftHistory().getId(),
+                                fixture.sender().getId()
+                        )
+        ).isEmpty();
+    }
+
     private Fixture persistFixture() {
         String suffix = UUID.randomUUID().toString();
 
@@ -216,6 +298,7 @@ class ReviewPersistenceTest {
 
         return new Fixture(
                 giftHistory,
+                sender,
                 recipient
         );
     }
@@ -229,6 +312,10 @@ class ReviewPersistenceTest {
         );
     }
 
-    private record Fixture(GiftHistory giftHistory, User recipient) {
+    private record Fixture(
+            GiftHistory giftHistory,
+            User sender,
+            User recipient
+    ) {
     }
 }
