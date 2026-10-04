@@ -19,9 +19,29 @@ public enum ReviewErrorCode {
             "받은 선물을 찾을 수 없습니다."
     ),
 
+    REVIEW_UPDATE_GIFT_NOT_FOUND(
+            ErrorCode.GIFT_NOT_FOUND,
+            "받은 선물을 찾을 수 없습니다."
+    ),
+
+    REVIEW_DELETE_GIFT_NOT_FOUND(
+            ErrorCode.GIFT_NOT_FOUND,
+            "받은 선물을 찾을 수 없습니다."
+    ),
+
     REVIEW_NOT_FOUND(
             ErrorCode.REVIEW_NOT_FOUND,
             "작성된 리뷰가 없습니다."
+    ),
+
+    REVIEW_UPDATE_NOT_FOUND(
+            ErrorCode.REVIEW_NOT_FOUND,
+            "수정할 리뷰를 찾을 수 없습니다."
+    ),
+
+    REVIEW_DELETE_NOT_FOUND(
+            ErrorCode.REVIEW_NOT_FOUND,
+            "삭제할 리뷰를 찾을 수 없습니다."
     ),
 
     REVIEW_ALREADY_EXISTS(
@@ -37,6 +57,16 @@ public enum ReviewErrorCode {
     REVIEW_QUERY_FAILED(
             ErrorCode.INTERNAL_SERVER_ERROR,
             "리뷰를 불러오지 못했습니다. 다시 시도해 주세요."
+    ),
+
+    REVIEW_UPDATE_FAILED(
+            ErrorCode.INTERNAL_SERVER_ERROR,
+            "리뷰를 수정하지 못했습니다. 다시 시도해 주세요."
+    ),
+
+    REVIEW_DELETE_FAILED(
+            ErrorCode.INTERNAL_SERVER_ERROR,
+            "리뷰를 삭제하지 못했습니다. 다시 시도해 주세요."
     );
 
     private final ErrorCode errorCode;

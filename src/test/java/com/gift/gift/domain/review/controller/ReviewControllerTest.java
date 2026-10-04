@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import com.gift.gift.domain.review.dto.response.ReviewResponse;
+import com.gift.gift.domain.review.dto.response.DeleteReviewResponse;
 import com.gift.gift.domain.review.exception.ReviewErrorCode;
 import com.gift.gift.domain.review.exception.ReviewException;
 import com.gift.gift.domain.review.exception.ReviewRequestExceptionHandler;
@@ -32,6 +33,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -118,8 +121,11 @@ class ReviewControllerTest {
     }
 
     @Test
-    @DisplayName("리뷰 내용이 누락되면 BLANK_NOT_ALLOWED 상세 정보와 400을 반환한다")
-    void createReview_rejectsMissingContent() throws Exception {
+    @DisplayName("리뷰 내용이 누락되어도 별점만으로 등록할 수 있다")
+    void createReview_allowsMissingContent() throws Exception {
+        when(reviewService.createReview(any(), any(), any()))
+                .thenReturn(response());
+
         mockMvc.perform(post(
                         "/gifts/{giftId}/review",
                         GIFT_ID
@@ -130,12 +136,10 @@ class ReviewControllerTest {
                                   "rating": 5
                                 }
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("리뷰 입력값을 확인해 주세요."))
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.error.details[0].field").value("content"))
-                .andExpect(jsonPath("$.error.details[0].reason").value("BLANK_NOT_ALLOWED"));
-        verifyNoInteractions(reviewService);
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.message").value("리뷰를 등록했습니다."));
+
+        verify(reviewService).createReview(eq(GIFT_ID), eq(USER_ID), any());
     }
 
     @Test
@@ -231,6 +235,61 @@ class ReviewControllerTest {
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
 
         verifyNoInteractions(reviewService);
+    }
+
+    @Test
+    @DisplayName("리뷰 수정 요청은 200과 수정된 리뷰를 반환한다")
+    void updateReview_returnsUpdatedReview() throws Exception {
+        when(reviewService.updateReview(any(), any(), any()))
+                .thenReturn(response());
+
+        mockMvc.perform(patch("/gifts/{giftId}/review", GIFT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "rating": 4,
+                                  "content": "수정한 리뷰"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("리뷰를 수정했습니다."))
+                .andExpect(jsonPath("$.data.review.reviewId").value(71));
+
+        verify(reviewService).updateReview(eq(GIFT_ID), eq(USER_ID), any());
+    }
+
+    @Test
+    @DisplayName("리뷰 수정에서 null 본문을 허용한다")
+    void updateReview_allowsNullContent() throws Exception {
+        when(reviewService.updateReview(any(), any(), any()))
+                .thenReturn(response());
+
+        mockMvc.perform(patch("/gifts/{giftId}/review", GIFT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "rating": 4,
+                                  "content": null
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("리뷰를 수정했습니다."));
+
+        verify(reviewService).updateReview(eq(GIFT_ID), eq(USER_ID), any());
+    }
+
+    @Test
+    @DisplayName("리뷰 삭제 요청은 200과 선물 ID를 반환한다")
+    void deleteReview_returnsGiftId() throws Exception {
+        when(reviewService.deleteReview(GIFT_ID, USER_ID))
+                .thenReturn(DeleteReviewResponse.from(GIFT_ID));
+
+        mockMvc.perform(delete("/gifts/{giftId}/review", GIFT_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("리뷰를 삭제했습니다."))
+                .andExpect(jsonPath("$.data.giftId").value(10));
+
+        verify(reviewService).deleteReview(GIFT_ID, USER_ID);
     }
 
     private ReviewResponse response() {

@@ -17,7 +17,7 @@ import com.gift.gift.support.TestValidatorFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class CreateReviewRequestTest {
+class UpdateReviewRequestTest {
 
     private static LocalValidatorFactoryBean validator;
 
@@ -33,50 +33,59 @@ class CreateReviewRequestTest {
 
     @ParameterizedTest
     @ValueSource(ints = {1, 5})
-    @DisplayName("별점은 1부터 5까지 허용한다")
+    @DisplayName("수정 별점은 1부터 5까지 허용한다")
     void ratingBoundary_isValid(int rating) {
-        CreateReviewRequest request =
-                new CreateReviewRequest(rating, "좋아요");
+        UpdateReviewRequest request =
+                new UpdateReviewRequest(rating, "좋아요");
+
+        assertThat(validator.validate(request)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("수정 별점이 null이면 기존 별점을 유지할 수 있다")
+    void nullRating_isValid() {
+        UpdateReviewRequest request =
+                new UpdateReviewRequest(null, "좋아요");
 
         assertThat(validator.validate(request)).isEmpty();
     }
 
     @ParameterizedTest
     @ValueSource(ints = {0, 6})
-    @DisplayName("별점이 범위를 벗어나면 OUT_OF_RANGE로 거부한다")
+    @DisplayName("수정 별점이 범위를 벗어나면 OUT_OF_RANGE로 거부한다")
     void outOfRangeRating_isInvalid(int rating) {
-        CreateReviewRequest request =
-                new CreateReviewRequest(rating, "좋아요");
+        UpdateReviewRequest request =
+                new UpdateReviewRequest(rating, "좋아요");
 
         assertViolation(request, "rating", "OUT_OF_RANGE");
     }
 
     @ParameterizedTest
     @NullAndEmptySource
-    @DisplayName("리뷰 내용이 null이거나 빈 문자열이면 허용한다")
+    @DisplayName("수정 리뷰 내용이 null이거나 빈 문자열이면 허용한다")
     void emptyContent_isValid(String content) {
-        CreateReviewRequest request =
-                new CreateReviewRequest(5, content);
+        UpdateReviewRequest request =
+                new UpdateReviewRequest(4, content);
 
         assertThat(validator.validate(request)).isEmpty();
     }
 
     @ParameterizedTest
     @ValueSource(strings = {" ", "\t", "\n", " \t\n "})
-    @DisplayName("공백 전용 리뷰 내용은 허용한다")
+    @DisplayName("수정 리뷰 내용이 공백 전용 문자열이면 허용한다")
     void whitespaceOnlyContent_isValid(String content) {
-        CreateReviewRequest request =
-                new CreateReviewRequest(5, content);
+        UpdateReviewRequest request =
+                new UpdateReviewRequest(4, content);
 
         assertThat(validator.validate(request)).isEmpty();
     }
 
     @Test
-    @DisplayName("리뷰 내용이 유니코드 코드 포인트 300자를 넘으면 거부한다")
+    @DisplayName("수정 리뷰 내용이 유니코드 코드 포인트 300자를 넘으면 거부한다")
     void contentOver300CodePoints_isInvalid() {
-        CreateReviewRequest request =
-                new CreateReviewRequest(
-                        5,
+        UpdateReviewRequest request =
+                new UpdateReviewRequest(
+                        4,
                         "😊".repeat(301)
                 );
 
@@ -88,11 +97,11 @@ class CreateReviewRequestTest {
     }
 
     private void assertViolation(
-            CreateReviewRequest request,
+            UpdateReviewRequest request,
             String field,
             String reason
     ) {
-        Set<ConstraintViolation<CreateReviewRequest>> violations =
+        Set<ConstraintViolation<UpdateReviewRequest>> violations =
                 validator.validate(request);
 
         assertThat(violations).anySatisfy(violation -> {
