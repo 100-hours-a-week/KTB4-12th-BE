@@ -107,7 +107,7 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> reviewService.createReview(
                 GIFT_ID,
                 USER_ID,
-                new CreateReviewRequest(5, null)
+                new CreateReviewRequest(5, "좋아요")
         )).isInstanceOfSatisfying(
                 ReviewException.class,
                 exception -> assertThat(
@@ -132,7 +132,7 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> reviewService.createReview(
                 GIFT_ID,
                 USER_ID,
-                new CreateReviewRequest(5, null)
+                new CreateReviewRequest(5, "좋아요")
         )).isInstanceOfSatisfying(
                 ReviewException.class,
                 exception -> assertThat(
@@ -154,7 +154,7 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> reviewService.createReview(
                 GIFT_ID,
                 USER_ID,
-                new CreateReviewRequest(5, null)
+                new CreateReviewRequest(5, "좋아요")
         )).isInstanceOfSatisfying(
                 ReviewException.class,
                 exception -> {

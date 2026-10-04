@@ -71,7 +71,7 @@ class ReviewPersistenceTest {
                         fixture.giftHistory(),
                         fixture.recipient(),
                         5,
-                        null
+                        "첫 번째 리뷰"
                 )
         );
 

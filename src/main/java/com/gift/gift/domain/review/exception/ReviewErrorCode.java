@@ -4,6 +4,11 @@ import com.gift.gift.global.exception.ErrorCode;
 
 public enum ReviewErrorCode {
 
+    REVIEW_INVALID_REQUEST(
+            ErrorCode.INVALID_REQUEST,
+            "리뷰 입력값을 확인해 주세요."
+    ),
+
     REVIEW_CREATE_GIFT_NOT_FOUND(
             ErrorCode.GIFT_NOT_FOUND,
             "리뷰를 작성할 선물을 찾을 수 없습니다."

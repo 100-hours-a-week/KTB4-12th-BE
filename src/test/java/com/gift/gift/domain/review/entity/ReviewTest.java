@@ -35,36 +35,30 @@ class ReviewTest {
     }
 
     @Test
-    @DisplayName("리뷰 내용이 null이면 그대로 허용한다")
-    void constructor_allowsNullReviewText() {
-        Review review = new Review(
-                giftHistory,
-                user,
-                5,
-                null
-        );
-
-        assertThat(review.getReviewText()).isNull();
+    @DisplayName("리뷰 내용이 null이면 생성할 수 없다")
+    void constructor_rejectsNullReviewText() {
+        assertThatThrownBy(
+                () -> new Review(giftHistory, user, 5, null)
+        )
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("리뷰 내용은 공백으로만 작성할 수 없습니다.");
     }
 
     @Test
-    @DisplayName("빈 문자열 리뷰 내용은 null로 정규화한다")
-    void constructor_normalizesEmptyReviewTextToNull() {
-        Review review = new Review(
-                giftHistory,
-                user,
-                5,
-                ""
-        );
-
-        assertThat(review.getReviewText()).isNull();
+    @DisplayName("리뷰 내용이 빈 문자열이면 생성할 수 없다")
+    void constructor_rejectsEmptyReviewText() {
+        assertThatThrownBy(
+                () -> new Review(giftHistory, user, 5, "")
+        )
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("리뷰 내용은 공백으로만 작성할 수 없습니다.");
     }
 
     @Test
     @DisplayName("리뷰 대상 선물이 null이면 생성할 수 없다")
     void constructor_rejectsNullGiftHistory() {
         assertThatThrownBy(
-                () -> new Review(null, user, 5, null)
+                () -> new Review(null, user, 5, "좋아요")
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("리뷰 대상 선물은 필수입니다.");
@@ -74,7 +68,7 @@ class ReviewTest {
     @DisplayName("리뷰 작성자가 null이면 생성할 수 없다")
     void constructor_rejectsNullUser() {
         assertThatThrownBy(
-                () -> new Review(giftHistory, null, 5, null)
+                () -> new Review(giftHistory, null, 5, "좋아요")
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("리뷰 작성자는 필수입니다.");
@@ -84,7 +78,7 @@ class ReviewTest {
     @DisplayName("별점이 null이면 생성할 수 없다")
     void constructor_rejectsNullRating() {
         assertThatThrownBy(
-                () -> new Review(giftHistory, user, null, null)
+                () -> new Review(giftHistory, user, null, "좋아요")
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("별점은 필수입니다.");
@@ -94,7 +88,7 @@ class ReviewTest {
     @DisplayName("별점이 1보다 작으면 생성할 수 없다")
     void constructor_rejectsRatingLessThanOne() {
         assertThatThrownBy(
-                () -> new Review(giftHistory, user, 0, null)
+                () -> new Review(giftHistory, user, 0, "좋아요")
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("별점은 1에서 5 사이여야 합니다.");
@@ -104,7 +98,7 @@ class ReviewTest {
     @DisplayName("별점이 5보다 크면 생성할 수 없다")
     void constructor_rejectsRatingGreaterThanFive() {
         assertThatThrownBy(
-                () -> new Review(giftHistory, user, 6, null)
+                () -> new Review(giftHistory, user, 6, "좋아요")
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("별점은 1에서 5 사이여야 합니다.");
@@ -144,7 +138,7 @@ class ReviewTest {
                 giftHistory,
                 user,
                 5,
-                null
+                "좋아요"
         );
 
         review.updateRating(3);
@@ -168,8 +162,8 @@ class ReviewTest {
     }
 
     @Test
-    @DisplayName("리뷰 내용을 빈 문자열로 수정하면 null로 정규화한다")
-    void updateContent_normalizesEmptyReviewTextToNull() {
+    @DisplayName("리뷰 내용을 빈 문자열로 수정할 수 없다")
+    void updateContent_rejectsEmptyReviewText() {
         Review review = new Review(
                 giftHistory,
                 user,
@@ -177,9 +171,11 @@ class ReviewTest {
                 "기존 내용"
         );
 
-        review.updateContent("");
-
-        assertThat(review.getReviewText()).isNull();
+        assertThatThrownBy(
+                () -> review.updateContent("")
+        )
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("리뷰 내용은 공백으로만 작성할 수 없습니다.");
     }
 
     @Test
@@ -211,7 +207,7 @@ class ReviewTest {
                 giftHistory,
                 user,
                 5,
-                null
+                "좋아요"
         );
         review.softDelete(LocalDateTime.of(2026, 10, 3, 12, 0));
         return review;

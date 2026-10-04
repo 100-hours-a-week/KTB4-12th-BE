@@ -86,7 +86,7 @@ public class Review extends BaseTimeEntity {
         this.giftHistory = giftHistory;
         this.user = user;
         this.rating = validateRating(rating);
-        this.reviewText = normalizeAndValidateReviewText(reviewText);
+        this.reviewText = validateReviewText(reviewText);
     }
 
     public void updateRating(Integer rating) {
@@ -96,7 +96,7 @@ public class Review extends BaseTimeEntity {
 
     public void updateContent(String reviewText) {
         validateActive();
-        this.reviewText = normalizeAndValidateReviewText(reviewText);
+        this.reviewText = validateReviewText(reviewText);
     }
 
     public void softDelete(LocalDateTime deletedAt) {
@@ -131,12 +131,8 @@ public class Review extends BaseTimeEntity {
         return rating;
     }
 
-    private String normalizeAndValidateReviewText(String reviewText) {
-        if (reviewText == null || reviewText.isEmpty()) {
-            return null;
-        }
-
-        if (reviewText.isBlank()) {
+    private String validateReviewText(String reviewText) {
+        if (reviewText == null || reviewText.isBlank()) {
             throw new IllegalArgumentException("리뷰 내용은 공백으로만 작성할 수 없습니다.");
         }
 
