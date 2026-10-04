@@ -17,19 +17,10 @@ public class CreateReviewRequestValidator
 
         String content = request.content();
 
-        if (content == null || content.isEmpty()) { return true; }
-
-        context.disableDefaultConstraintViolation();
-
-        if (content.isBlank()) {
-            addViolation(
-                    context,
-                    ValidationErrorReason.Message.INVALID_VALUE
-            );
-            return false;
-        }
+        if (content == null || content.isBlank()) { return true; }
 
         if (content.codePointCount(0, content.length()) > MAX_CONTENT_LENGTH) {
+            context.disableDefaultConstraintViolation();
             addViolation(
                     context,
                     ValidationErrorReason.Message.MAX_LENGTH_EXCEEDED

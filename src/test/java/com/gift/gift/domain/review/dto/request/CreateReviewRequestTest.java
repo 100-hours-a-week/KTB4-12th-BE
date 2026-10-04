@@ -36,7 +36,7 @@ class CreateReviewRequestTest {
     @DisplayName("별점은 1부터 5까지 허용한다")
     void ratingBoundary_isValid(int rating) {
         CreateReviewRequest request =
-                new CreateReviewRequest(rating, null);
+                new CreateReviewRequest(rating, "좋아요");
 
         assertThat(validator.validate(request)).isEmpty();
     }
@@ -46,29 +46,29 @@ class CreateReviewRequestTest {
     @DisplayName("별점이 범위를 벗어나면 OUT_OF_RANGE로 거부한다")
     void outOfRangeRating_isInvalid(int rating) {
         CreateReviewRequest request =
-                new CreateReviewRequest(rating, null);
+                new CreateReviewRequest(rating, "좋아요");
 
         assertViolation(request, "rating", "OUT_OF_RANGE");
     }
 
     @ParameterizedTest
     @NullAndEmptySource
-    @DisplayName("리뷰 내용은 null과 빈 문자열을 허용한다")
-    void nullableContent_isValid(String content) {
-        CreateReviewRequest request =
-                new CreateReviewRequest(5, content);
-
-        assertThat(validator.validate(request)).isEmpty();
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {" ", "\t", "\n", " \t\n "})
-    @DisplayName("공백 전용 리뷰 내용은 INVALID_VALUE로 거부한다")
+    @DisplayName("리뷰 내용이 null이거나 빈 문자열이면 BLANK_NOT_ALLOWED로 거부한다")
     void blankContent_isInvalid(String content) {
         CreateReviewRequest request =
                 new CreateReviewRequest(5, content);
 
-        assertViolation(request, "content", "INVALID_VALUE");
+        assertViolation(request, "content", "BLANK_NOT_ALLOWED");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {" ", "\t", "\n", " \t\n "})
+    @DisplayName("공백 전용 리뷰 내용은 BLANK_NOT_ALLOWED로 거부한다")
+    void whitespaceOnlyContent_isInvalid(String content) {
+        CreateReviewRequest request =
+                new CreateReviewRequest(5, content);
+
+        assertViolation(request, "content", "BLANK_NOT_ALLOWED");
     }
 
     @Test

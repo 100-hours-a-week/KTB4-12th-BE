@@ -20,6 +20,7 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import com.gift.gift.domain.review.dto.response.ReviewResponse;
 import com.gift.gift.domain.review.exception.ReviewErrorCode;
 import com.gift.gift.domain.review.exception.ReviewException;
+import com.gift.gift.domain.review.exception.ReviewRequestExceptionHandler;
 import com.gift.gift.domain.review.service.ReviewService;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 import com.gift.gift.support.TestValidatorFactory;
@@ -52,7 +53,10 @@ class ReviewControllerTest {
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new ReviewController(reviewService))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(
+                        new ReviewRequestExceptionHandler(),
+                        new GlobalExceptionHandler()
+                )
                 .setValidator(validator)
                 .build();
 
@@ -114,8 +118,8 @@ class ReviewControllerTest {
     }
 
     @Test
-    @DisplayName("별점이 누락되면 상세 정보 없이 400을 반환한다")
-    void createReview_rejectsMissingRating() throws Exception {
+    @DisplayName("리뷰 내용이 누락되면 BLANK_NOT_ALLOWED 상세 정보와 400을 반환한다")
+    void createReview_rejectsMissingContent() throws Exception {
         mockMvc.perform(post(
                         "/gifts/{giftId}/review",
                         GIFT_ID
@@ -123,13 +127,14 @@ class ReviewControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "content": "좋아요"
+                                  "rating": 5
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("입력값을 확인해 주세요."))
+                .andExpect(jsonPath("$.message").value("리뷰 입력값을 확인해 주세요."))
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.error.details").doesNotExist());
+                .andExpect(jsonPath("$.error.details[0].field").value("content"))
+                .andExpect(jsonPath("$.error.details[0].reason").value("BLANK_NOT_ALLOWED"));
         verifyNoInteractions(reviewService);
     }
 
@@ -151,7 +156,8 @@ class ReviewControllerTest {
                         )
                         .content("""
                                 {
-                                  "rating": 5
+                                  "rating": 5,
+                                  "content": "좋아요"
                                 }
                                 """))
                 .andExpect(status().isNotFound())
@@ -181,7 +187,8 @@ class ReviewControllerTest {
                         )
                         .content("""
                                 {
-                                  "rating": 5
+                                  "rating": 5,
+                                  "content": "좋아요"
                                 }
                                 """))
                 .andExpect(status().isConflict())
