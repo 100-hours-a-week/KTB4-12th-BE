@@ -17,6 +17,21 @@ import com.gift.gift.global.common.BaseTimeEntity;
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_notifications_deduplication_key",
                 columnNames = "deduplication_key"
+        ),
+        indexes = {
+                @Index(
+                        name = "idx_notifications_recipient_created",
+                        columnList = "recipient_id, created_at DESC, id DESC"
+                ),
+                @Index(
+                        name = "idx_notifications_recipient_read",
+                        columnList = "recipient_id, read_at"
+                )
+        },
+        check = @CheckConstraint(
+                name = "chk_notifications_reference_pair",
+                constraint = "(reference_type IS NULL AND reference_id IS NULL)"
+                        + " OR (reference_type IS NOT NULL AND reference_id IS NOT NULL)"
         )
 )
 @Getter
