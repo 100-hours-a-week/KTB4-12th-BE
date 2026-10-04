@@ -357,7 +357,6 @@ class ReviewServiceTest {
         assertThat(review.getDeletedAt())
                 .isEqualTo(LocalDateTime.of(2026, 10, 3, 12, 0));
         assertThat(response.giftId()).isEqualTo(GIFT_ID);
-        assertThat(response.reviewStatus()).isEqualTo("NOT_WRITTEN");
         verify(reviewRepository).flush();
     }
 

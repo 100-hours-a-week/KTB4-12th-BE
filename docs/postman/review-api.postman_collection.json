@@ -270,7 +270,6 @@
               "    const response = pm.response.json();",
               "    pm.expect(response.message).to.eql(\"리뷰를 삭제했습니다.\");",
               "    pm.expect(response.data.giftId).to.eql(Number(pm.environment.get(\"giftId\")));",
-              "    pm.expect(response.data.reviewStatus).to.eql(\"NOT_WRITTEN\");",
               "}"
             ]
           }

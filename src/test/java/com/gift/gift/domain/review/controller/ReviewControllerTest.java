@@ -279,16 +279,15 @@ class ReviewControllerTest {
     }
 
     @Test
-    @DisplayName("리뷰 삭제 요청은 200과 작성 전 상태를 반환한다")
-    void deleteReview_returnsNotWrittenStatus() throws Exception {
+    @DisplayName("리뷰 삭제 요청은 200과 선물 ID를 반환한다")
+    void deleteReview_returnsGiftId() throws Exception {
         when(reviewService.deleteReview(GIFT_ID, USER_ID))
                 .thenReturn(DeleteReviewResponse.from(GIFT_ID));
 
         mockMvc.perform(delete("/gifts/{giftId}/review", GIFT_ID))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("리뷰를 삭제했습니다."))
-                .andExpect(jsonPath("$.data.giftId").value(10))
-                .andExpect(jsonPath("$.data.reviewStatus").value("NOT_WRITTEN"));
+                .andExpect(jsonPath("$.data.giftId").value(10));
 
         verify(reviewService).deleteReview(GIFT_ID, USER_ID);
     }
