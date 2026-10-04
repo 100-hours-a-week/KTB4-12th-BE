@@ -2,12 +2,14 @@ package com.gift.gift.domain.product.repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
 
 import jakarta.persistence.EntityManager;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.transaction.TestTransaction;
 
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
@@ -34,6 +37,9 @@ class ProductSearchRepositoryIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    private final List<Long> fixtureProductIds = new ArrayList<>();
+    private final List<Long> fixtureCategoryIds = new ArrayList<>();
 
     private Long skincareId;
     private Long bodycareId;
@@ -82,6 +88,35 @@ class ProductSearchRepositoryIntegrationTest {
         entityManager.clear();
     }
 
+    @AfterEach
+    void cleanUpCommittedFixtures() {
+        if (TestTransaction.isActive()) {
+            TestTransaction.flagForRollback();
+            TestTransaction.end();
+        }
+        if (fixtureProductIds.isEmpty() && fixtureCategoryIds.isEmpty()) {
+            return;
+        }
+
+        TestTransaction.start();
+        try {
+            if (!fixtureProductIds.isEmpty()) {
+                entityManager.createQuery("DELETE FROM Product p WHERE p.id IN :ids")
+                        .setParameter("ids", fixtureProductIds)
+                        .executeUpdate();
+            }
+            // 자식 카테고리를 먼저 지워 외래 키 순서를 지킨다.
+            for (int index = fixtureCategoryIds.size() - 1; index >= 0; index--) {
+                entityManager.createQuery("DELETE FROM Category c WHERE c.id = :id")
+                        .setParameter("id", fixtureCategoryIds.get(index))
+                        .executeUpdate();
+            }
+            TestTransaction.flagForCommit();
+        } finally {
+            TestTransaction.end();
+        }
+    }
+
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = {"   "})
@@ -106,6 +141,22 @@ class ProductSearchRepositoryIntegrationTest {
     @DisplayName("상품명 일부가 일치하는 상품을 조회한다")
     void searchByProductName() {
         assertIds(search("수분", null, 21), creamId);
+    }
+
+    @Test
+    @DisplayName("공백 포함 구문과 붙어 있는 상품명 내부를 FULLTEXT로 검색한다")
+    void searchPhraseAndCompoundSubstring() {
+        Category skincare = entityManager.find(Category.class, skincareId);
+        Long compoundId = saveProduct(skincare, "수분크림", "브랜드B");
+
+        assertIds(search("수분 크림", null, 21), creamId);
+        assertIds(search("분크", null, 21), compoundId);
+    }
+
+    @Test
+    @DisplayName("ngram 크기 2에서 한 글자 검색은 결과가 없다")
+    void searchSingleCharacterHasNoToken() {
+        assertThat(search("크", null, 21)).isEmpty();
     }
 
     @Test
@@ -239,12 +290,12 @@ class ProductSearchRepositoryIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"%", "_", "!"})
-    @DisplayName("LIKE 특수문자도 입력한 문자 그대로 검색한다")
-    void searchLiteralSpecialCharacters(String keyword) {
+    @DisplayName("ngram 크기 2에서 특수문자 한 글자만 검색하면 결과가 없다")
+    void searchSingleSpecialCharacterHasNoToken(String keyword) {
         Category skincare =
                 entityManager.find(Category.class, skincareId);
 
-        Long expectedId = saveProduct(
+        saveProduct(
                 skincare,
                 "특수" + keyword + "문자",
                 "테스트브랜드"
@@ -255,7 +306,7 @@ class ProductSearchRepositoryIntegrationTest {
         entityManager.flush();
         entityManager.clear();
 
-        assertIds(search(keyword, null, 21), expectedId);
+        assertThat(search(keyword, null, 21)).isEmpty();
     }
 
     private List<ProductSummaryProjection> search(
@@ -263,6 +314,13 @@ class ProductSearchRepositoryIntegrationTest {
             List<Long> categoryIds,
             int fetchCount
     ) {
+        // InnoDB FULLTEXT는 flush만으로 신규 행을 검색할 수 없으므로 커밋한다.
+        // Testcontainers 데이터만 커밋하고 @AfterEach에서 생성한 ID만 정리한다.
+        entityManager.flush();
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
         return productRepository.searchProducts(
                 new ProductSearchCondition(keyword, categoryIds),
                 fetchCount
@@ -272,6 +330,7 @@ class ProductSearchRepositoryIntegrationTest {
     private Category saveCategory(String name, Category parent) {
         Category category = new Category(name, parent);
         entityManager.persist(category);
+        fixtureCategoryIds.add(category.getId());
         return category;
     }
 
@@ -290,6 +349,7 @@ class ProductSearchRepositoryIntegrationTest {
         );
 
         entityManager.persist(product);
+        fixtureProductIds.add(product.getId());
         return product.getId();
     }
 

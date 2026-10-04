@@ -1,12 +1,15 @@
 package com.gift.gift.domain.product.repository;
 
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.StringJoiner;
 
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.TypedQuery;
+import jakarta.persistence.Query;
 
 import lombok.RequiredArgsConstructor;
 
@@ -38,41 +41,32 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
             ProductCursorValidator.validate(cursor, condition);
         }
 
-        StringBuilder jpql = new StringBuilder("""
-                SELECT new com.gift.gift.domain.product.repository.ProductSummaryProjection(
-                    p.id,
-                    p.name,
-                    p.brand,
-                    p.price,
-                    p.views,
-                    p.sales,
-                    p.createdAt
-                )
-                FROM Product p
-                WHERE p.deletedAt IS NULL
+        StringBuilder sql = new StringBuilder("""
+                SELECT p.id, p.name, p.brand, p.price,
+                       p.views, p.sales, p.created_at
+                FROM products p
+                WHERE p.deleted_at IS NULL
                 """);
 
         if (condition.hasQuery()) {
-            jpql.append("""
+            sql.append("""
 
-                    AND (
-                        p.name LIKE :keyword ESCAPE '!'
-                        OR p.brand LIKE :keyword ESCAPE '!'
-                    )
+                    AND MATCH(p.name, p.brand)
+                        AGAINST(:keyword IN BOOLEAN MODE)
                     """);
         }
 
         if (condition.hasCategoryIds()) {
-            jpql.append("""
+            sql.append("""
 
-                    AND p.category.id IN :categoryIds
+                    AND p.category_id IN (:categoryIds)
                     """);
         }
 
         List<String> fields = sortFields(condition.sort());
 
         if (cursor != null) {
-            jpql.append(" AND ").append(cursorPredicate(fields));
+            sql.append(" AND ").append(cursorPredicate(fields));
         }
 
         StringJoiner orderBy = new StringJoiner(
@@ -82,21 +76,17 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
         );
 
         for (String field : fields) {
-            orderBy.add("p." + field + " DESC");
+            orderBy.add("p." + columnName(field) + " DESC");
         }
 
-        jpql.append(orderBy);
+        sql.append(orderBy);
 
-        TypedQuery<ProductSummaryProjection> query =
-                entityManager.createQuery(
-                        jpql.toString(),
-                        ProductSummaryProjection.class
-                );
+        Query query = entityManager.createNativeQuery(sql.toString());
 
         if (condition.hasQuery()) {
             query.setParameter(
                     "keyword",
-                    "%" + escapeLikeKeyword(condition.query()) + "%"
+                    fulltextKeyword(condition.query())
             );
         }
 
@@ -113,9 +103,30 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
             }
         }
 
-        return query
-                .setMaxResults(fetchCount)
-                .getResultList();
+        List<?> rows = query.setMaxResults(fetchCount).getResultList();
+        return rows.stream()
+                .map(row -> toProjection((Object[]) row))
+                .toList();
+    }
+
+    private static ProductSummaryProjection toProjection(Object[] row) {
+        LocalDateTime createdAt = row[6] instanceof Timestamp timestamp
+                ? timestamp.toLocalDateTime()
+                : (LocalDateTime) row[6];
+
+        return new ProductSummaryProjection(
+                ((Number) row[0]).longValue(),
+                (String) row[1],
+                (String) row[2],
+                (BigDecimal) row[3],
+                ((Number) row[4]).intValue(),
+                ((Number) row[5]).intValue(),
+                createdAt
+        );
+    }
+
+    private static String columnName(String field) {
+        return "createdAt".equals(field) ? "created_at" : field;
     }
 
     private static List<String> sortFields(ProductSort sort) {
@@ -149,11 +160,11 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
             }
 
             // 현재 필드가 더 작은지(<) 조건 추가
-            branch.add("p." + field + " < :cursor_" + field);
+            branch.add("p." + columnName(field) + " < :cursor_" + field);
             alternatives.add(branch.toString());
 
             // 다음 루프를 위해 현재 필드의 같음(=) 조건 누적
-            equalities.add("p." + field + " = :cursor_" + field);
+            equalities.add("p." + columnName(field) + " = :cursor_" + field);
         }
 
         return alternatives.toString();
@@ -174,10 +185,9 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
         };
     }
 
-    private static String escapeLikeKeyword(String keyword) {
-        return keyword
-                .replace("!", "!!")
-                .replace("%", "!%")
-                .replace("_", "!_");
+    private static String fulltextKeyword(String keyword) {
+        // 구문 밖으로 빠져나가지 않도록 구분용 따옴표와 역슬래시를 제거한다.
+        String phrase = keyword.replace('"', ' ').replace('\\', ' ').strip();
+        return "\"" + phrase + "\"";
     }
 }

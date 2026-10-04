@@ -8,6 +8,7 @@ import jakarta.validation.ConstraintViolationException;
 
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.apache.tomcat.util.http.InvalidParameterException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -139,6 +140,15 @@ public class GlobalExceptionHandler {
     })
     public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(Exception exception) {
         return requestError(ErrorCode.INVALID_REQUEST, List.of());
+    }
+
+    @ExceptionHandler(InvalidParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInvalidParameter(
+            InvalidParameterException exception
+    ) {
+        ResponseEntity<ApiResponse<Void>> response =
+                requestError(ErrorCode.INVALID_REQUEST, List.of());
+        return ResponseEntity.status(exception.getErrorCode()).body(response.getBody());
     }
 
     @ExceptionHandler(Exception.class)
