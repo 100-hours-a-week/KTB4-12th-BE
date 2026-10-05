@@ -7,7 +7,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.gift.gift.domain.recommendation.exception.RecommendationException;
 import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -171,12 +173,16 @@ class RecipientProfileTest {
     }
 
     @Test
-    @DisplayName("현재 요청 버전과 다른 버전은 완료 처리할 수 없다")
+    @DisplayName("미래 버전 완료 요청은 INVALID_REQUEST로 거부한다")
     void markCompleted_rejectsDifferentVersion() {
         profile.createNextSourceVersion();
         profile.markPending(LocalDateTime.now());
 
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> profile.markCompleted(2));
+        assertThatThrownBy(() -> profile.markCompleted(2))
+                .isInstanceOfSatisfying(
+                        RecommendationException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_REQUEST)
+                );
     }
 }

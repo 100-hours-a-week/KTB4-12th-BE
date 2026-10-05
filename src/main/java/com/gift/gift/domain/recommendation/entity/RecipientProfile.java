@@ -3,21 +3,7 @@ package com.gift.gift.domain.recommendation.entity;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
-import jakarta.persistence.CheckConstraint;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.ForeignKey;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.OneToOne;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -29,6 +15,8 @@ import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import com.gift.gift.domain.recommendation.exception.RecommendationErrorCode;
+import com.gift.gift.domain.recommendation.exception.RecommendationException;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.global.common.BaseTimeEntity;
 
@@ -216,15 +204,20 @@ public class RecipientProfile extends BaseTimeEntity {
     }
 
     public void markCompleted(long completedSourceVersion) {
-        requirePendingStatus();
-
-        if (completedSourceVersion != sourceVersion) {
-            throw new IllegalArgumentException(
-                    "현재 요청 버전과 완료된 결과 버전이 일치하지 않습니다."
-            );
+        if (!shouldApplyCallback(completedSourceVersion)) {
+            return;
         }
 
         analyzedSourceVersion = completedSourceVersion;
+
+        /*
+         * 더 최신 요청이 존재하면 해당 요청의 상태와
+         * pendingSince, retryCount를 유지한다.
+         */
+        if (completedSourceVersion < sourceVersion) {
+            return;
+        }
+
         profileStatus = RecipientProfileStatus.COMPLETED;
         pendingSince = null;
         resetRetryCount();
@@ -327,5 +320,32 @@ public class RecipientProfile extends BaseTimeEntity {
             lastChangedAt = null;
             windowStartedAt = null;
         }
+    }
+
+    public boolean shouldApplyCallback(long callbackSourceVersion) {
+        if (callbackSourceVersion < 0
+                || callbackSourceVersion > sourceVersion) {
+            throw new RecommendationException(
+                    RecommendationErrorCode.INVALID_CALLBACK_VERSION
+            );
+        }
+
+        if (callbackSourceVersion < analyzedSourceVersion) {
+            throw new RecommendationException(
+                    RecommendationErrorCode.STALE_SOURCE_VERSION
+            );
+        }
+
+        /*
+         * PR2는 실제 요청 버전을 1부터 생성한다.
+         * 초기 analyzedSourceVersion=0은 저장 완료를 의미하지 않는다.
+         */
+        if (callbackSourceVersion == 0) {
+            throw new RecommendationException(
+                    RecommendationErrorCode.SOURCE_VERSION_NOT_DISPATCHED
+            );
+        }
+
+        return callbackSourceVersion != analyzedSourceVersion;
     }
 }
