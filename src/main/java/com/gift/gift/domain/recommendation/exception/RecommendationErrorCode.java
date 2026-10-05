@@ -17,6 +17,21 @@ public enum RecommendationErrorCode {
     STALE_SOURCE_VERSION(
             ErrorCode.STALE_SOURCE_VERSION,
             "이미 저장된 추천 결과보다 오래된 버전입니다."
+    ),
+
+    RECIPIENT_ID_MISMATCH(
+            ErrorCode.RECIPIENT_ID_MISMATCH,
+            "요청 경로와 본문의 수신자 ID가 일치하지 않습니다."
+    ),
+
+    INVALID_CALLBACK_RECIPIENT(
+            ErrorCode.INVALID_REQUEST,
+            "콜백을 처리할 수신자 프로파일이 없습니다."
+    ),
+
+    INVALID_RECOMMENDED_PRODUCT(
+            ErrorCode.INVALID_REQUEST,
+            "존재하지 않거나 삭제된 추천 상품이 포함되어 있습니다."
     );
 
     private final ErrorCode errorCode;

@@ -89,6 +89,10 @@ public enum ErrorCode {
     STALE_SOURCE_VERSION(
             HttpStatus.CONFLICT,
         "이미 저장된 추천 결과보다 오래된 버전입니다."
+    ),
+    RECIPIENT_ID_MISMATCH(
+            HttpStatus.BAD_REQUEST,
+        "요청 경로와 본문의 수신자 ID가 일치하지 않습니다."
     );
 
     private final HttpStatus status;
