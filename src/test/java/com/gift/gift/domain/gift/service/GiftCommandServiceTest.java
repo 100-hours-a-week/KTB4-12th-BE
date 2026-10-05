@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
@@ -37,6 +39,7 @@ class GiftCommandServiceTest {
     private FriendQueryService friendQueryService;
     private ProductQueryService productQueryService;
     private ProductStockService productStockService;
+    private ApplicationEventPublisher eventPublisher;
     private GiftCommandService giftCommandService;
 
     @BeforeEach
@@ -46,12 +49,14 @@ class GiftCommandServiceTest {
         friendQueryService = mock(FriendQueryService.class);
         productQueryService = mock(ProductQueryService.class);
         productStockService = mock(ProductStockService.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         giftCommandService = new GiftCommandService(
                 giftHistoryRepository,
                 userQueryService,
                 friendQueryService,
                 productQueryService,
-                productStockService
+                productStockService,
+                eventPublisher
         );
     }
 
@@ -72,7 +77,11 @@ class GiftCommandServiceTest {
         when(productStockService.deductStockIfAvailable(PRODUCT_ID, 2)).thenReturn(true);
         when(userQueryService.getReference(SENDER_ID)).thenReturn(senderRef);
         when(userQueryService.getReference(RECIPIENT_ID)).thenReturn(recipientRef);
-        when(giftHistoryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(giftHistoryRepository.save(any())).thenAnswer(invocation -> {
+            GiftHistory savedGift = invocation.getArgument(0);
+            ReflectionTestUtils.setField(savedGift, "id", 100L, Long.class);
+            return savedGift;
+        });
 
         GiftHistory result = giftCommandService.createNewGift(SENDER_ID, idempotencyKey, fingerprint, request);
 
@@ -92,6 +101,7 @@ class GiftCommandServiceTest {
         order.verify(productQueryService).findAvailableProduct(PRODUCT_ID);
         order.verify(productStockService).deductStockIfAvailable(PRODUCT_ID, 2);
         order.verify(giftHistoryRepository).save(any());
+        verify(eventPublisher).publishEvent(any(Object.class));
     }
 
     @Test
