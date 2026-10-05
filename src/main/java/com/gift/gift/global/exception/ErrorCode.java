@@ -85,6 +85,14 @@ public enum ErrorCode {
     BUG_REPORT_INTEGRATION_NOT_CONFIGURED(
             HttpStatus.SERVICE_UNAVAILABLE,
             "버그 제보 저장 기능을 일시적으로 사용할 수 없습니다."
+    ),
+    STALE_SOURCE_VERSION(
+            HttpStatus.CONFLICT,
+        "이미 저장된 추천 결과보다 오래된 버전입니다."
+    ),
+    RECIPIENT_ID_MISMATCH(
+            HttpStatus.BAD_REQUEST,
+        "요청 경로와 본문의 수신자 ID가 일치하지 않습니다."
     );
 
     private final HttpStatus status;

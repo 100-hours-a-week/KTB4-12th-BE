@@ -1,5 +1,6 @@
 package com.gift.gift.domain.product.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
@@ -14,6 +15,8 @@ import com.gift.gift.domain.product.entity.Product;
 
 public interface ProductRepository extends JpaRepository<Product, Long>, ProductQueryRepository {
     Optional<Product> findByIdAndDeletedAtIsNull(Long productId);
+
+    List<Product> findAllByIdInAndDeletedAtIsNull(List<Long> productIds);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
