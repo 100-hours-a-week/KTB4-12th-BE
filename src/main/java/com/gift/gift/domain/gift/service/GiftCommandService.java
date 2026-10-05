@@ -5,9 +5,11 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
+import com.gift.gift.domain.gift.event.GiftCreatedEvent;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
@@ -28,6 +30,7 @@ public class GiftCommandService {
     private final FriendQueryService friendQueryService;
     private final ProductQueryService productQueryService;
     private final ProductStockService productStockService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public GiftHistory createNewGift(
@@ -73,6 +76,13 @@ public class GiftCommandService {
                 requestFingerprint
         );
 
-        return giftHistoryRepository.save(giftHistory);
+        GiftHistory savedGift = giftHistoryRepository.save(giftHistory);
+        eventPublisher.publishEvent(new GiftCreatedEvent(
+                savedGift.getId(),
+                savedGift.getRecipient().getId(),
+                savedGift.getProductNameSnapshot()
+        ));
+
+        return savedGift;
     }
 }

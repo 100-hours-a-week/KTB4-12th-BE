@@ -4,12 +4,16 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.notification.dto.response.NotificationListItem;
 import com.gift.gift.domain.notification.dto.response.NotificationReadResponse;
 import com.gift.gift.domain.notification.dto.response.NotificationUnreadCountResponse;
+import com.gift.gift.domain.notification.dto.NotificationCreateCommand;
 import com.gift.gift.domain.notification.entity.Notification;
 import com.gift.gift.domain.notification.query.NotificationPage;
 import com.gift.gift.domain.notification.query.NotificationPageAssembler;
@@ -30,6 +34,29 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final NotificationPageAssembler pageAssembler;
     private final OpaqueCursorCodec cursorCodec;
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void create(NotificationCreateCommand command) {
+        if (notificationRepository.existsByDeduplicationKey(command.deduplicationKey())) {
+            return;
+        }
+
+        try {
+            notificationRepository.save(new Notification(
+                    command.recipientId(),
+                    command.type(),
+                    command.referenceType(),
+                    command.referenceId(),
+                    command.title(),
+                    command.message(),
+                    command.deduplicationKey()
+            ));
+        } catch (DataIntegrityViolationException exception) {
+            if (!isDeduplicationConflict(exception)) {
+                throw exception;
+            }
+        }
+    }
 
     public NotificationUnreadCountResponse getUnreadCount(Long recipientId) {
         return new NotificationUnreadCountResponse(
@@ -68,5 +95,17 @@ public class NotificationService {
 
     private NotificationCursor decode(String rawCursor) {
         return rawCursor == null ? null : cursorCodec.decode(rawCursor, NotificationCursor.class);
+    }
+
+    private boolean isDeduplicationConflict(DataIntegrityViolationException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof ConstraintViolationException violation
+                    && "uk_notifications_deduplication_key".equals(violation.getConstraintName())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }
