@@ -24,11 +24,13 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.gift.gift.domain.friend.entity.Friend;
 import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
+import com.gift.gift.domain.notification.service.NotificationService;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
@@ -37,6 +39,10 @@ import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 class GiftCommandServiceIntegrationTest {
@@ -57,6 +63,9 @@ class GiftCommandServiceIntegrationTest {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @MockitoBean
+    private NotificationService notificationService;
 
     private TransactionTemplate transaction;
     private Long rootCategoryId;
@@ -147,6 +156,42 @@ class GiftCommandServiceIntegrationTest {
         ).isInstanceOf(DataIntegrityViolationException.class);
 
         assertThat(readProductQuantity()).isEqualTo(quantityBeforeAttempt);
+    }
+
+    @Test
+    @DisplayName("Gift COMMIT 후 Notification 저장이 실패해도 Gift는 유지된다")
+    void createNewGift_keepsGift_whenNotificationCreationFailsAfterCommit() {
+        doThrow(new IllegalStateException("notification storage failed"))
+                .when(notificationService).create(any());
+
+        UUID idempotencyKey = UUID.randomUUID();
+        GiftCreateRequest request = new GiftCreateRequest(productId, recipientId, 1, BigDecimal.valueOf(32_000));
+
+        try {
+            giftCommandService.createNewGift(senderId, idempotencyKey, "n".repeat(64), request);
+        } catch (RuntimeException ignored) {
+            // AFTER_COMMIT 리스너의 실패가 호출자에게 전달되더라도 Gift COMMIT은 유지되어야 한다.
+        }
+
+        assertThat(giftHistoryRepository.findBySender_IdAndIdempotencyKey(senderId, idempotencyKey))
+                .isPresent();
+        verify(notificationService).create(any());
+    }
+
+    @Test
+    @DisplayName("Gift 트랜잭션이 롤백되면 AFTER_COMMIT Notification은 생성되지 않는다")
+    void createNewGift_doesNotCreateNotification_whenGiftTransactionRollsBack() {
+        UUID idempotencyKey = UUID.randomUUID();
+        GiftCreateRequest request = new GiftCreateRequest(productId, recipientId, 1, BigDecimal.valueOf(32_000));
+
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> {
+            giftCommandService.createNewGift(senderId, idempotencyKey, "r".repeat(64), request);
+            throw new IllegalStateException("force gift rollback");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(giftHistoryRepository.findBySender_IdAndIdempotencyKey(senderId, idempotencyKey))
+                .isEmpty();
+        verify(notificationService, never()).create(any());
     }
 
     @Test
