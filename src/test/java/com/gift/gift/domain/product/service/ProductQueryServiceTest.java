@@ -1,9 +1,11 @@
 package com.gift.gift.domain.product.service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,16 +16,26 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
 
+import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.product.cursor.ProductCursor;
 import com.gift.gift.domain.product.cursor.ProductCursorCodec;
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
 import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
+import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.*;
+import com.gift.gift.domain.recommendation.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.entity.RecipientProfileStatus;
+import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
+import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.domain.user.service.UserQueryService;
+import com.gift.gift.domain.user.support.ActiveUserSummary;
+import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -33,11 +45,17 @@ class ProductQueryServiceTest {
     private ProductImageRepository productImageRepository;
     private ProductCursorCodec cursorCodec;
     private ProductQueryService productQueryService;
+    private UserQueryService userQueryService;
+    private FriendQueryService friendQueryService;
+    private RecipientProfileRepository recipientProfileRepository;
 
     @BeforeEach
     void setUp() {
         productRepository = mock(ProductRepository.class);
         productImageRepository = mock(ProductImageRepository.class);
+        userQueryService = mock(UserQueryService.class);
+        friendQueryService = mock(FriendQueryService.class);
+        recipientProfileRepository = mock(RecipientProfileRepository.class);
 
         cursorCodec = new ProductCursorCodec(
                 JsonMapper.builder().build()
@@ -57,7 +75,10 @@ class ProductQueryServiceTest {
                 cursorCodec,
                 pageAssembler,
                 thumbnailMapper,
-                objectKey -> "https://image/test/" + objectKey
+                objectKey -> "https://image/test/" + objectKey,
+                userQueryService,
+                friendQueryService,
+                recipientProfileRepository
         );
     }
 
@@ -68,7 +89,7 @@ class ProductQueryServiceTest {
         stubFirstPage(List.of());
 
         ProductListResponse response =
-                productQueryService.getProducts(defaultRequest());
+                productQueryService.getProducts(defaultRequest(), null);
 
         ProductSearchCondition condition = captureCondition();
 
@@ -100,7 +121,7 @@ class ProductQueryServiceTest {
         );
 
         ProductListResponse response =
-                productQueryService.getProducts(request);
+                productQueryService.getProducts(request, null);
 
         ProductSearchCondition condition = captureCondition();
 
@@ -122,7 +143,7 @@ class ProductQueryServiceTest {
                 null
         );
 
-        productQueryService.getProducts(request);
+        productQueryService.getProducts(request, null);
 
         ProductSearchCondition condition = captureCondition();
 
@@ -144,7 +165,7 @@ class ProductQueryServiceTest {
                 null
         );
 
-        productQueryService.getProducts(request);
+        productQueryService.getProducts(request, null);
 
         ProductSearchCondition condition = captureCondition();
 
@@ -170,7 +191,7 @@ class ProductQueryServiceTest {
         )).thenReturn(List.of());
 
         ProductListResponse response =
-                productQueryService.getProducts(defaultRequest());
+                productQueryService.getProducts(defaultRequest(), null);
 
         assertThat(response.products()).hasSize(20);
 
@@ -195,7 +216,7 @@ class ProductQueryServiceTest {
         stubFirstPage(products(21));
 
         ProductListResponse response =
-                productQueryService.getProducts(defaultRequest());
+                productQueryService.getProducts(defaultRequest(), null);
 
         assertThat(response.pagination().hasNext()).isTrue();
         assertThat(response.pagination().nextCursor()).isNotBlank();
@@ -209,7 +230,7 @@ class ProductQueryServiceTest {
         stubFirstPage(products(count));
 
         ProductListResponse response =
-                productQueryService.getProducts(defaultRequest());
+                productQueryService.getProducts(defaultRequest(), null);
 
         assertThat(response.products()).hasSize(count);
         assertThat(response.pagination().hasNext()).isFalse();
@@ -223,7 +244,7 @@ class ProductQueryServiceTest {
         stubFirstPage(List.of());
 
         ProductListResponse response =
-                productQueryService.getProducts(defaultRequest());
+                productQueryService.getProducts(defaultRequest(), null);
 
         assertThat(response.products()).isEmpty();
         assertThat(response.appliedSort())
@@ -255,7 +276,7 @@ class ProductQueryServiceTest {
         ));
 
         ProductListResponse response =
-                productQueryService.getProducts(defaultRequest());
+                productQueryService.getProducts(defaultRequest(), null);
 
         assertThat(response.products()).hasSize(2);
 
@@ -305,7 +326,7 @@ class ProductQueryServiceTest {
         );
 
         ProductListResponse response =
-                productQueryService.getProducts(request);
+                productQueryService.getProducts(request, null);
 
         assertThat(response.pagination().nextCursor()).isNotBlank();
 
@@ -403,25 +424,211 @@ class ProductQueryServiceTest {
     }
 
     @Test
-    @DisplayName("AI 추천순 요청은 인기순으로 대체한다")
-    void getProducts_fallsBackToPopularForAiRecommended() {
+    @DisplayName("수신자 없는 AI 추천순 요청은 INVALID_REQUEST로 거부한다")
+    void getProducts_rejectsAiRecommendedWithoutRecipient() {
+        assertRejected(recipientRequest(null, ProductSort.AI_RECOMMENDED),
+                null, ErrorCode.INVALID_REQUEST, "조회 조건을 확인해 주세요.");
+        verifyNoInteractions(userQueryService, friendQueryService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, -1})
+    @DisplayName("양수가 아닌 수신자 ID는 조회 전에 거부한다")
+    void getProducts_rejectsInvalidRecipientId(long recipientUserId) {
+        assertRejected(recipientRequest(recipientUserId, null),
+                1L, ErrorCode.INVALID_REQUEST, "조회 조건을 확인해 주세요.");
+        verifyNoInteractions(userQueryService, friendQueryService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProductSort.class)
+    @DisplayName("수신자가 지정되면 모든 정렬에서 로그인이 필요하다")
+    void getProducts_requiresLoginForRecipient(ProductSort sort) {
+        assertRejected(recipientRequest(10L, sort),
+                null, ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.");
+        verifyNoInteractions(userQueryService, friendQueryService);
+    }
+
+    @Test
+    @DisplayName("수신자가 있고 정렬이 생략돼도 로그인이 필요하다")
+    void getProducts_requiresLoginForRecipientDefaultSort() {
+        assertRejected(recipientRequest(10L, null),
+                null, ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.");
+        verifyNoInteractions(userQueryService, friendQueryService);
+    }
+
+    @Test
+    @DisplayName("활성 수신자가 없으면 친구와 상품을 조회하지 않는다")
+    void getProducts_rejectsUnavailableRecipient() {
+        when(userQueryService.findActiveUser(10L)).thenReturn(Optional.empty());
+
+        assertRejected(recipientRequest(10L, null), 1L,
+                ErrorCode.RECIPIENT_NOT_FOUND,
+                "선택한 수신자 정보를 확인할 수 없습니다.");
+        verifyNoInteractions(friendQueryService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProductSort.class)
+    @DisplayName("친구가 아닌 수신자는 모든 정렬에서 접근을 거부한다")
+    void getProducts_rejectsNonFriendRecipient(ProductSort sort) {
+        when(userQueryService.findActiveUser(10L))
+                .thenReturn(Optional.of(new ActiveUserSummary(10L, "수신자")));
+        when(friendQueryService.areFriends(1L, 10L)).thenReturn(false);
+
+        assertRejected(recipientRequest(10L, sort), 1L,
+                ErrorCode.RECIPIENT_NOT_FOUND,
+                "선택한 수신자 정보를 확인할 수 없습니다.");
+        verify(friendQueryService).areFriends(1L, 10L);
+        verifyNoMoreInteractions(friendQueryService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProductSort.class)
+    @DisplayName("등록한 활성 친구의 명시적 정렬을 적용하고 추천 결과가 없으면 인기순으로 대체한다")
+    void getProducts_acceptsFriendRecipient(ProductSort requestedSort) {
+        stubAccessibleRecipient();
         stubFirstPage(List.of());
 
-        ProductListRequest request = new ProductListRequest(
-                null,
-                null,
-                ProductSort.AI_RECOMMENDED,
-                null,
-                null
-        );
+        ProductListResponse response = productQueryService.getProducts(
+                recipientRequest(10L, requestedSort), 1L);
+        ProductSort expectedSort = requestedSort == ProductSort.AI_RECOMMENDED
+                ? ProductSort.POPULAR : requestedSort;
 
-        ProductListResponse response =
-                productQueryService.getProducts(request);
+        assertThat(captureCondition().sort()).isEqualTo(expectedSort);
+        assertThat(response.appliedSort()).isEqualTo(expectedSort);
+        verify(userQueryService).findActiveUser(10L);
+        verify(friendQueryService).areFriends(1L, 10L);
+    }
+
+    @Test
+    @DisplayName("친구 수신자의 정렬 생략 요청은 추천 결과가 없으면 인기순 fallback으로 조회한다")
+    void getProducts_fallsBackForRecipientDefaultSort() {
+        stubAccessibleRecipient();
+        stubFirstPage(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(
+                recipientRequest(10L, null), 1L);
+
+        assertThat(captureCondition().sort()).isEqualTo(ProductSort.POPULAR);
+        assertThat(response.appliedSort()).isEqualTo(ProductSort.POPULAR);
+        verify(friendQueryService).areFriends(1L, 10L);
+    }
+
+    @Test
+    @DisplayName("수신자 없는 비로그인 일반 조회는 회원과 친구를 조회하지 않는다")
+    void getProducts_doesNotCheckRecipientForGeneralSearch() {
+        stubFirstPage(List.of());
+        productQueryService.getProducts(defaultRequest(), null);
+        verifyNoInteractions(userQueryService, friendQueryService);
+    }
+
+    private void assertRejected(
+            ProductListRequest request,
+            Long loginUserId,
+            ErrorCode errorCode,
+            String message
+    ) {
+        assertThatThrownBy(() -> productQueryService.getProducts(request, loginUserId))
+                .isInstanceOfSatisfying(ProductException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo(errorCode);
+                    assertThat(exception.getMessage()).isEqualTo(message);
+                });
+        verifyNoInteractions(productRepository, productImageRepository, recipientProfileRepository);
+    }
+
+    private void stubAccessibleRecipient() {
+        when(userQueryService.findActiveUser(10L))
+                .thenReturn(Optional.of(new ActiveUserSummary(10L, "수신자")));
+        when(friendQueryService.areFriends(1L, 10L)).thenReturn(true);
+        when(recipientProfileRepository.findByRecipient_Id(10L)).thenReturn(Optional.empty());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RecipientProfileStatus.class, names = {"COMPLETED", "PENDING", "FAILED"})
+    @DisplayName("처리 상태와 무관하게 마지막 정상 분석 버전의 추천 결과를 사용한다")
+    void getProducts_usesLastAnalyzedVersion(RecipientProfileStatus status) {
+        stubAccessibleRecipient();
+        RecipientProfile profile = analyzedProfile(status);
+        when(recipientProfileRepository.findByRecipient_Id(10L)).thenReturn(Optional.of(profile));
+        when(productRepository.hasMatchingRecommendedProducts(any())).thenReturn(true);
+        stubFirstPage(products(2));
+
+        ProductListResponse response = productQueryService.getProducts(recipientRequest(10L, null), 1L);
 
         ProductSearchCondition condition = captureCondition();
+        assertThat(condition.sort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+        assertThat(condition.requestedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+        assertThat(condition.recipientUserId()).isEqualTo(10L);
+        assertThat(condition.analyzedSourceVersion()).isEqualTo(1L);
+        assertThat(response.appliedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+        assertThat(response.products()).hasSize(2);
+        verify(productRepository).hasMatchingRecommendedProducts(condition);
+    }
 
+    @ParameterizedTest
+    @EnumSource(value = RecipientProfileStatus.class, names = {"PENDING", "FAILED"})
+    @DisplayName("처리 중 또는 실패 상태에서 저장된 추천이 없으면 인기순으로 대체한다")
+    void getProducts_fallsBackWithoutSavedResults(RecipientProfileStatus status) {
+        stubAccessibleRecipient();
+        RecipientProfile profile = newProfile();
+        profile.createNextSourceVersion();
+        profile.markPending(LocalDateTime.now());
+        if (status == RecipientProfileStatus.FAILED) {
+            profile.markFailed();
+        }
+        when(recipientProfileRepository.findByRecipient_Id(10L)).thenReturn(Optional.of(profile));
+        when(productRepository.hasMatchingRecommendedProducts(any())).thenReturn(false);
+        stubFirstPage(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(recipientRequest(10L, null), 1L);
+
+        assertThat(response.appliedSort()).isEqualTo(ProductSort.POPULAR);
+        assertThat(captureCondition().analyzedSourceVersion()).isZero();
+    }
+
+    @Test
+    @DisplayName("추천 전체가 필터에서 제외되면 요청 정보와 버전을 유지한 채 인기순으로 대체한다")
+    void getProducts_fallsBackWhenFilteredOut() {
+        stubAccessibleRecipient();
+        when(recipientProfileRepository.findByRecipient_Id(10L))
+                .thenReturn(Optional.of(analyzedProfile(RecipientProfileStatus.COMPLETED)));
+        when(productRepository.hasMatchingRecommendedProducts(any())).thenReturn(false);
+        stubFirstPage(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("  크림  ", List.of(12L, 11L), ProductSort.AI_RECOMMENDED, 10L, null), 1L);
+
+        ProductSearchCondition condition = captureCondition();
         assertThat(condition.sort()).isEqualTo(ProductSort.POPULAR);
-        assertThat(response.appliedSort())
-                .isEqualTo(ProductSort.POPULAR);
+        assertThat(condition.requestedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+        assertThat(condition.analyzedSourceVersion()).isEqualTo(1L);
+        assertThat(condition.query()).isEqualTo("크림");
+        assertThat(condition.categoryIds()).containsExactly(11L, 12L);
+        assertThat(response.appliedSort()).isEqualTo(ProductSort.POPULAR);
+        verify(productRepository).hasMatchingRecommendedProducts(condition.withAppliedSort(ProductSort.AI_RECOMMENDED));
+    }
+
+    private RecipientProfile newProfile() {
+        return new RecipientProfile(new User("recipient@test.com", "$2a$10$" + "a".repeat(53),
+                "수신자", LocalDate.of(2000, 1, 1)));
+    }
+
+    private RecipientProfile analyzedProfile(RecipientProfileStatus status) {
+        RecipientProfile profile = newProfile();
+        profile.createNextSourceVersion();
+        profile.markCompleted(1L);
+        if (status != RecipientProfileStatus.COMPLETED) {
+            profile.createNextSourceVersion();
+            profile.markPending(LocalDateTime.now());
+            if (status == RecipientProfileStatus.FAILED) {
+                profile.markFailed();
+            }
+        }
+        return profile;
+    }
+
+    private ProductListRequest recipientRequest(Long recipientUserId, ProductSort sort) {
+        return new ProductListRequest(null, null, sort, recipientUserId, null);
     }
 }

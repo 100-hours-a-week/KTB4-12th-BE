@@ -28,26 +28,30 @@ public class ProductController {
 
     @GetMapping
     public ApiResponse<ProductListResponse> getProducts(
-            @Valid @ModelAttribute ProductListRequest request,
-            BindingResult bindingResult,
-            @RequestParam MultiValueMap<String, String> parameters
+            @Valid @ModelAttribute ProductListRequest request, BindingResult bindingResult,
+            @RequestParam MultiValueMap<String, String> parameters, Principal principal
     ) {
         if (bindingResult.hasErrors()) {
             throw invalidRequest();
         }
 
-        // 수신자 기반 조회는 이번 PR의 지원 범위에서 제외한다.
-        // 빈 값으로 전달된 수신자 파라미터도 무시하지 않는다.
-        if (parameters.containsKey("recipientUserId")) {
+        // 파라미터 생략과 빈 값 전달을 구분한다.
+        if (parameters.containsKey("recipientUserId")
+                && request.recipientUserId() == null) {
             throw invalidRequest();
         }
 
-        // sort 생략은 허용하지만 sort=처럼 빈 값을 전달하면 거부한다.
-        if (parameters.containsKey("sort") && request.sort() == null) {
+        if (parameters.containsKey("sort")
+                && request.sort() == null) {
             throw invalidRequest();
         }
 
-        ProductListResponse response = productQueryService.getProducts(request);
+        Long loginUserId = principal == null ? null : Long.valueOf(principal.getName());
+
+        ProductListResponse response = productQueryService.getProducts(
+                request,
+                loginUserId
+        );
 
         String message = response.products().isEmpty()
                 ? "일치하는 상품이 없습니다."

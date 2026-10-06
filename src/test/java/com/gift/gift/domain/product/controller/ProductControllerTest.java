@@ -31,6 +31,8 @@ import com.gift.gift.global.pagination.CursorPageResponse.Pagination;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -68,7 +70,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("기본 상품 목록 조회 시 인기순과 공통 성공 응답을 반환한다")
     void getProducts_returnsDefaultProductList() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(
                         ProductSort.POPULAR,
                         "next-cursor",
@@ -111,7 +113,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("검색 조건을 상품 목록 요청으로 바인딩한다")
     void getProducts_bindsQuery() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(
                         ProductSort.POPULAR,
                         null,
@@ -134,7 +136,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("여러 카테고리 ID를 상품 목록 요청으로 바인딩한다")
     void getProducts_bindsCategoryIds() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(
                         ProductSort.POPULAR,
                         null,
@@ -154,7 +156,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("단일 categoryIds 값을 카테고리 ID 목록으로 바인딩한다")
     void getProducts_bindsSingleCategoryId() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(ProductSort.POPULAR, null, false));
 
         mockMvc.perform(get("/products")
@@ -167,7 +169,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("반복된 categoryIds 값을 카테고리 ID 목록으로 바인딩한다")
     void getProducts_bindsRepeatedCategoryIds() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(ProductSort.POPULAR, null, false));
 
         mockMvc.perform(get("/products")
@@ -180,7 +182,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("단수 categoryId는 무시되어 카테고리 필터로 전달되지 않는다")
     void getProducts_ignoresSingularCategoryId() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(ProductSort.POPULAR, null, false));
 
         mockMvc.perform(get("/products")
@@ -192,10 +194,14 @@ class ProductControllerTest {
     }
 
     @ParameterizedTest
-    @EnumSource(ProductSort.class)
+    @EnumSource(
+            value = ProductSort.class,
+            names = "AI_RECOMMENDED",
+            mode = EnumSource.Mode.EXCLUDE
+    )
     @DisplayName("허용된 정렬 조건을 상품 목록 요청에 적용한다")
     void getProducts_bindsSort(ProductSort sort) throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(
                         sort,
                         null,
@@ -216,7 +222,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("요청 커서를 Service에 전달하고 다음 페이지 정보를 반환한다")
     void getProducts_returnsNextPage() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(
                         ProductSort.POPULAR,
                         "response-next-cursor",
@@ -239,7 +245,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("마지막 페이지는 다음 커서 없이 반환한다")
     void getProducts_returnsLastPage() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(productListResponse(
                         ProductSort.NEWEST,
                         null,
@@ -260,7 +266,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("상품이 없으면 빈 목록과 빈 결과 메시지를 반환한다")
     void getProducts_returnsEmptyProductList() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenReturn(new ProductListResponse(
                         List.of(),
                         ProductSort.POPULAR,
@@ -367,7 +373,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("잘못된 커서는 공통 INVALID_CURSOR 응답으로 변환한다")
     void getProducts_returnsInvalidCursorError() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenThrow(new ProductException(
                         ErrorCode.INVALID_CURSOR
                 ));
@@ -390,7 +396,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("예상하지 못한 오류는 공통 서버 오류 형식으로 반환한다")
     void getProducts_returnsInternalServerError() throws Exception {
-        when(productQueryService.getProducts(any()))
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
                 .thenThrow(new IllegalStateException(
                         "테스트용 예상하지 못한 오류"
                 ));
@@ -408,17 +414,47 @@ class ProductControllerTest {
     }
 
     @Test
-    @DisplayName("수신자 기반 조회는 일반 상품 조회 Service로 전달하지 않는다")
-    void getProducts_doesNotExecuteGeneralSearchForRecipient() throws Exception {
+    @DisplayName("수신자와 AI 추천순 및 로그인 ID를 Service에 전달한다")
+    void getProducts_bindsRecipientAndAiRecommended() throws Exception {
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
+                .thenReturn(productListResponse(ProductSort.POPULAR, null, false));
+
         mockMvc.perform(get("/products")
-                        .param("recipientUserId", "10"))
+                        .param("recipientUserId", "10")
+                        .param("sort", "AI_RECOMMENDED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.appliedSort").value("POPULAR"));
+
+        ProductListRequest request = captureRequest();
+        assertThat(request.recipientUserId()).isEqualTo(10L);
+        assertThat(request.sort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+    }
+
+    @Test
+    @DisplayName("수신자의 정렬 생략 값은 Service에서 결정하도록 전달한다")
+    void getProducts_bindsRecipientWithoutSort() throws Exception {
+        when(productQueryService.getProducts(any(), nullable(Long.class)))
+                .thenReturn(productListResponse(ProductSort.POPULAR, null, false));
+
+        mockMvc.perform(get("/products").param("recipientUserId", "10"))
+                .andExpect(status().isOk());
+
+        ProductListRequest request = captureRequest();
+        assertThat(request.recipientUserId()).isEqualTo(10L);
+        assertThat(request.sort()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "0", "-1", "abc", "9223372036854775808"})
+    @DisplayName("빈 값 또는 잘못된 수신자 ID는 Service 호출 전에 거부한다")
+    void getProducts_rejectsInvalidRecipientParameter(String recipientUserId)
+            throws Exception {
+        mockMvc.perform(get("/products").param("recipientUserId", recipientUserId))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message")
-                        .value("조회 조건을 확인해 주세요."))
-                .andExpect(jsonPath("$.error.code")
-                        .value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.error.traceId")
-                        .value(not(emptyOrNullString())));
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.traceId").value(not(emptyOrNullString())))
+                .andExpect(jsonPath("$.error.details").doesNotExist())
+                .andExpect(jsonPath("$.data").doesNotExist());
 
         verifyNoInteractions(productQueryService);
     }
@@ -603,7 +639,7 @@ class ProductControllerTest {
                 ArgumentCaptor.forClass(ProductListRequest.class);
 
         verify(productQueryService)
-                .getProducts(captor.capture());
+                .getProducts(captor.capture(), eq(1L));
 
         return captor.getValue();
     }

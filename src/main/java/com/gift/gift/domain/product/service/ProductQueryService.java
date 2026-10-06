@@ -1,15 +1,13 @@
 package com.gift.gift.domain.product.service;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.product.cursor.ProductCursor;
 import com.gift.gift.domain.product.cursor.ProductCursorCodec;
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
@@ -19,12 +17,16 @@ import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.entity.ProductImage;
+import com.gift.gift.domain.product.exception.ProductErrorCode;
 import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.query.ProductPage;
 import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.*;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
+import com.gift.gift.domain.recommendation.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
+import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.global.exception.ErrorCode;
 
 @Service
@@ -38,30 +40,58 @@ public class ProductQueryService {
     private final ProductPageAssembler pageAssembler;
     private final ProductThumbnailMapper thumbnailMapper;
     private final ImageUrlProvider imageUrlProvider;
+    private final UserQueryService userQueryService;
+    private final FriendQueryService friendQueryService;
+    private final RecipientProfileRepository recipientProfileRepository;
 
-    public ProductListResponse getProducts(ProductListRequest request) {
+    @Transactional(
+            readOnly = true,
+            isolation = Isolation.REPEATABLE_READ
+    )
+    public ProductListResponse getProducts(
+            ProductListRequest request,
+            Long loginUserId
+    ) {
         Objects.requireNonNull(
                 request,
                 "상품 조회 요청은 필수입니다."
         );
 
-        // 1. 실제 적용할 일반 정렬 결정
-        ProductSort appliedSort = resolveSort(request);
+        ProductSort requestedSort = resolveRequestedSort(request);
 
-        // 2. 검색어·카테고리 정규화
+        validateRecipientAccess(
+                request.recipientUserId(),
+                loginUserId
+        );
+
+        Long analyzedSourceVersion = null;
+
+        if (requestedSort == ProductSort.AI_RECOMMENDED) {
+            analyzedSourceVersion = recipientProfileRepository
+                    .findByRecipient_Id(request.recipientUserId())
+                    .map(RecipientProfile::getAnalyzedSourceVersion)
+                    .orElse(0L);
+        }
+
         ProductSearchCondition condition = new ProductSearchCondition(
                 request.query(),
                 request.categoryIds(),
-                appliedSort
+                requestedSort,
+                requestedSort,
+                request.recipientUserId(),
+                analyzedSourceVersion
         );
 
-        // 3. 요청 커서 해석 및 현재 조회 조건과 일치 여부 검증
+        if (condition.isAiRequested()
+                && !productRepository.hasMatchingRecommendedProducts(condition)) {
+            condition = condition.withAppliedSort(ProductSort.POPULAR);
+        }
+
         ProductCursor cursor = cursorCodec.decode(
                 request.cursor(),
                 condition
         );
 
-        // 4. 다음 페이지 판단을 위해 최대 21건 조회
         List<ProductSummaryProjection> fetched =
                 productRepository.searchProducts(
                         condition,
@@ -69,21 +99,17 @@ public class ProductQueryService {
                         ProductPageAssembler.FETCH_COUNT
                 );
 
-        // 5. 최대 20건 추출, hasNext 판단, nextCursor 생성
         ProductPage page = pageAssembler.assemble(
                 fetched,
                 condition
         );
 
-        // 6. 실제 응답하는 상품 ID만 수집
         List<Long> productIds = page.items().stream()
                 .map(ProductSummaryProjection::productId)
                 .toList();
 
-        // 7~8. 대표 이미지 후보 일괄 조회 및 URL 조합
         Map<Long, String> thumbnailUrls = findThumbnailUrls(productIds);
 
-        // 9. 상품 요약 Response 생성
         List<ProductSummaryResponse> products = page.items().stream()
                 .map(product -> ProductSummaryResponse.from(
                         product,
@@ -91,10 +117,9 @@ public class ProductQueryService {
                 ))
                 .toList();
 
-        // 10. 목록·정렬·페이지 정보 조합
         return ProductListResponse.from(
                 products,
-                appliedSort,
+                condition.sort(),
                 page
         );
     }
@@ -130,15 +155,57 @@ public class ProductQueryService {
         return thumbnailMapper.mapUrls(productIds, images);
     }
 
-    private ProductSort resolveSort(ProductListRequest request) {
-        if (request.sort() == null) {
-            return ProductSort.POPULAR;
+    private ProductSort resolveRequestedSort(
+            ProductListRequest request
+    ) {
+        Long recipientUserId = request.recipientUserId();
+
+        if (recipientUserId != null && recipientUserId <= 0) {
+            throw new ProductException(
+                    ProductErrorCode.INVALID_REQUEST
+            );
         }
 
-        if (request.sort() == ProductSort.AI_RECOMMENDED) {
-            return ProductSort.POPULAR;
+        if (request.sort() == ProductSort.AI_RECOMMENDED && recipientUserId == null) {
+            throw new ProductException(
+                    ProductErrorCode.INVALID_REQUEST
+            );
         }
 
-        return request.sort();
+        if (request.sort() != null) {
+            return request.sort();
+        }
+
+        return recipientUserId == null ? ProductSort.POPULAR : ProductSort.AI_RECOMMENDED;
+    }
+
+    private void validateRecipientAccess(
+            Long recipientUserId,
+            Long loginUserId
+    ) {
+        if (recipientUserId == null) {
+            return;
+        }
+
+        if (loginUserId == null) {
+            throw new ProductException(
+                    ErrorCode.UNAUTHORIZED
+            );
+        }
+
+        if (userQueryService.findActiveUser(recipientUserId).isEmpty()) {
+            throw new ProductException(
+                    ProductErrorCode.RECIPIENT_NOT_FOUND
+            );
+        }
+
+        if (!friendQueryService.areFriends(
+                loginUserId,
+                recipientUserId
+        )) {
+            throw new ProductException(
+                    ProductErrorCode.RECIPIENT_NOT_FOUND
+            );
+        }
     }
 }

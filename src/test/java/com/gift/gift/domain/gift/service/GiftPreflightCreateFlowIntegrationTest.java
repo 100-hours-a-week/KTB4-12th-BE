@@ -88,11 +88,9 @@ class GiftPreflightCreateFlowIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        // 커밋 후 생성된 알림을 먼저 삭제해 사용자 FK와 다음 테스트의 격리를 보장한다.
         jdbcTemplate.update(
-                "DELETE FROM notifications WHERE recipient_id IN (?, ?)",
-                senderId,
-                recipientId
-        );
+                "DELETE FROM notifications WHERE recipient_id IN (?, ?)", senderId, recipientId);
         jdbcTemplate.update("DELETE FROM gift_histories WHERE sender_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM friends WHERE user_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);

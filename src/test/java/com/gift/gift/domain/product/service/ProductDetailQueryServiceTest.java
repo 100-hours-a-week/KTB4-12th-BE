@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.product.cursor.ProductCursorCodec;
 import com.gift.gift.domain.product.dto.response.ProductDetailResponse;
 import com.gift.gift.domain.product.entity.Category;
@@ -20,6 +21,8 @@ import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.ProductImageRepository;
 import com.gift.gift.domain.product.repository.ProductRepository;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
+import com.gift.gift.domain.user.service.UserQueryService;
+import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
 import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.*;
@@ -46,7 +49,10 @@ class ProductDetailQueryServiceTest {
                 mock(ProductCursorCodec.class),
                 mock(ProductPageAssembler.class),
                 mock(ProductThumbnailMapper.class),
-                imageUrlProvider
+                imageUrlProvider,
+                mock(UserQueryService.class),
+                mock(FriendQueryService.class),
+                mock(RecipientProfileRepository.class)
         );
     }
 
