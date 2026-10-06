@@ -68,3 +68,7 @@ app:
     maximum-window: 6h
     batch-size: 100
     dispatch-interval: 1h
+
+sentry:
+  dsn: ""
+  environment: test
