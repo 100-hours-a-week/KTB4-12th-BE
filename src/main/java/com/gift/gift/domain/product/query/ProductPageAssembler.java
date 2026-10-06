@@ -51,16 +51,36 @@ public class ProductPageAssembler {
         ProductSummaryProjection last = items.getLast();
         boolean newest = condition.sort() == ProductSort.NEWEST;
 
-        ProductCursor payload = new ProductCursor(
-                1,
-                condition.sort(),
-                condition.query(),
-                condition.categoryIds(),
-                last.productId(),
-                last.createdAt(),
-                newest ? null : last.views(),
-                newest ? null : last.sales()
-        );
+        ProductCursor payload;
+
+        if (condition.recipientUserId() == null) {
+            payload = new ProductCursor(
+                    1,
+                    condition.sort(),
+                    condition.query(),
+                    condition.categoryIds(),
+                    last.productId(),
+                    last.createdAt(),
+                    newest ? null : last.views(),
+                    newest ? null : last.sales()
+            );
+        } else {
+            payload = new ProductCursor(
+                    2,
+                    condition.sort(),
+                    condition.query(),
+                    condition.categoryIds(),
+                    last.productId(),
+                    last.createdAt(),
+                    newest ? null : last.views(),
+                    newest ? null : last.sales(),
+                    condition.requestedSort(),
+                    condition.recipientUserId(),
+                    condition.analyzedSourceVersion(),
+                    last.rankOrder() != null,
+                    last.rankOrder()
+            );
+        }
 
         String nextCursor = cursorCodec.encode(payload, condition);
 

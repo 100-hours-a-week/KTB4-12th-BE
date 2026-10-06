@@ -32,7 +32,7 @@ class ProductQueryRepositoryImplTest {
             when(entityManager.createNativeQuery(anyString())).thenReturn(query);
             when(query.setMaxResults(21)).thenReturn(query);
             Object[] row = {7L, "수분크림", "브랜드", new BigDecimal("12000"),
-                    10, 5, Timestamp.valueOf(createdAt)};
+                    10, 5, Timestamp.valueOf(createdAt), null};
             doReturn(List.<Object[]>of(row)).when(query).getResultList();
             ProductSearchCondition condition = new ProductSearchCondition(
                     "크림", List.of(11L, 14L), sort

@@ -1,6 +1,7 @@
 package com.gift.gift.domain.product.service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +26,10 @@ import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.*;
+import com.gift.gift.domain.recommendation.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.entity.RecipientProfileStatus;
+import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
+import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.domain.user.support.ActiveUserSummary;
 import com.gift.gift.global.exception.ErrorCode;
@@ -42,6 +47,7 @@ class ProductQueryServiceTest {
     private ProductQueryService productQueryService;
     private UserQueryService userQueryService;
     private FriendQueryService friendQueryService;
+    private RecipientProfileRepository recipientProfileRepository;
 
     @BeforeEach
     void setUp() {
@@ -49,6 +55,7 @@ class ProductQueryServiceTest {
         productImageRepository = mock(ProductImageRepository.class);
         userQueryService = mock(UserQueryService.class);
         friendQueryService = mock(FriendQueryService.class);
+        recipientProfileRepository = mock(RecipientProfileRepository.class);
 
         cursorCodec = new ProductCursorCodec(
                 JsonMapper.builder().build()
@@ -70,7 +77,8 @@ class ProductQueryServiceTest {
                 thumbnailMapper,
                 objectKey -> "https://image/test/" + objectKey,
                 userQueryService,
-                friendQueryService
+                friendQueryService,
+                recipientProfileRepository
         );
     }
 
@@ -477,7 +485,7 @@ class ProductQueryServiceTest {
 
     @ParameterizedTest
     @EnumSource(ProductSort.class)
-    @DisplayName("등록한 활성 친구의 명시적 정렬을 적용하고 AI 정렬은 현재 인기순으로 대체한다")
+    @DisplayName("등록한 활성 친구의 명시적 정렬을 적용하고 추천 결과가 없으면 인기순으로 대체한다")
     void getProducts_acceptsFriendRecipient(ProductSort requestedSort) {
         stubAccessibleRecipient();
         stubFirstPage(List.of());
@@ -494,7 +502,7 @@ class ProductQueryServiceTest {
     }
 
     @Test
-    @DisplayName("친구 수신자의 정렬 생략 요청은 현재 인기순 fallback으로 조회한다")
+    @DisplayName("친구 수신자의 정렬 생략 요청은 추천 결과가 없으면 인기순 fallback으로 조회한다")
     void getProducts_fallsBackForRecipientDefaultSort() {
         stubAccessibleRecipient();
         stubFirstPage(List.of());
@@ -526,13 +534,98 @@ class ProductQueryServiceTest {
                     assertThat(exception.getErrorCode()).isEqualTo(errorCode);
                     assertThat(exception.getMessage()).isEqualTo(message);
                 });
-        verifyNoInteractions(productRepository, productImageRepository);
+        verifyNoInteractions(productRepository, productImageRepository, recipientProfileRepository);
     }
 
     private void stubAccessibleRecipient() {
         when(userQueryService.findActiveUser(10L))
                 .thenReturn(Optional.of(new ActiveUserSummary(10L, "수신자")));
         when(friendQueryService.areFriends(1L, 10L)).thenReturn(true);
+        when(recipientProfileRepository.findByRecipient_Id(10L)).thenReturn(Optional.empty());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RecipientProfileStatus.class, names = {"COMPLETED", "PENDING", "FAILED"})
+    @DisplayName("처리 상태와 무관하게 마지막 정상 분석 버전의 추천 결과를 사용한다")
+    void getProducts_usesLastAnalyzedVersion(RecipientProfileStatus status) {
+        stubAccessibleRecipient();
+        RecipientProfile profile = analyzedProfile(status);
+        when(recipientProfileRepository.findByRecipient_Id(10L)).thenReturn(Optional.of(profile));
+        when(productRepository.hasMatchingRecommendedProducts(any())).thenReturn(true);
+        stubFirstPage(products(2));
+
+        ProductListResponse response = productQueryService.getProducts(recipientRequest(10L, null), 1L);
+
+        ProductSearchCondition condition = captureCondition();
+        assertThat(condition.sort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+        assertThat(condition.requestedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+        assertThat(condition.recipientUserId()).isEqualTo(10L);
+        assertThat(condition.analyzedSourceVersion()).isEqualTo(1L);
+        assertThat(response.appliedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+        assertThat(response.products()).hasSize(2);
+        verify(productRepository).hasMatchingRecommendedProducts(condition);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RecipientProfileStatus.class, names = {"PENDING", "FAILED"})
+    @DisplayName("처리 중 또는 실패 상태에서 저장된 추천이 없으면 인기순으로 대체한다")
+    void getProducts_fallsBackWithoutSavedResults(RecipientProfileStatus status) {
+        stubAccessibleRecipient();
+        RecipientProfile profile = newProfile();
+        profile.createNextSourceVersion();
+        profile.markPending(LocalDateTime.now());
+        if (status == RecipientProfileStatus.FAILED) {
+            profile.markFailed();
+        }
+        when(recipientProfileRepository.findByRecipient_Id(10L)).thenReturn(Optional.of(profile));
+        when(productRepository.hasMatchingRecommendedProducts(any())).thenReturn(false);
+        stubFirstPage(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(recipientRequest(10L, null), 1L);
+
+        assertThat(response.appliedSort()).isEqualTo(ProductSort.POPULAR);
+        assertThat(captureCondition().analyzedSourceVersion()).isZero();
+    }
+
+    @Test
+    @DisplayName("추천 전체가 필터에서 제외되면 요청 정보와 버전을 유지한 채 인기순으로 대체한다")
+    void getProducts_fallsBackWhenFilteredOut() {
+        stubAccessibleRecipient();
+        when(recipientProfileRepository.findByRecipient_Id(10L))
+                .thenReturn(Optional.of(analyzedProfile(RecipientProfileStatus.COMPLETED)));
+        when(productRepository.hasMatchingRecommendedProducts(any())).thenReturn(false);
+        stubFirstPage(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("  크림  ", List.of(12L, 11L), ProductSort.AI_RECOMMENDED, 10L, null), 1L);
+
+        ProductSearchCondition condition = captureCondition();
+        assertThat(condition.sort()).isEqualTo(ProductSort.POPULAR);
+        assertThat(condition.requestedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+        assertThat(condition.analyzedSourceVersion()).isEqualTo(1L);
+        assertThat(condition.query()).isEqualTo("크림");
+        assertThat(condition.categoryIds()).containsExactly(11L, 12L);
+        assertThat(response.appliedSort()).isEqualTo(ProductSort.POPULAR);
+        verify(productRepository).hasMatchingRecommendedProducts(condition.withAppliedSort(ProductSort.AI_RECOMMENDED));
+    }
+
+    private RecipientProfile newProfile() {
+        return new RecipientProfile(new User("recipient@test.com", "$2a$10$" + "a".repeat(53),
+                "수신자", LocalDate.of(2000, 1, 1)));
+    }
+
+    private RecipientProfile analyzedProfile(RecipientProfileStatus status) {
+        RecipientProfile profile = newProfile();
+        profile.createNextSourceVersion();
+        profile.markCompleted(1L);
+        if (status != RecipientProfileStatus.COMPLETED) {
+            profile.createNextSourceVersion();
+            profile.markPending(LocalDateTime.now());
+            if (status == RecipientProfileStatus.FAILED) {
+                profile.markFailed();
+            }
+        }
+        return profile;
     }
 
     private ProductListRequest recipientRequest(Long recipientUserId, ProductSort sort) {

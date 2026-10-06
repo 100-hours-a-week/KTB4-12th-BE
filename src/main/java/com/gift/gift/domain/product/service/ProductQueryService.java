@@ -4,6 +4,7 @@ import java.util.*;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
@@ -23,6 +24,8 @@ import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.*;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
+import com.gift.gift.domain.recommendation.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.global.exception.ErrorCode;
 
@@ -39,7 +42,12 @@ public class ProductQueryService {
     private final ImageUrlProvider imageUrlProvider;
     private final UserQueryService userQueryService;
     private final FriendQueryService friendQueryService;
+    private final RecipientProfileRepository recipientProfileRepository;
 
+    @Transactional(
+            readOnly = true,
+            isolation = Isolation.REPEATABLE_READ
+    )
     public ProductListResponse getProducts(
             ProductListRequest request,
             Long loginUserId
@@ -56,17 +64,28 @@ public class ProductQueryService {
                 loginUserId
         );
 
-        // 저장된 추천 결과에 따라 실제 정렬을 결정한다.
-        ProductSort appliedSort =
-                requestedSort == ProductSort.AI_RECOMMENDED
-                        ? ProductSort.POPULAR
-                        : requestedSort;
+        Long analyzedSourceVersion = null;
+
+        if (requestedSort == ProductSort.AI_RECOMMENDED) {
+            analyzedSourceVersion = recipientProfileRepository
+                    .findByRecipient_Id(request.recipientUserId())
+                    .map(RecipientProfile::getAnalyzedSourceVersion)
+                    .orElse(0L);
+        }
 
         ProductSearchCondition condition = new ProductSearchCondition(
                 request.query(),
                 request.categoryIds(),
-                appliedSort
+                requestedSort,
+                requestedSort,
+                request.recipientUserId(),
+                analyzedSourceVersion
         );
+
+        if (condition.isAiRequested()
+                && !productRepository.hasMatchingRecommendedProducts(condition)) {
+            condition = condition.withAppliedSort(ProductSort.POPULAR);
+        }
 
         ProductCursor cursor = cursorCodec.decode(
                 request.cursor(),
@@ -100,7 +119,7 @@ public class ProductQueryService {
 
         return ProductListResponse.from(
                 products,
-                appliedSort,
+                condition.sort(),
                 page
         );
     }

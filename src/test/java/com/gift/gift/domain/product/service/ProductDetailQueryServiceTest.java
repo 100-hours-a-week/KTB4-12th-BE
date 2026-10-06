@@ -22,6 +22,7 @@ import com.gift.gift.domain.product.repository.ProductImageRepository;
 import com.gift.gift.domain.product.repository.ProductRepository;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
 import com.gift.gift.domain.user.service.UserQueryService;
+import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
 import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.*;
@@ -50,7 +51,8 @@ class ProductDetailQueryServiceTest {
                 mock(ProductThumbnailMapper.class),
                 imageUrlProvider,
                 mock(UserQueryService.class),
-                mock(FriendQueryService.class)
+                mock(FriendQueryService.class),
+                mock(RecipientProfileRepository.class)
         );
     }
 

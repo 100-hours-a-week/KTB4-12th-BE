@@ -34,7 +34,7 @@ class ProductCursorCodecTest {
             LocalDateTime.of(2026, 9, 17, 12, 0, 0, 123456000);
 
     @ParameterizedTest
-    @EnumSource(ProductSort.class)
+    @EnumSource(value = ProductSort.class, names = "AI_RECOMMENDED", mode = EnumSource.Mode.EXCLUDE)
     @DisplayName("정렬별 커서를 인코딩하고 디코딩하면 원본이 유지된다")
     void roundTrip(ProductSort sort) {
         ProductSearchCondition condition =

@@ -83,7 +83,7 @@ class ProductControllerSecurityTest {
     }
 
     @Test
-    @DisplayName("등록한 활성 친구는 정렬 생략과 AI 정렬에서 현재 인기순 fallback으로 조회한다")
+    @DisplayName("등록한 활성 친구는 정렬 생략과 AI 정렬에서 추천 결과가 없으면 인기순 fallback으로 조회한다")
     void getProducts_allowsRegisteredFriend() throws Exception {
         User owner = persistedUser();
         User recipient = persistedUser();
