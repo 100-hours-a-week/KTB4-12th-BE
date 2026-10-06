@@ -38,7 +38,8 @@ import com.gift.gift.global.exception.ErrorCode;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest
+// 동시 요청 10개의 연결 외에 REQUIRES_NEW 알림 저장용 연결을 확보한다.
+@SpringBootTest(properties = "spring.datasource.hikari.maximum-pool-size=11")
 class GiftCommandServiceIntegrationTest {
 
     private static final String PASSWORD_HASH = "$2a$10$" + "a".repeat(53);
@@ -98,6 +99,9 @@ class GiftCommandServiceIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        // 커밋 후 생성된 알림을 먼저 삭제해 사용자 FK와 다음 테스트의 격리를 보장한다.
+        jdbcTemplate.update(
+                "DELETE FROM notifications WHERE recipient_id IN (?, ?)", senderId, recipientId);
         jdbcTemplate.update("DELETE FROM gift_histories WHERE sender_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM friends WHERE user_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
