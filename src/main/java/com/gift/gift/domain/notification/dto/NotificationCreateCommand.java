@@ -5,6 +5,7 @@ import com.gift.gift.domain.notification.entity.NotificationType;
 
 public record NotificationCreateCommand(
         Long recipientId,
+        String sourceIdentifier,
         NotificationType type,
         NotificationReferenceType referenceType,
         Long referenceId,

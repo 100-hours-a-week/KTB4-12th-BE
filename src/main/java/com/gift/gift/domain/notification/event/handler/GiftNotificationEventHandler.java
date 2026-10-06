@@ -24,6 +24,7 @@ public class GiftNotificationEventHandler {
         NotificationType type = NotificationType.GIFT_RECEIVED;
         notificationService.create(new NotificationCreateCommand(
                 event.recipientId(),
+                event.giftId().toString(),
                 type,
                 NotificationReferenceType.GIFT,
                 event.giftId(),
