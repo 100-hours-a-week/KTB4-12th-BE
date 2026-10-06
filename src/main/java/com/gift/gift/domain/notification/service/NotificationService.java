@@ -4,7 +4,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -27,34 +29,62 @@ import com.gift.gift.global.pagination.OpaqueCursorCodec;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional(readOnly = true)
 public class NotificationService {
 
     private final NotificationQueryRepository notificationQueryRepository;
     private final NotificationRepository notificationRepository;
+    private final NotificationCreateTransactionService notificationCreateTransactionService;
     private final NotificationPageAssembler pageAssembler;
     private final OpaqueCursorCodec cursorCodec;
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void create(NotificationCreateCommand command) {
         if (notificationRepository.existsByDeduplicationKey(command.deduplicationKey())) {
+            log.debug(
+                    "알림 중복 생성 요청을 건너뜁니다. notificationType={}, recipientId={}, "
+                            + "sourceIdentifier={}, deduplicationKey={}, traceId={}",
+                    command.type(),
+                    command.recipientId(),
+                    command.sourceIdentifier(),
+                    command.deduplicationKey(),
+                    MDC.get("traceId")
+            );
             return;
         }
 
         try {
-            notificationRepository.save(new Notification(
-                    command.recipientId(),
-                    command.type(),
-                    command.referenceType(),
-                    command.referenceId(),
-                    command.title(),
-                    command.message(),
-                    command.deduplicationKey()
-            ));
+            notificationCreateTransactionService.save(command);
         } catch (DataIntegrityViolationException exception) {
             if (!isDeduplicationConflict(exception)) {
+                log.error(
+                        "알림 저장에 실패했습니다. notificationType={}, recipientId={}, "
+                                + "sourceIdentifier={}, deduplicationKey={}, traceId={}, "
+                                + "exceptionType={}, exceptionMessage={}",
+                        command.type(),
+                        command.recipientId(),
+                        command.sourceIdentifier(),
+                        command.deduplicationKey(),
+                        MDC.get("traceId"),
+                        exception.getClass().getName(),
+                        exception.getMessage(),
+                        exception
+                );
                 throw exception;
             }
+            log.debug(
+                    "알림 중복 저장 요청을 정상 처리했습니다. notificationType={}, recipientId={}, "
+                            + "sourceIdentifier={}, deduplicationKey={}, traceId={}, "
+                            + "exceptionType={}, exceptionMessage={}",
+                    command.type(),
+                    command.recipientId(),
+                    command.sourceIdentifier(),
+                    command.deduplicationKey(),
+                    MDC.get("traceId"),
+                    exception.getClass().getName(),
+                    exception.getMessage()
+            );
         }
     }
 
@@ -100,9 +130,17 @@ public class NotificationService {
     private boolean isDeduplicationConflict(DataIntegrityViolationException exception) {
         Throwable current = exception;
         while (current != null) {
-            if (current instanceof ConstraintViolationException violation
-                    && "uk_notifications_deduplication_key".equals(violation.getConstraintName())) {
-                return true;
+            if (current instanceof ConstraintViolationException violation) {
+                String constraintName = violation.getConstraintName();
+                if (constraintName != null) {
+                    int separatorIndex = constraintName.lastIndexOf('.');
+                    String unqualifiedName = separatorIndex >= 0
+                            ? constraintName.substring(separatorIndex + 1)
+                            : constraintName;
+                    if ("uk_notifications_deduplication_key".equals(unqualifiedName)) {
+                        return true;
+                    }
+                }
             }
             current = current.getCause();
         }
