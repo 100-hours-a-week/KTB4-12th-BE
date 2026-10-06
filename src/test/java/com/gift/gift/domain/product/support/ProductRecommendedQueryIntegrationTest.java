@@ -113,6 +113,51 @@ class ProductRecommendedQueryIntegrationTest {
                         newerId.getId(), newer.getId(), oldest.getId());
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {3, 25})
+    @DisplayName("검색어·카테고리 없는 AI 조회도 추천과 인기 상품을 SQL 오류 없이 끝까지 연결한다")
+    void paginatesWithoutQueryOrCategoryFilters(int recommendedCount) throws Exception {
+        List<Long> expected = new ArrayList<>();
+        for (int rank = 1; rank <= recommendedCount; rank++) {
+            Product recommended = product(category, "크림", rank, 0, BASE_TIME);
+            recommend(recommended, rank, 1);
+            expected.add(recommended.getId());
+        }
+        for (int index = 0; index < 25; index++) {
+            expected.add(product(otherCategory, "텀블러", 1000 - index, 0, BASE_TIME).getId());
+        }
+        entityManager.flush();
+
+        // 기존 카테고리 필터의 닫는 괄호가 SQL 공백 누락을 가렸으므로 필터를 모두 생략한다.
+        mockMvc.perform(get("/products")
+                        .param("recipientUserId", recipient.getId().toString())
+                        .param("sort", "AI_RECOMMENDED")
+                        .with(jwt().jwt(token -> token.subject(owner.getId().toString()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.appliedSort").value("AI_RECOMMENDED"))
+                .andExpect(jsonPath("$.data.products.length()").value(20))
+                .andExpect(jsonPath("$.data.products[0].productId").value(expected.getFirst()))
+                .andExpect(jsonPath("$.data.pagination.hasNext").value(true));
+
+        List<Long> actual = new ArrayList<>();
+        String cursor = null;
+        for (int page = 0; page < 5; page++) {
+            ProductListResponse response = response(null, null, cursor);
+            assertThat(response.appliedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
+            actual.addAll(response.products().stream().map(ProductSummaryResponse::productId).toList());
+            cursor = response.pagination().nextCursor();
+            if (!response.pagination().hasNext()) {
+                assertThat(cursor).isNull();
+                break;
+            }
+            ProductCursor decoded = codec.decode(cursor, condition(null, List.of()));
+            assertThat(decoded.query()).isEmpty();
+            assertThat(decoded.categoryIds()).isEmpty();
+            assertThat(decoded.productId()).isEqualTo(response.products().getLast().productId());
+        }
+        assertThat(actual).doesNotHaveDuplicates().containsExactlyElementsOf(expected);
+    }
+
     @Test
     @DisplayName("삭제와 품절 상품은 추천 및 인기 영역 모두에서 제외한다")
     void excludesDeletedAndSoldOutProducts() {

@@ -180,6 +180,7 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
         if (excludeRecommendations) {
             sql.append("""
+
                 AND NOT EXISTS (
                     SELECT 1
                     FROM recipient_recommended_products r
