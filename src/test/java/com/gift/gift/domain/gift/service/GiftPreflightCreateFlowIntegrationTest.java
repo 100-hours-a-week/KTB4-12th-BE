@@ -88,6 +88,11 @@ class GiftPreflightCreateFlowIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update(
+                "DELETE FROM notifications WHERE recipient_id IN (?, ?)",
+                senderId,
+                recipientId
+        );
         jdbcTemplate.update("DELETE FROM gift_histories WHERE sender_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM friends WHERE user_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
