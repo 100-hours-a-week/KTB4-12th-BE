@@ -10,9 +10,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.gift.gift.domain.gift.event.GiftCreatedEvent;
 import com.gift.gift.domain.notification.dto.NotificationCreateCommand;
@@ -43,10 +45,25 @@ class NotificationCreateConcurrencyIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private final List<Long> createdRecipientIds = new ArrayList<>();
+
+    @AfterEach
+    void tearDown() {
+        for (Long recipientId : createdRecipientIds) {
+            jdbcTemplate.update("DELETE FROM notifications WHERE recipient_id = ?", recipientId);
+            jdbcTemplate.update("DELETE FROM users WHERE id = ?", recipientId);
+        }
+        createdRecipientIds.clear();
+    }
+
     @Test
     @DisplayName("동일 deduplication key 동시 생성은 Notification 1건만 저장한다")
     void create_concurrentlyStoresOnlyOneNotification() throws Exception {
         Long recipientId = userRepository.saveAndFlush(newUser()).getId();
+        createdRecipientIds.add(recipientId);
         String deduplicationKey = "GIFT_RECEIVED:concurrent-" + UUID.randomUUID() + ":" + recipientId;
         NotificationCreateCommand command = new NotificationCreateCommand(
                 recipientId,
@@ -89,6 +106,7 @@ class NotificationCreateConcurrencyIntegrationTest {
     @DisplayName("같은 Gift Event를 두 번 처리해도 Notification 1건만 저장한다")
     void handleSameGiftEventTwiceStoresOnlyOneNotification() {
         Long recipientId = userRepository.saveAndFlush(newUser()).getId();
+        createdRecipientIds.add(recipientId);
         Long giftId = 502L;
         GiftCreatedEvent event = new GiftCreatedEvent(giftId, recipientId, "선물 상품");
 
