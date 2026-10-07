@@ -6,16 +6,20 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.preference.dto.response.GiftPreferenceResponse;
 import com.gift.gift.domain.preference.dto.response.SaveDislikeCategoriesResponse;
 import com.gift.gift.domain.preference.entity.UserDislikeCategory;
+import com.gift.gift.domain.preference.entity.UserGiftPreference;
 import com.gift.gift.domain.preference.exception.PreferenceException;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
+import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
 import com.gift.gift.domain.preference.support.PreferencePolicy;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.service.CategoryQueryService;
@@ -29,11 +33,33 @@ import com.gift.gift.global.exception.ErrorCode;
 @RequiredArgsConstructor
 public class PreferenceSaveService {
 
+    private final UserGiftPreferenceRepository userGiftPreferenceRepository;
     private final UserDislikeCategoryRepository userDislikeCategoryRepository;
     private final CategoryQueryService categoryQueryService;
     private final UserQueryService userQueryService;
     private final RecipientProfileRepository recipientProfileRepository;
     private final Clock clock;
+
+    @Transactional
+    public GiftPreferenceResponse saveGiftPreference(Long userId, String preference) {
+        User user = userQueryService.findActiveUserForUpdate(userId)
+                .orElseThrow(() -> new PreferenceException(ErrorCode.USER_NOT_FOUND));
+        String normalized = preference == null ? null : preference.strip();
+        if (normalized != null && normalized.isEmpty()) {
+            normalized = null;
+        }
+
+        UserGiftPreference existing = userGiftPreferenceRepository
+                .findByUser_IdAndDeletedAtIsNull(userId).orElse(null);
+        if (existing == null) {
+            if (normalized != null) {
+                userGiftPreferenceRepository.save(new UserGiftPreference(user, normalized));
+            }
+        } else if (!Objects.equals(existing.getPreference(), normalized)) {
+            existing.changePreference(normalized);
+        }
+        return GiftPreferenceResponse.from(normalized);
+    }
 
     @Transactional
     public SaveDislikeCategoriesResponse saveDislikeCategories(
