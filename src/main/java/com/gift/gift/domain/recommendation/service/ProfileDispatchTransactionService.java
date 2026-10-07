@@ -3,6 +3,7 @@ package com.gift.gift.domain.recommendation.service;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import lombok.RequiredArgsConstructor;
@@ -58,9 +59,7 @@ public class ProfileDispatchTransactionService {
 
         List<DislikedCategoryRequest> dislikedCategories =
                 dislikeRepository
-                        .findAllActiveByUserIdWithCategory(
-                                recipientUserId
-                        )
+                        .findAllActiveByUserIdWithCategory(recipientUserId)
                         .stream()
                         .map(UserDislikeCategory::getCategory)
                         .map(DislikedCategoryRequest::from)
@@ -95,5 +94,42 @@ public class ProfileDispatchTransactionService {
                 dispatch.snapshottedLastChangedAt(),
                 LocalDateTime.now(clock)
         );
+    }
+
+    public enum FailedDispatchResult {
+        DEBOUNCE_RESTARTED,
+        ABANDONED,
+        SKIPPED
+    }
+
+    @Transactional
+    public FailedDispatchResult applyFailedDispatch(
+            PreparedProfileDispatch dispatch
+    ) {
+        RecipientProfile profile = recipientProfileRepository
+                .findByIdForUpdate(dispatch.profileId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "AI 요청 실패를 반영할 프로파일이 없습니다."
+                ));
+
+        // 현재 번호와 변경 스냅샷이 모두 일치해야 실패를 반영한다.
+        if (profile.getSourceVersion() != dispatch.sourceVersion()
+                || !Objects.equals(
+                profile.getLastChangedAt(),
+                dispatch.snapshottedLastChangedAt()
+        )) {
+            return FailedDispatchResult.SKIPPED;
+        }
+
+        // 일반 요청 실패의 디바운스 재시작은 1회만 허용한다.
+        if (profile.getRetryCount() == 0) {
+            profile.restartDebounce(LocalDateTime.now(clock));
+            profile.increaseRetryCount();
+            return FailedDispatchResult.DEBOUNCE_RESTARTED;
+        }
+
+        profile.clearPendingChange();
+        profile.resetRetryCount();
+        return FailedDispatchResult.ABANDONED;
     }
 }

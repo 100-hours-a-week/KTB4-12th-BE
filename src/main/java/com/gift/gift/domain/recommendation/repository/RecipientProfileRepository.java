@@ -47,7 +47,6 @@ public interface RecipientProfileRepository
             from RecipientProfile profile
             where profile.lastChangedAt is not null
               and profile.windowStartedAt is not null
-              and profile.profileStatus <> :pendingStatus
               and (
                     profile.lastChangedAt <= :quietPeriodCutoff
                     or profile.windowStartedAt <= :maxWindowCutoff
@@ -55,8 +54,6 @@ public interface RecipientProfileRepository
             order by profile.windowStartedAt asc, profile.id asc
             """)
     List<Long> findDispatchCandidateIds(
-            @Param("pendingStatus")
-            RecipientProfileStatus pendingStatus,
             @Param("quietPeriodCutoff")
             LocalDateTime quietPeriodCutoff,
             @Param("maxWindowCutoff")
@@ -68,7 +65,6 @@ public interface RecipientProfileRepository
             select profile
             from RecipientProfile profile
             where profile.lastChangedAt is not null
-              and profile.profileStatus <> :pendingStatus
               and (
                     profile.lastChangedAt <= :quietPeriodCutoff
                     or profile.windowStartedAt <= :maxWindowCutoff
@@ -76,8 +72,6 @@ public interface RecipientProfileRepository
             order by profile.windowStartedAt asc, profile.id asc
             """)
     List<RecipientProfile> findDispatchCandidates(
-            @Param("pendingStatus")
-            RecipientProfileStatus pendingStatus,
             @Param("quietPeriodCutoff")
             LocalDateTime quietPeriodCutoff,
             @Param("maxWindowCutoff")
