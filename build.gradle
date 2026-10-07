@@ -56,7 +56,7 @@ def sentryAuthToken = providers.environmentVariable('SENTRY_AUTH_TOKEN')
 sentry {
     includeSourceContext = sentryAuthToken != null && !sentryAuthToken.isEmpty()
 
-    org = 'ktb4-12th'
+    org = 'seonjalal'
     projectName = 'ktb4-12th-be'
     authToken = sentryAuthToken
 }
