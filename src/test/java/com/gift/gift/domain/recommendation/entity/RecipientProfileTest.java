@@ -74,8 +74,8 @@ class RecipientProfileTest {
     }
 
     @Test
-    @DisplayName("새 AI 요청은 sourceVersion을 증가시키고 재시도 횟수를 초기화한다")
-    void createNextSourceVersion_incrementsVersionAndResetsRetry() {
+    @DisplayName("새 AI 요청은 sourceVersion을 증가시키고 재시작 횟수를 유지한다")
+    void createNextSourceVersion_incrementsVersionAndKeepsRetry() {
         profile.createNextSourceVersion();
         profile.increaseRetryCount();
 
@@ -83,7 +83,7 @@ class RecipientProfileTest {
 
         assertThat(nextVersion).isEqualTo(2);
         assertThat(profile.getSourceVersion()).isEqualTo(2);
-        assertThat(profile.getRetryCount()).isZero();
+        assertThat(profile.getRetryCount()).isEqualTo(1);
     }
 
     @Test
@@ -163,13 +163,14 @@ class RecipientProfileTest {
     }
 
     @Test
-    @DisplayName("PENDING 상태에서는 새 요청 버전을 생성할 수 없다")
-    void createNextSourceVersion_rejectsPendingProfile() {
+    @DisplayName("PENDING 상태에서도 새 요청 버전을 생성한다")
+    void createNextSourceVersion_allowsPendingProfile() {
         profile.createNextSourceVersion();
         profile.markPending(LocalDateTime.now());
 
-        assertThatIllegalStateException()
-                .isThrownBy(profile::createNextSourceVersion);
+        assertThat(profile.createNextSourceVersion()).isEqualTo(2);
+        assertThat(profile.getProfileStatus())
+                .isEqualTo(RecipientProfileStatus.PENDING);
     }
 
     @Test

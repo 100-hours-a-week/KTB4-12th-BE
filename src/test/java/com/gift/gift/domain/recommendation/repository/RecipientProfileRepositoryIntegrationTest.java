@@ -143,8 +143,8 @@ class RecipientProfileRepositoryIntegrationTest {
     }
 
     @Test
-    @DisplayName("마지막 변경 1시간 또는 변경 구간 6시간이 지난 프로파일만 전송 후보로 조회한다")
-    void findDispatchCandidates_returnsDueProfilesAndExcludesPending() {
+    @DisplayName("디바운스가 경과한 신규 변경은 PENDING 중에도 후보로 조회한다")
+    void findDispatchCandidates_returnsDueProfilesIncludingPending() {
         LocalDateTime now = LocalDateTime.of(2026, 9, 24, 18, 0);
 
         RecipientProfile quietPeriodDue = persistProfile();
@@ -166,7 +166,6 @@ class RecipientProfileRepositoryIntegrationTest {
 
         List<RecipientProfile> candidates =
                 profileRepository.findDispatchCandidates(
-                        RecipientProfileStatus.PENDING,
                         now.minusHours(1),
                         now.minusHours(6),
                         PageRequest.of(0, 100)
@@ -176,12 +175,10 @@ class RecipientProfileRepositoryIntegrationTest {
                 .extracting(RecipientProfile::getId)
                 .containsExactlyInAnyOrder(
                         quietPeriodDue.getId(),
-                        maxWindowDue.getId()
-                )
-                .doesNotContain(
-                        notDue.getId(),
+                        maxWindowDue.getId(),
                         pending.getId()
-                );
+                )
+                .doesNotContain(notDue.getId());
     }
 
     @Test

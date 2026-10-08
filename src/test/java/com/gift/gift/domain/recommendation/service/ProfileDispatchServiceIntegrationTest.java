@@ -75,7 +75,10 @@ class ProfileDispatchServiceIntegrationTest {
         dislikeRepository.deleteAll();
         categoryRepository.deleteAll();
         userRepository.deleteAll();
+
         reset(aiProfilingClient);
+        when(aiProfilingClient.isHealthy()).thenReturn(true);
+
         setCurrentTime(NOW);
     }
 

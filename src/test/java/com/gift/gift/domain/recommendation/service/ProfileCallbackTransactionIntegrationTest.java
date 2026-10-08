@@ -160,8 +160,9 @@ class ProfileCallbackTransactionIntegrationTest {
 
             profile.createNextSourceVersion();
             profile.markPending(PENDING_AT);
-            profile.increaseRetryCount();
             profile.recordPreferenceChange(PENDING_AT);
+            profile.restartDebounce(PENDING_AT);
+            profile.increaseRetryCount();
         });
 
         beforeCallback = snapshot();
@@ -170,6 +171,7 @@ class ProfileCallbackTransactionIntegrationTest {
                 .isEqualTo(RecipientProfileStatus.PENDING);
         assertThat(beforeCallback.sourceVersion()).isEqualTo(2);
         assertThat(beforeCallback.analyzedSourceVersion()).isEqualTo(1);
+        assertThat(beforeCallback.retryCount()).isEqualTo(1);
         assertThat(beforeCallback.recommendations()).hasSize(2);
     }
 
@@ -240,7 +242,8 @@ class ProfileCallbackTransactionIntegrationTest {
         assertThat(after.sourceVersion()).isEqualTo(2);
         assertThat(after.analyzedSourceVersion()).isEqualTo(2);
         assertThat(after.pendingSince()).isNull();
-        assertThat(after.retryCount()).isZero();
+        // 변경 대기가 남아 있으므로 늦은 완료 콜백도 재시작 횟수를 보존한다.
+        assertThat(after.retryCount()).isEqualTo(1);
 
         assertThat(after.recommendations())
                 .extracting(RecommendationRow::productId)
