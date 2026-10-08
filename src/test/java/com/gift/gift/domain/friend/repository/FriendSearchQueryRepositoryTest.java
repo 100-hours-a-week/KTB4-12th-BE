@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.friend.entity.Friend;
+import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 
@@ -32,7 +32,7 @@ class FriendSearchQueryRepositoryTest {
     private FriendQueryRepository friendQueryRepository;
 
     @Autowired
-    private FriendRepository friendRepository;
+    private FriendshipRepository friendRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -155,14 +155,14 @@ class FriendSearchQueryRepositoryTest {
 
         friend(owner, active);
 
-        Friend deletedRelation =
+        Friendship deletedRelation =
                 friend(owner, deletedRelationUser);
 
         friend(owner, inactive);
         friend(owner, withdrawn);
 
         jdbcTemplate.update(
-                "UPDATE friends SET deleted_at = ? WHERE id = ?",
+                "UPDATE friendships SET deleted_at = ? WHERE id = ?",
                 LocalDateTime.of(2026, 9, 23, 12, 0),
                 deletedRelation.getId()
         );
@@ -194,12 +194,12 @@ class FriendSearchQueryRepositoryTest {
                 .containsExactly(active.getId());
     }
 
-    private Friend friend(
+    private Friendship friend(
             User owner,
             User friendUser
     ) {
         return friendRepository.saveAndFlush(
-                new Friend(owner, friendUser)
+                new Friendship(owner, friendUser)
         );
     }
 

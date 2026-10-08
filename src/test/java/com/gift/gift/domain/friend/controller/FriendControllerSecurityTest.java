@@ -13,8 +13,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.friend.entity.Friend;
-import com.gift.gift.domain.friend.repository.FriendRepository;
+import com.gift.gift.domain.friend.entity.Friendship;
+import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 
@@ -38,7 +38,7 @@ class FriendControllerSecurityTest {
     private UserRepository userRepository;
 
     @Autowired
-    private FriendRepository friendRepository;
+    private FriendshipRepository friendRepository;
 
     @BeforeAll
     static void initializePasswordHash() {
@@ -63,9 +63,9 @@ class FriendControllerSecurityTest {
         User first = persistedUser("김가나");
         User stranger = persistedUser("김낯선");
         User strangersFriend = persistedUser("김다라");
-        friendRepository.saveAndFlush(new Friend(owner, second));
-        friendRepository.saveAndFlush(new Friend(owner, first));
-        friendRepository.saveAndFlush(new Friend(stranger, strangersFriend));
+        friendRepository.saveAndFlush(new Friendship(owner, second));
+        friendRepository.saveAndFlush(new Friendship(owner, first));
+        friendRepository.saveAndFlush(new Friendship(stranger, strangersFriend));
 
         mockMvc.perform(get("/friends")
                         .with(jwt().jwt(token -> token.subject(owner.getId().toString()))))

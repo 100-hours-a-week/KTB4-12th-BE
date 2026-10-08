@@ -12,11 +12,11 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import com.gift.gift.domain.friend.dto.request.FriendCreateRequest;
 import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
-import com.gift.gift.domain.friend.entity.Friend;
+import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
-import com.gift.gift.domain.friend.repository.FriendRepository;
+import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;
@@ -37,7 +37,7 @@ class FriendCreateServiceTest {
     private static final Long FRIEND_USER_ID = 2L;
 
     private FriendQueryRepository friendQueryRepository;
-    private FriendRepository friendRepository;
+    private FriendshipRepository friendRepository;
     private UserRepository userRepository;
     private OpaqueCursorCodec cursorCodec;
     private FriendPageAssembler pageAssembler;
@@ -48,7 +48,7 @@ class FriendCreateServiceTest {
         friendQueryRepository =
                 mock(FriendQueryRepository.class);
         friendRepository =
-                mock(FriendRepository.class);
+                mock(FriendshipRepository.class);
         userRepository =
                 mock(UserRepository.class);
         cursorCodec =
@@ -183,7 +183,7 @@ class FriendCreateServiceTest {
         );
 
         when(friendRepository
-                .existsByUser_IdAndFriendUser_IdAndDeletedAtIsNull(
+                .existsByUser1_IdAndUser2_IdAndDeletedAtIsNull(
                         USER_ID,
                         FRIEND_USER_ID
                 ))
@@ -226,13 +226,13 @@ class FriendCreateServiceTest {
         );
 
         when(friendRepository
-                .existsByUser_IdAndFriendUser_IdAndDeletedAtIsNull(
+                .existsByUser1_IdAndUser2_IdAndDeletedAtIsNull(
                         USER_ID,
                         FRIEND_USER_ID
                 ))
                 .thenReturn(false);
 
-        when(friendRepository.saveAndFlush(any(Friend.class)))
+        when(friendRepository.saveAndFlush(any(Friendship.class)))
                 .thenThrow(friendUniqueViolation());
 
         assertThatThrownBy(() ->
@@ -269,7 +269,7 @@ class FriendCreateServiceTest {
         );
 
         when(friendRepository
-                .existsByUser_IdAndFriendUser_IdAndDeletedAtIsNull(
+                .existsByUser1_IdAndUser2_IdAndDeletedAtIsNull(
                         USER_ID,
                         FRIEND_USER_ID
                 ))
@@ -287,7 +287,7 @@ class FriendCreateServiceTest {
                 .isEqualTo("친구");
 
         verify(friendRepository)
-                .saveAndFlush(any(Friend.class));
+                .saveAndFlush(any(Friendship.class));
     }
 
     @Test
@@ -308,7 +308,7 @@ class FriendCreateServiceTest {
         );
 
         when(friendRepository
-                .existsByUser_IdAndFriendUser_IdAndDeletedAtIsNull(
+                .existsByUser1_IdAndUser2_IdAndDeletedAtIsNull(
                         USER_ID,
                         FRIEND_USER_ID
                 ))
@@ -327,7 +327,7 @@ class FriendCreateServiceTest {
                 ));
 
         verify(friendRepository)
-                .saveAndFlush(any(Friend.class));
+                .saveAndFlush(any(Friendship.class));
     }
 
     private void stubActiveUsers(
@@ -360,7 +360,7 @@ class FriendCreateServiceTest {
                 new ConstraintViolationException(
                         "친구 관계 Unique 제약조건 위반",
                         sqlException,
-                        "uk_friends_user_friend_user"
+                        "uk_friendships_pair"
                 );
 
         return new DataIntegrityViolationException(

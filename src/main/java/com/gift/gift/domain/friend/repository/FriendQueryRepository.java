@@ -24,9 +24,12 @@ public class FriendQueryRepository {
                 friendUser.birth,
                 friendUser.isBirthdayPublic
             )
-            FROM Friend f
-            JOIN f.friendUser friendUser
-            WHERE f.user.id = :userId
+            FROM Friendship f
+            JOIN User friendUser ON (
+                (f.user1.id = :userId AND friendUser.id = f.user2.id)
+                OR (f.user2.id = :userId AND friendUser.id = f.user1.id)
+            )
+            WHERE (f.user1.id = :userId OR f.user2.id = :userId)
                 AND f.deletedAt IS NULL
                 AND friendUser.status = com.gift.gift.domain.user.entity.UserStatus.ACTIVE
                 AND friendUser.deletedAt IS NULL

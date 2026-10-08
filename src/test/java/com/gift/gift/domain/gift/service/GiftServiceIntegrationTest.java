@@ -25,7 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import com.gift.gift.domain.friend.entity.Friend;
+import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.product.entity.Category;
@@ -77,7 +77,7 @@ class GiftServiceIntegrationTest {
             entityManager.persist(sender);
             entityManager.persist(recipient);
             entityManager.persist(product);
-            entityManager.persist(new Friend(sender, recipient));
+            entityManager.persist(new Friendship(sender, recipient));
             entityManager.flush();
 
             rootCategoryId = rootCategory.getId();
@@ -94,7 +94,7 @@ class GiftServiceIntegrationTest {
         jdbcTemplate.update(
                 "DELETE FROM notifications WHERE recipient_id IN (?, ?)", senderId, recipientId);
         jdbcTemplate.update("DELETE FROM gift_histories WHERE sender_id = ?", senderId);
-        jdbcTemplate.update("DELETE FROM friends WHERE user_id = ?", senderId);
+        jdbcTemplate.update("DELETE FROM friendships WHERE user_id_1 = ? OR user_id_2 = ?", senderId, senderId);
         jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
         jdbcTemplate.update("DELETE FROM categories WHERE id = ?", leafCategoryId);
         jdbcTemplate.update("DELETE FROM categories WHERE id = ?", rootCategoryId);

@@ -19,8 +19,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
-import com.gift.gift.domain.friend.entity.Friend;
-import com.gift.gift.domain.friend.repository.FriendRepository;
+import com.gift.gift.domain.friend.entity.Friendship;
+import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.pagination.CursorPageResponse;
@@ -37,7 +37,7 @@ class FriendServiceIntegrationTest {
     private FriendService friendService;
 
     @Autowired
-    private FriendRepository friendRepository;
+    private FriendshipRepository friendRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -103,7 +103,7 @@ class FriendServiceIntegrationTest {
         return IntStream.range(0, count)
                 .mapToObj(index -> {
                     User friendUser = persistedUser("이" + (char) ('가' + index));
-                    friendRepository.saveAndFlush(new Friend(owner, friendUser));
+                    friendRepository.saveAndFlush(new Friendship(owner, friendUser));
 
                     return friendUser.getId();
                 })

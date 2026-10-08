@@ -10,13 +10,13 @@ import org.springframework.transaction.annotation.Transactional;
 import com.gift.gift.domain.friend.dto.request.FriendCreateRequest;
 import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
-import com.gift.gift.domain.friend.entity.Friend;
+import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.friend.exception.FriendErrorCode;
 import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.query.FriendPage;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
-import com.gift.gift.domain.friend.repository.FriendRepository;
+import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.friend.support.FriendCursor;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
@@ -34,7 +34,7 @@ import com.gift.gift.global.pagination.OpaqueCursorCodec;
 public class FriendService {
 
     private final FriendQueryRepository friendQueryRepository;
-    private final FriendRepository friendRepository;
+    private final FriendshipRepository friendRepository;
     private final UserRepository userRepository;
     private final OpaqueCursorCodec cursorCodec;
     private final FriendPageAssembler pageAssembler;
@@ -220,9 +220,9 @@ public class FriendService {
     ) {
         boolean alreadyExists =
                 friendRepository
-                        .existsByUser_IdAndFriendUser_IdAndDeletedAtIsNull(
-                                userId,
-                                friendUserId
+                        .existsByUser1_IdAndUser2_IdAndDeletedAtIsNull(
+                                Math.min(userId, friendUserId),
+                                Math.max(userId, friendUserId)
                         );
 
         if (alreadyExists) {
@@ -238,7 +238,7 @@ public class FriendService {
     ) {
         try {
             friendRepository.saveAndFlush(
-                    new Friend(
+                    new Friendship(
                             user,
                             friendUser
                     )
@@ -283,7 +283,7 @@ public class FriendService {
                             );
                 }
 
-                return "uk_friends_user_friend_user"
+                return "uk_friendships_pair"
                         .equalsIgnoreCase(normalizedName)
                         && violation.getSQLException()
                         .getErrorCode() == 1062;

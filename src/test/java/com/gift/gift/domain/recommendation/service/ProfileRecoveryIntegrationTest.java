@@ -13,7 +13,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import com.gift.gift.domain.friend.entity.Friend;
+import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
 import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
@@ -62,7 +62,7 @@ class ProfileRecoveryIntegrationTest {
             User recipient = user();
             ownerId = owner.getId();
             recipientId = recipient.getId();
-            entityManager.persist(new Friend(owner, recipient));
+            entityManager.persist(new Friendship(owner, recipient));
             Category root = new Category("복구-" + UUID.randomUUID(), null);
             entityManager.persist(root);
             rootId = root.getId();
@@ -83,7 +83,7 @@ class ProfileRecoveryIntegrationTest {
             sql("DELETE FROM recipient_recommended_products WHERE recipient_id = :id", recipientId);
             sql("DELETE FROM recipient_profiles WHERE recipient_id = :id", recipientId);
             sql("DELETE FROM user_dislike_categories WHERE user_id = :id", recipientId);
-            sql("DELETE FROM friends WHERE user_id = :id OR friend_user_id = :id", ownerId);
+            sql("DELETE FROM friendships WHERE user_id_1 = :id OR user_id_2 = :id", ownerId);
             sql("DELETE FROM products WHERE id = :id", firstId);
             sql("DELETE FROM products WHERE id = :id", secondId);
             sql("DELETE FROM categories WHERE id = :id", childId);
