@@ -1,5 +1,6 @@
 package com.gift.gift.domain.friend.entity;
 
+import java.time.LocalDateTime;
 import java.util.Objects;
 
 import jakarta.persistence.*;
@@ -35,6 +36,9 @@ public class FriendRequest extends BaseTimeEntity {
     @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private FriendRequestStatus status;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     public FriendRequest(User requester, User receiver) {
         this.requester = Objects.requireNonNull(requester, "requester must not be null");

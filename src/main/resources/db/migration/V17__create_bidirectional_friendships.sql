@@ -19,6 +19,7 @@ CREATE TABLE friend_requests (
     status VARCHAR(20) NOT NULL,
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL,
+    deleted_at DATETIME(6) NULL,
     pending_user_id_1 BIGINT GENERATED ALWAYS AS
         (CASE WHEN status = 'PENDING' THEN LEAST(requester_id, receiver_id) ELSE NULL END) STORED,
     pending_user_id_2 BIGINT GENERATED ALWAYS AS

@@ -49,6 +49,7 @@ class FriendRequestRepositoryTest {
         assertThat(found.getStatus()).isEqualTo(FriendRequestStatus.PENDING);
         assertThat(found.getCreatedAt()).isNotNull();
         assertThat(found.getUpdatedAt()).isNotNull();
+        assertThat(found.getDeletedAt()).isNull();
     }
 
     @Test
