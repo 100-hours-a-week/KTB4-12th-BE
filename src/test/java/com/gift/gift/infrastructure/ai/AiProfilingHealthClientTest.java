@@ -32,13 +32,14 @@ class AiProfilingHealthClientTest {
     @BeforeEach
     void setUp() {
         AiProfilingProperties properties = new AiProfilingProperties(
-                URI.create(BASE_URL),
-                "secret-token",
-                Duration.ofSeconds(3),
-                Duration.ofSeconds(10),
+                URI.create("http://ai.example.test"),
+                "test-token",
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1),
                 Duration.ofHours(1),
                 Duration.ofHours(6),
-                100
+                100,
+                0
         );
 
         AiProfilingClientConfig config = new AiProfilingClientConfig();

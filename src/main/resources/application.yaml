@@ -61,6 +61,7 @@ app:
     quiet-period: 1h
     maximum-window: 6h
     batch-size: ${AI_PROFILE_BATCH_SIZE:100}
+    recovery-batch-size: ${AI_PROFILE_RECOVERY_BATCH_SIZE:50}
     dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
 
   bug-report:

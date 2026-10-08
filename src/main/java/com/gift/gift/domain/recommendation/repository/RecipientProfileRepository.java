@@ -80,6 +80,22 @@ public interface RecipientProfileRepository
     );
 
     @Query("""
+            select profile.id
+            from RecipientProfile profile
+            where profile.profileStatus = :pendingStatus
+              and profile.pendingSince <= :pendingCutoff
+              and profile.lastChangedAt is null
+            order by profile.pendingSince asc, profile.id asc
+            """)
+    List<Long> findRecoveryCandidateIds(
+            @Param("pendingStatus")
+            RecipientProfileStatus pendingStatus,
+            @Param("pendingCutoff")
+            LocalDateTime pendingCutoff,
+            Pageable pageable
+    );
+
+    @Query("""
             select profile
             from RecipientProfile profile
             where profile.profileStatus = :pendingStatus

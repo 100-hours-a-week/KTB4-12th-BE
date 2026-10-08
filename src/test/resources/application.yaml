@@ -67,6 +67,7 @@ app:
     quiet-period: 1h
     maximum-window: 6h
     batch-size: 100
+    recovery-batch-size: 50
     dispatch-interval: 1h
 
 sentry:

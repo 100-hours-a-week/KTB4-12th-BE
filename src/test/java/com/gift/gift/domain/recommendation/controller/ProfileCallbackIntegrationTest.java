@@ -195,55 +195,86 @@ class ProfileCallbackIntegrationTest {
     }
 
     @Test
-    @DisplayName("존재하지 않는 상품이 하나라도 있으면 전체 요청을 거부한다")
-    void callback_rejectsMissingProduct() throws Exception {
-        send(
-                recipientId,
-                1,
-                List.of(productIds.getFirst(), Long.MAX_VALUE)
-        )
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code")
-                        .value("INVALID_REQUEST"));
+    @DisplayName("없는 상품은 제외하고 입력 순서대로 연속 순위를 저장한다")
+    void callback_dropsMissingProduct() throws Exception {
+        send(recipientId, 1, List.of(
+                productIds.getFirst(), Long.MAX_VALUE, productIds.getLast()
+        )).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
 
-        assertThat(recommendations()).isEmpty();
-
-        RecipientProfile profile = profileRepository
-                .findByRecipient_Id(recipientId)
-                .orElseThrow();
-
-        assertThat(profile.getProfileStatus())
-                .isEqualTo(RecipientProfileStatus.PENDING);
-        assertThat(profile.getAnalyzedSourceVersion()).isZero();
-        assertThat(profile.getPendingSince()).isEqualTo(PENDING_AT);
-        assertThat(profile.getRetryCount()).isEqualTo(1);
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(recommendations())
+                .extracting(row -> row.getProduct().getId())
+                .containsExactlyElementsOf(productIds);
+        assertThat(recommendations())
+                .extracting(RecipientRecommendedProduct::getRankOrder)
+                .containsExactly(1, 2);
+        assertCompleted();
     }
 
     @Test
-    @DisplayName("삭제된 상품은 INVALID_REQUEST로 거부한다")
-    void callback_rejectsDeletedProduct() throws Exception {
-        entityManager.createNativeQuery("""
-                        UPDATE products
-                        SET deleted_at = CURRENT_TIMESTAMP(6)
-                        WHERE id = :id
-                        """)
-                .setParameter("id", productIds.getFirst())
-                .executeUpdate();
-
+    @DisplayName("삭제된 상품을 제외하고 남은 상품을 순위 1로 저장한다")
+    void callback_dropsDeletedProduct() throws Exception {
+        entityManager.createNativeQuery("UPDATE products SET deleted_at = NOW(6) WHERE id = :id")
+                .setParameter("id", productIds.getFirst()).executeUpdate();
         entityManager.clear();
 
-        send(recipientId, 1, productIds)
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code")
-                        .value("INVALID_REQUEST"));
+        send(recipientId, 1, productIds).andExpect(status().isOk());
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(recommendations()).extracting(row -> row.getProduct().getId())
+                .containsExactly(productIds.getLast());
+        assertThat(recommendations()).extracting(RecipientRecommendedProduct::getRankOrder)
+                .containsExactly(1);
+        assertCompleted();
+    }
 
+    @Test
+    @DisplayName("전부 제외된 결과는 기존 추천을 삭제하고 0행으로 완료한다")
+    void callback_completesWhenAllProductsDropped() throws Exception {
+        RecipientProfile profile = profileRepository.findByRecipient_Id(recipientId).orElseThrow();
+        recommendationRepository.saveAllAndFlush(List.of(new RecipientRecommendedProduct(
+                profile, productRepository.findById(productIds.getFirst()).orElseThrow(), 1, 1
+        )));
+
+        send(recipientId, 1, List.of(Long.MAX_VALUE)).andExpect(status().isOk());
+        entityManager.flush();
+        entityManager.clear();
         assertThat(recommendations()).isEmpty();
+        assertCompleted();
+    }
 
-        assertThat(profileRepository
-                .findByRecipient_Id(recipientId)
-                .orElseThrow()
-                .getProfileStatus())
-                .isEqualTo(RecipientProfileStatus.PENDING);
+    @Test
+    @DisplayName("30개 중 없는 상품 하나는 제외하고 29행의 연속 순위를 저장한다")
+    void callback_saves29Of30Products() throws Exception {
+        Category category = productRepository.findById(productIds.getFirst()).orElseThrow().getCategory();
+        java.util.ArrayList<Long> validIds = new java.util.ArrayList<>(productIds);
+        for (int index = validIds.size(); index < 29; index++) {
+            validIds.add(productRepository.saveAndFlush(new Product(
+                    category, "상품" + index, "브랜드", null, BigDecimal.valueOf(10000), 10
+            )).getId());
+        }
+        java.util.Collections.reverse(validIds);
+        java.util.ArrayList<Long> requested = new java.util.ArrayList<>(validIds);
+        requested.add(15, Long.MAX_VALUE);
+
+        send(recipientId, 1, requested).andExpect(status().isOk());
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(recommendations()).extracting(row -> row.getProduct().getId())
+                .containsExactlyElementsOf(validIds);
+        assertThat(recommendations()).extracting(RecipientRecommendedProduct::getRankOrder)
+                .containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1, 29).boxed().toList());
+        assertCompleted();
+    }
+
+    private void assertCompleted() {
+        RecipientProfile profile = profileRepository.findByRecipient_Id(recipientId).orElseThrow();
+        assertThat(profile.getProfileStatus()).isEqualTo(RecipientProfileStatus.COMPLETED);
+        assertThat(profile.getAnalyzedSourceVersion()).isEqualTo(1);
+        assertThat(profile.getPendingSince()).isNull();
+        assertThat(profile.getRetryCount()).isZero();
     }
 
     @Test
