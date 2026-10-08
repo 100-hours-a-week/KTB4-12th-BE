@@ -452,6 +452,100 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "preferences (인증 필요)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "내 선물 취향 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preferences"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "내 선물 취향 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preferences"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"preference\":\"책과 실용적인 선물을 좋아해요\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "내 선물 취향 비우기",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preferences"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"preference\":null}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
