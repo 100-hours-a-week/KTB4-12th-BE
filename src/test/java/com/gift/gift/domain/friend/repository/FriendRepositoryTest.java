@@ -128,6 +128,8 @@ class FriendRepositoryTest {
         User second = persistedUser();
         Friendship saved = friendRepository.saveAndFlush(new Friendship(first, second));
         Long id = saved.getId();
+        entityManager.clear();
+        saved = friendRepository.findById(id).orElseThrow();
         LocalDateTime createdAt = saved.getCreatedAt();
         saved.remove(LocalDateTime.now());
         friendRepository.flush();
