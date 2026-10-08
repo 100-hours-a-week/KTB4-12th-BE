@@ -66,7 +66,8 @@ class ProfileDispatchPolicyTest {
                 Duration.ofSeconds(1),
                 Duration.ofHours(1),
                 Duration.ofHours(6),
-                100
+                100,
+                0
         );
 
         setTime(NOW);

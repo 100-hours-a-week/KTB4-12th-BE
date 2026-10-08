@@ -331,20 +331,48 @@ class ProfileCallbackTransactionIntegrationTest {
     }
 
     @Test
-    @DisplayName("잘못된 상품이 포함되면 기존 추천과 프로파일을 유지한다")
-    void callback_preservesExistingResultsForInvalidProduct()
-            throws Exception {
+    @DisplayName("없는 상품은 제외하고 유효 추천과 프로파일 완료를 커밋한다")
+    void callback_commitsPartialResults() throws Exception {
+        send(2, List.of(productIds.get(2), Long.MAX_VALUE))
+                .andExpect(status().isOk());
 
-        send(
-                2,
-                List.of(productIds.get(2), Long.MAX_VALUE)
-        )
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code")
-                        .value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.error.traceId").isNotEmpty());
+        Snapshot after = snapshot();
+        assertThat(after.profileStatus()).isEqualTo(RecipientProfileStatus.COMPLETED);
+        assertThat(after.analyzedSourceVersion()).isEqualTo(2);
+        assertThat(after.recommendations()).extracting(RecommendationRow::productId)
+                .containsExactly(productIds.get(2));
+        assertThat(after.recommendations()).extracting(RecommendationRow::rankOrder)
+                .containsExactly(1);
+        assertThat(after.lastChangedAt()).isEqualTo(beforeCallback.lastChangedAt());
+        assertThat(after.retryCount()).isEqualTo(beforeCallback.retryCount());
+    }
 
-        assertThat(snapshot()).isEqualTo(beforeCallback);
+    @Test
+    @DisplayName("저장본보다 새롭지만 현재 번호보다 낮은 콜백은 최신 PENDING을 유지한다")
+    void callback_savesIntermediateVersionWithoutChangingLatestState() throws Exception {
+        transactions.executeWithoutResult(status -> {
+            RecipientProfile profile = profileRepository.findByRecipientIdForUpdate(recipientId).orElseThrow();
+            profile.createNextSourceVersion();
+            profile.markPending(PENDING_AT.plusHours(1));
+        });
+        Snapshot latest = snapshot();
+        send(2, replacementProductIds()).andExpect(status().isOk());
+        Snapshot after = snapshot();
+        assertThat(after.sourceVersion()).isEqualTo(3);
+        assertThat(after.analyzedSourceVersion()).isEqualTo(2);
+        assertThat(after.profileStatus()).isEqualTo(latest.profileStatus());
+        assertThat(after.pendingSince()).isEqualTo(latest.pendingSince());
+        assertThat(after.lastChangedAt()).isEqualTo(latest.lastChangedAt());
+        assertThat(after.retryCount()).isEqualTo(latest.retryCount());
+    }
+
+    @Test
+    @DisplayName("저장본보다 오래된 콜백은 409이며 저장 결과를 유지한다")
+    void callback_rejectsOlderThanSavedVersion() throws Exception {
+        send(2, replacementProductIds()).andExpect(status().isOk());
+        Snapshot saved = snapshot();
+        send(1, productIds).andExpect(status().isConflict());
+        assertThat(snapshot()).isEqualTo(saved);
     }
 
     @Test

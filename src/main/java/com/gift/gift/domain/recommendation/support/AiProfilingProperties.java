@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.Objects;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 
 @ConfigurationProperties(prefix = "app.ai-profile")
 public record AiProfilingProperties(
@@ -14,11 +15,15 @@ public record AiProfilingProperties(
         Duration readTimeout,
         Duration quietPeriod,
         Duration maximumWindow,
-        int batchSize
+        int batchSize,
+        @DefaultValue("50") int recoveryBatchSize
 ) {
 
     public AiProfilingProperties {
-        Objects.requireNonNull(baseUrl, "AI Base URL은 필수입니다.");
+        Objects.requireNonNull(
+                baseUrl,
+                "AI Base URL은 필수입니다."
+        );
         Objects.requireNonNull(
                 serviceToken,
                 "AI 서비스 토큰은 필수입니다."
@@ -72,7 +77,19 @@ public record AiProfilingProperties(
 
         if (batchSize < 1) {
             throw new IllegalArgumentException(
-                    "Batch 크기는 1 이상이어야 합니다."
+                    "일반 Batch 크기는 1 이상이어야 합니다."
+            );
+        }
+
+        if (recoveryBatchSize < 0) {
+            throw new IllegalArgumentException(
+                    "복구 Batch 크기는 0 이상이어야 합니다."
+            );
+        }
+
+        if ((long) batchSize + recoveryBatchSize > 200) {
+            throw new IllegalArgumentException(
+                    "일반 Batch와 복구 Batch의 합계는 200 이하여야 합니다."
             );
         }
     }

@@ -11,11 +11,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.gift.gift.domain.recommendation.dto.response.AiProfileAcceptedResponse;
+import com.gift.gift.domain.recommendation.entity.RecipientProfileStatus;
 import com.gift.gift.domain.recommendation.exception.AiProfilingClientException;
 import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
 import com.gift.gift.domain.recommendation.service.ProfileDispatchTransactionService.FailedDispatchResult;
+import com.gift.gift.domain.recommendation.service.ProfileDispatchTransactionService.RecoveryDispatchResult;
 import com.gift.gift.domain.recommendation.support.AiProfilingProperties;
 import com.gift.gift.domain.recommendation.support.PreparedProfileDispatch;
+import com.gift.gift.domain.recommendation.support.PreparedRecoveryDispatch;
 import com.gift.gift.infrastructure.ai.AiProfilingClient;
 
 @Slf4j
@@ -47,7 +50,26 @@ public class ProfileDispatchService {
 
         for (Long profileId : profileIds) {
             if (!dispatchOne(profileId)) {
-                // PR 5-2에서 복구 루프를 추가해도 이 return을 유지한다.
+                return;
+            }
+        }
+
+        if (properties.recoveryBatchSize() == 0) {
+            return;
+        }
+
+        LocalDateTime recoveryCutoff = LocalDateTime.now(clock)
+                .minus(properties.maximumWindow());
+
+        List<Long> recoveryIds =
+                recipientProfileRepository.findRecoveryCandidateIds(
+                        RecipientProfileStatus.PENDING,
+                        recoveryCutoff,
+                        PageRequest.of(0, properties.recoveryBatchSize())
+                );
+
+        for (Long profileId : recoveryIds) {
+            if (!recoverOne(profileId)) {
                 return;
             }
         }
@@ -65,14 +87,11 @@ public class ProfileDispatchService {
         PreparedProfileDispatch dispatch = prepared.get();
         AiProfileAcceptedResponse response;
 
-        // HTTP 및 클라이언트 처리만 이 예외 처리 범위에 포함한다.
         try {
             response = aiProfilingClient.requestProfiling(
                     dispatch.request()
             );
         } catch (AiProfilingClientException exception) {
-            // 실패 반영의 DB 오류는 전파된다.
-            // 트랜잭션이 커밋된 뒤에만 처리 결과를 기록한다.
             FailedDispatchResult result =
                     transactionService.applyFailedDispatch(dispatch);
 
@@ -86,12 +105,52 @@ public class ProfileDispatchService {
                     result
             );
 
-            // 일반 실패 재시작 대상과 틱 중단 기준은 구분한다.
             return !exception.isRetryable();
         }
 
-        // DB 오류를 HTTP 실패로 취급하거나 삼키지 않는다.
         transactionService.applyAcceptedResponse(dispatch, response);
+        return true;
+    }
+
+    private boolean recoverOne(Long profileId) {
+        Optional<PreparedRecoveryDispatch> prepared = transactionService.prepareRecovery(profileId);
+
+        if (prepared.isEmpty()) {
+            return true;
+        }
+
+        PreparedRecoveryDispatch dispatch = prepared.get();
+
+        try {
+            // 기존 클라이언트가 202와 응답 수신자·번호·상태를 검증한다.
+            aiProfilingClient.requestProfiling(dispatch.request());
+        } catch (AiProfilingClientException exception) {
+            RecoveryDispatchResult result =
+                    transactionService.applyRecoveryResult(dispatch);
+
+            log.warn(
+                    "AI 프로파일링 복구 요청 실패. "
+                            + "recipientUserId={}, sourceVersion={}, "
+                            + "failureType={}, action={}",
+                    dispatch.recipientUserId(),
+                    dispatch.sourceVersion(),
+                    exception.getFailureType(),
+                    result
+            );
+
+            return !exception.isRetryable();
+        }
+
+        RecoveryDispatchResult result = transactionService.applyRecoveryResult(dispatch);
+
+        log.info(
+                "AI 프로파일링 복구 요청 접수. "
+                        + "recipientUserId={}, sourceVersion={}, action={}",
+                dispatch.recipientUserId(),
+                dispatch.sourceVersion(),
+                result
+        );
+
         return true;
     }
 }

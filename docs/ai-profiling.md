@@ -1,6 +1,6 @@
 # AI 프로파일링 일반 전송·실패 처리 — PR 5-1
 
-기준일: 2026-10-07. 구현 이슈는 #170이며 현재 부모 이슈는 같은 BE 저장소의 #87(상품 탐색에 AI 추천순 적용)이다. 이 문서는 현재 구현의 운영 동작을 설명한다. 같은 번호 복구·상품 제외 저장은 PR 5-2 예정이며 `/ready`는 채택하지 않았다.
+기준일: 2026-10-07. 구현 이슈는 #170이며 현재 부모 이슈는 같은 BE 저장소의 #87(상품 탐색에 AI 추천순 적용)이다. 이 문서는 현재 구현의 운영 동작을 설명한다. 같은 번호 복구·상품 제외 저장도 PR 5-2 로컬 구현에 반영됐으며 `/ready`는 채택하지 않았다.
 
 ## 전송 흐름
 
@@ -45,6 +45,7 @@
 | maximum-window | 6h. 최초 변경 창 이후 최대 대기. 실패 재시작은 창도 다시 시작 |
 | dispatch-interval | 1m, AI_PROFILE_DISPATCH_INTERVAL |
 | batch-size | 100, AI_PROFILE_BATCH_SIZE |
+| recovery-batch-size | 50, AI_PROFILE_RECOVERY_BATCH_SIZE. 0이면 복구 생략 |
 | POST connect-timeout / read-timeout | 3s / 10s, AI_PROFILE_CONNECT_TIMEOUT / AI_PROFILE_READ_TIMEOUT |
 | health 연결·읽기 타임아웃 | 각각 min(기존 설정, 2s). 토큰 없는 별도 RestClient |
 | scheduling-enabled | false. 실행 환경에서 명시적으로 활성화 |
@@ -65,3 +66,17 @@ quiet-period와 maximum-window는 기존 Spring 설정으로 재정의할 수 �
 - AiProfilingHealthClientTest·AiProfilingClientTest와 기존 엔티티·Repository 테스트는 상태 판정·오류 분류·PENDING 후보·늦은 응답 보호를 확인한다.
 
 이 테스트 결과는 실제 AI 서버의 보관 결과 재전송·같은 번호 재분석 계약 검증을 대신하지 않는다. PR의 대상 브랜치는 develop이며 이슈는 병합과 완료 조건 확인 후 종료한다.
+
+## PR 5-2 복구·콜백 저장
+
+일반 전송 후 변경 없는 오래된 PENDING을 pending_since·ID 순서로 조회하고 행 잠금 안에서 재검증한다. PreparedRecoveryDispatch는 같은 번호와 대기 시각 스냅샷을 보관한다. HTTP는 트랜잭션 밖에서 호출하고 성공·실패 모두 같은 번호의 PENDING과 대기 스냅샷이 일치할 때 pending_since만 갱신한다. retry_count와 신규 변경 시각은 유지한다.
+
+AI_PROFILE_RECOVERY_BATCH_SIZE 기본 50, 0이면 복구 생략. 일반·복구 Batch 합계는 첨부 기준 200 이하로 검증한다. 여러 인스턴스 합산이나 실제 AI 대기열 잔량 제어는 별도다. 복구 간격은 maximum-window(기본 6h)이며 누적 복구 횟수 제한은 없다. 일반 전송의 틱 중단을 우회하지 않는다.
+
+콜백은 없는·삭제된 상품만 제외하고 입력 순서대로 rank_order를 1부터 다시 매긴다. 전부 제외·빈 배열도 기존 추천을 삭제하고 0행·COMPLETED로 저장한다. 중간 번호 콜백은 최신 요청 상태를 유지하며 같은 번호는 멱등 성공, 저장본보다 오래된 번호는 409다. 삭제·저장·상태 변경은 한 트랜잭션이며 실제 DB 오류는 전체 롤백한다.
+
+제외 ID·수신자·번호는 WARN으로 기록하고 응답은 data: {}를 유지한다. DTO 검증과 DB FK·UNIQUE는 유지한다. 새 Migration은 없다. 실제 AI 계약 일치와 다중 실행자 선점은 별도 범위다.
+
+### PR 5-2 최종 검증 — 2026-10-07
+
+운영·테스트 컴파일과 전체 테스트 1,122개가 통과했다. 실패·오류·건너뜀은 0개다. 관련 테스트 144개 통과 후 설정 경계 테스트와 전체 실행 시 후보 데이터 간섭 보완을 포함해 다시 검증했다. 외부 AI 호출은 Stub으로 대체하고 실제 MySQL DB를 사용했다. 실제 AI 서버 계약 검증은 수행하지 않았다.

@@ -8,6 +8,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,7 @@ import com.gift.gift.domain.recommendation.exception.RecommendationException;
 import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
 import com.gift.gift.domain.recommendation.repository.RecipientRecommendedProductRepository;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ProfileCallbackService {
@@ -63,30 +65,33 @@ public class ProfileCallbackService {
                         Function.identity()
                 ));
 
-        if (productsById.size() != recommendedProductIds.size()) {
-            throw new RecommendationException(
-                    RecommendationErrorCode.INVALID_RECOMMENDED_PRODUCT
-            );
+        List<Long> droppedProductIds = new ArrayList<>();
+        List<RecipientRecommendedProduct> recommendations =
+                new ArrayList<>(recommendedProductIds.size());
+
+        for (Long productId : recommendedProductIds) {
+            Product product = productsById.get(productId);
+            if (product == null) {
+                droppedProductIds.add(productId);
+                continue;
+            }
+            recommendations.add(new RecipientRecommendedProduct(
+                    profile, product, recommendations.size() + 1, sourceVersion
+            ));
         }
 
         recommendationRepository.deleteAllByRecipientId(pathRecipientId);
 
-        List<RecipientRecommendedProduct> recommendations =
-                new ArrayList<>(recommendedProductIds.size());
-
-        for (int index = 0; index < recommendedProductIds.size(); index++) {
-            Long productId = recommendedProductIds.get(index);
-
-            recommendations.add(new RecipientRecommendedProduct(
-                    profile,
-                    productsById.get(productId),
-                    index + 1,
-                    sourceVersion
-            ));
-        }
-
         recommendationRepository.saveAllAndFlush(recommendations);
 
         profile.markCompleted(sourceVersion);
+
+        if (!droppedProductIds.isEmpty()) {
+            log.warn(
+                    "AI 추천 결과에서 없는·삭제된 상품을 제외했습니다. "
+                            + "recipientUserId={}, sourceVersion={}, droppedProductIds={}",
+                    pathRecipientId, sourceVersion, droppedProductIds
+            );
+        }
     }
 }

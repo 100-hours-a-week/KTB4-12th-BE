@@ -209,6 +209,71 @@ class RecipientProfileRepositoryIntegrationTest {
                 .doesNotContain(active.getId(), none.getId());
     }
 
+    @Test
+    @DisplayName("복구 후보는 변경 없는 오래된 PENDING만 대기 시각과 ID 순서로 제한 조회한다")
+    void findRecoveryCandidateIds_filtersOrdersAndLimits() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 7, 12, 0);
+
+        RecipientProfile oldest = persistPendingProfile(
+                now.minusHours(8)
+        );
+
+        RecipientProfile tiedFirst = persistPendingProfile(
+                now.minusHours(7)
+        );
+
+        RecipientProfile tiedSecond = persistPendingProfile(
+                now.minusHours(7)
+        );
+
+        RecipientProfile boundary = persistPendingProfile(
+                now.minusHours(6)
+        );
+
+        RecipientProfile recent = persistPendingProfile(
+                now.minusHours(6).plusSeconds(1)
+        );
+
+        RecipientProfile changed = persistPendingProfile(
+                now.minusHours(9)
+        );
+        changed.recordPreferenceChange(now.minusHours(2));
+
+        RecipientProfile completed = persistPendingProfile(
+                now.minusHours(9)
+        );
+        completed.markCompleted(1);
+
+        persistProfile();
+
+        profileRepository.flush();
+
+        List<Long> candidates = profileRepository.findRecoveryCandidateIds(
+                RecipientProfileStatus.PENDING,
+                now.minusHours(6),
+                PageRequest.of(0, 100)
+        );
+
+        assertThat(candidates).containsExactly(
+                oldest.getId(),
+                tiedFirst.getId(),
+                tiedSecond.getId(),
+                boundary.getId()
+        );
+
+        assertThat(candidates).doesNotContain(
+                recent.getId(),
+                changed.getId(),
+                completed.getId()
+        );
+
+        assertThat(profileRepository.findRecoveryCandidateIds(
+                RecipientProfileStatus.PENDING,
+                now.minusHours(6),
+                PageRequest.of(0, 1)
+        )).containsExactly(oldest.getId());
+    }
+
     private RecipientProfile persistPendingProfile(
             LocalDateTime pendingSince
     ) {
