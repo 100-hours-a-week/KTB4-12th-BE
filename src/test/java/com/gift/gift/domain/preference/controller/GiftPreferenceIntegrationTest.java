@@ -8,11 +8,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
-import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,9 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import tools.jackson.databind.ObjectMapper;
 
+import com.gift.gift.domain.preference.entity.UserGiftPreference;
 import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
 import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.domain.user.entity.User;
@@ -92,7 +95,7 @@ class GiftPreferenceIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("내 선물 취향을 조회했습니다."))
                 .andExpect(jsonPath("$.data.preference", nullValue()));
-        var row = preferenceRepository.findByUser_IdAndDeletedAtIsNull(owner.getId()).orElseThrow();
+        UserGiftPreference row = preferenceRepository.findByUser_IdAndDeletedAtIsNull(owner.getId()).orElseThrow();
         assertThat(row.getId()).isEqualTo(id);
         assertThat(row.getPreference()).isNull();
         assertThat(row.getDeletedAt()).isNull();
@@ -202,9 +205,9 @@ class GiftPreferenceIntegrationTest {
         User user = saveUser();
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
-        try (var executor = Executors.newFixedThreadPool(2)) {
-            var first = executor.submit(() -> concurrentSave(user.getId(), "향수", ready, start));
-            var second = executor.submit(() -> concurrentSave(user.getId(), "문구", ready, start));
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> first = executor.submit(() -> concurrentSave(user.getId(), "향수", ready, start));
+            Future<?> second = executor.submit(() -> concurrentSave(user.getId(), "문구", ready, start));
             try {
                 assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             } finally {

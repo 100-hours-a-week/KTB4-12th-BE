@@ -12,6 +12,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
@@ -104,7 +105,7 @@ class GiftServiceTest {
         ));
         assertThat(response.preferenceWarning()).isNull();
 
-        var order = inOrder(userQueryService, friendQueryService, productQueryService, preferenceQueryService);
+        InOrder order = inOrder(userQueryService, friendQueryService, productQueryService, preferenceQueryService);
         order.verify(userQueryService).findActiveUser(recipientId);
         order.verify(friendQueryService).areFriends(senderId, recipientId);
         order.verify(productQueryService).findAvailableProduct(productId);

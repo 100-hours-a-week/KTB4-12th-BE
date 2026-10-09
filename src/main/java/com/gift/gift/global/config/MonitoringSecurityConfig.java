@@ -33,7 +33,7 @@ public class MonitoringSecurityConfig {
         }
 
         // Keep monitoring credentials in this chain, outside the user JWT and AI service chains.
-        var users = new InMemoryUserDetailsManager(User.withUsername("prometheus")
+        InMemoryUserDetailsManager users = new InMemoryUserDetailsManager(User.withUsername("prometheus")
                 .password("{noop}" + password)
                 .roles("MONITORING")
                 .build());
