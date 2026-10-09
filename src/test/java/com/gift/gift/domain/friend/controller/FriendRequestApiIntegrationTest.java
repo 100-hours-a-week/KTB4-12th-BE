@@ -36,6 +36,7 @@ import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.pagination.CursorPageResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -54,6 +55,157 @@ class FriendRequestApiIntegrationTest {
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ObjectMapper mapper;
+
+    @Test
+    @DisplayName("수락은 양쪽 친구 조회에 반영되고 삭제·반복 수락·새 요청 수락은 관계 이력을 유지한다")
+    void accept_removeAndRestorePreservesRelationHistory() throws Exception {
+        User first = user();
+        User second = user();
+        Long old = pending(first, second);
+        action(second, old, "accept", 200, "ACCEPTED");
+        Friendship relation = friendships.findByUser1_IdAndUser2_Id(first.getId(), second.getId()).orElseThrow();
+        LocalDateTime createdAt = relation.getCreatedAt();
+        for (User owner : List.of(first, second)) {
+            mvc.perform(get("/friends").with(jwt().jwt(j -> j.subject(owner.getId().toString()))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.friends.length()").value(1))
+                    .andExpect(jsonPath("$.data.friends[0].friendId").value(relation.getId()));
+        }
+        mvc.perform(delete("/friends/{id}", relation.getId())
+                        .with(jwt().jwt(j -> j.subject(first.getId().toString()))))
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+        LocalDateTime deletedAt = friendships.findById(relation.getId()).orElseThrow().getDeletedAt();
+        assertThat(deletedAt).isNotNull();
+        mvc.perform(delete("/friends/{id}", relation.getId())
+                        .with(jwt().jwt(j -> j.subject(second.getId().toString()))))
+                .andExpect(status().isNoContent());
+        action(second, old, "accept", 200, "ACCEPTED");
+        assertThat(friendships.findById(relation.getId()).orElseThrow().getDeletedAt()).isEqualTo(deletedAt);
+        for (User owner : List.of(first, second)) {
+            mvc.perform(get("/friends").with(jwt().jwt(j -> j.subject(owner.getId().toString()))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.friends.length()").value(0));
+        }
+        Long next = service.create(second.getId(), new FriendRequestCreateRequest(first.getId())).requestId();
+        action(first, next, "accept", 200, "ACCEPTED");
+        Friendship restored = friendships.findById(relation.getId()).orElseThrow();
+        assertThat(restored.getDeletedAt()).isNull();
+        assertThat(restored.getCreatedAt()).isEqualTo(createdAt);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM friendships WHERE user_id_1 = ? AND user_id_2 = ?",
+                Long.class, first.getId(), second.getId())).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"accept", "reject", "cancel"})
+    @DisplayName("같은 처리는 반복 성공하며 다른 처리는 409이고 종료 이력은 보존된다")
+    void actions_areIdempotentAndRejectDifferentTerminalAction(String operation) throws Exception {
+        User first = user();
+        User second = user();
+        Long id = pending(first, second);
+        User actor = operation.equals("cancel") ? first : second;
+        String terminal = switch (operation) {
+            case "accept" -> "ACCEPTED";
+            case "reject" -> "REJECTED";
+            default -> "CANCELED";
+        };
+        action(actor, id, operation, 200, terminal);
+        LocalDateTime updatedAt = requests.findById(id).orElseThrow().getUpdatedAt();
+        action(actor, id, operation, 200, terminal);
+        assertThat(requests.findById(id).orElseThrow().getUpdatedAt()).isEqualTo(updatedAt);
+        assertThat(requests.findById(id).orElseThrow().getDeletedAt()).isNull();
+        for (String other : List.of("accept", "reject", "cancel")) {
+            if (!other.equals(operation)) {
+                action(other.equals("cancel") ? first : second, id, other, 409, "FRIEND_REQUEST_ALREADY_PROCESSED");
+            }
+        }
+        assertThat(friendships.existsByUser1_IdAndUser2_IdAndDeletedAtIsNull(first.getId(), second.getId()))
+                .isEqualTo(operation.equals("accept"));
+        if (!operation.equals("accept")) {
+            assertThat(service.create(first.getId(), new FriendRequestCreateRequest(second.getId())).requestId())
+                    .isNotEqualTo(id);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"accept", "reject", "cancel"})
+    @DisplayName("타인·삭제·없는 요청은 404이며 잘못된 역할은 종료 후에도 403이다")
+    void actions_validateOwnershipBeforeTerminalState(String operation) throws Exception {
+        User first = user();
+        User second = user();
+        User outsider = user();
+        Long id = pending(first, second);
+        User allowed = operation.equals("cancel") ? first : second;
+        User forbidden = operation.equals("cancel") ? second : first;
+        action(outsider, id, operation, 404, "FRIEND_REQUEST_NOT_FOUND");
+        action(allowed, Long.MAX_VALUE, operation, 404, "FRIEND_REQUEST_NOT_FOUND");
+        action(forbidden, id, operation, 403, "FRIEND_REQUEST_FORBIDDEN");
+        assertThat(requests.findById(id).orElseThrow().getStatus().name()).isEqualTo("PENDING");
+        jdbc.update("UPDATE friend_requests SET deleted_at = NOW(6) WHERE id = ?", id);
+        action(allowed, id, operation, 404, "FRIEND_REQUEST_NOT_FOUND");
+        jdbc.update("UPDATE friend_requests SET deleted_at = NULL, status = 'ACCEPTED' WHERE id = ?", id);
+        action(forbidden, id, operation, 403, "FRIEND_REQUEST_FORBIDDEN");
+        action(outsider, id, operation, 404, "FRIEND_REQUEST_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("삭제는 관계 참여자만 가능하며 타인·없는 관계는 404다")
+    void remove_rejectsOtherUsersWithoutChangingRelation() throws Exception {
+        User first = user();
+        User second = user();
+        User outsider = user();
+        Friendship relation = friendships.saveAndFlush(new Friendship(first, second));
+        for (Long id : List.of(relation.getId(), Long.MAX_VALUE)) {
+            mvc.perform(delete("/friends/{id}", id)
+                            .with(jwt().jwt(j -> j.subject(outsider.getId().toString()))))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.error.code").value("FRIEND_NOT_FOUND"));
+        }
+        assertThat(friendships.findById(relation.getId()).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("탈퇴·비활성 사용자의 요청 수락은 관계와 상태를 변경하지 않는다")
+    void accept_rejectsUnavailableRequester(boolean deleted) throws Exception {
+        User first = user();
+        User second = user();
+        Long id = pending(first, second);
+        jdbc.update(deleted ? "UPDATE users SET deleted_at = NOW(6) WHERE id = ?"
+                : "UPDATE users SET status = 'INACTIVE' WHERE id = ?", first.getId());
+        action(second, id, "accept", 404, "USER_NOT_FOUND");
+        assertThat(requests.findById(id).orElseThrow().getStatus().name()).isEqualTo("PENDING");
+        assertThat(friendships.findByUser1_IdAndUser2_Id(first.getId(), second.getId())).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("수락 트랜잭션 롤백은 요청 상태와 신규·복구 관계를 함께 되돌린다")
+    void accept_rollsBackRequestAndFriendshipTogether(boolean restore) {
+        User first = user();
+        User second = user();
+        Long id = pending(first, second);
+        if (restore) {
+            Friendship relation = friendships.saveAndFlush(new Friendship(first, second));
+            jdbc.update("UPDATE friendships SET deleted_at = NOW(6) WHERE id = ?", relation.getId());
+        }
+        assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            service.accept(second.getId(), id);
+            requests.flush();
+            friendships.flush();
+            throw new IllegalStateException("수락 후 트랜잭션 실패");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(requests.findById(id).orElseThrow().getStatus().name()).isEqualTo("PENDING");
+        if (restore) {
+            assertThat(friendships.findByUser1_IdAndUser2_Id(first.getId(), second.getId()).orElseThrow().getDeletedAt())
+                    .isNotNull();
+        } else {
+            assertThat(friendships.findByUser1_IdAndUser2_Id(first.getId(), second.getId())).isEmpty();
+        }
+    }
+
+    private void action(User actor, Long id, String operation, int expectedStatus, String expectedValue) throws Exception {
+        mvc.perform(post("/friend-requests/{id}/{operation}", id, operation)
+                        .with(jwt().jwt(j -> j.subject(actor.getId().toString()))))
+                .andExpect(status().is(expectedStatus))
+                .andExpect(jsonPath(expectedStatus == 200 ? "$.data.status" : "$.error.code").value(expectedValue));
+    }
 
     @AfterEach
     void cleanUp() {
