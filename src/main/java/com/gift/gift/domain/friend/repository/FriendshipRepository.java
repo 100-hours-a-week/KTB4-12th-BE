@@ -13,6 +13,10 @@ import com.gift.gift.domain.friend.entity.Friendship;
 public interface FriendshipRepository extends JpaRepository<Friendship, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT f FROM Friendship f WHERE f.id = :friendId AND (f.user1.id = :userId OR f.user2.id = :userId)")
+    Optional<Friendship> findForUpdate(Long friendId, Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT f FROM Friendship f WHERE f.user1.id = :user1Id AND f.user2.id = :user2Id")
     Optional<Friendship> findPairForUpdate(Long user1Id, Long user2Id);
 

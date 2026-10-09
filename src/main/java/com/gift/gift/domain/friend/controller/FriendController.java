@@ -4,10 +4,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import jakarta.validation.constraints.Positive;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,6 +41,12 @@ public class FriendController {
             );
 
     private final FriendService friendService;
+
+    @DeleteMapping("/{friendId}")
+    public ResponseEntity<Void> remove(@CurrentUserId Long userId, @PathVariable @Positive Long friendId) {
+        friendService.remove(userId, friendId);
+        return ResponseEntity.noContent().build();
+    }
 
     @GetMapping
     public ResponseEntity<ApiResponse<FriendListResponse>>
