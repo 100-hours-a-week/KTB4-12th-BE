@@ -18,8 +18,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.friend.entity.Friend;
-import com.gift.gift.domain.friend.repository.FriendRepository;
+import com.gift.gift.domain.friend.entity.Friendship;
+import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;
@@ -43,7 +43,7 @@ class ProductControllerSecurityTest {
     private UserRepository userRepository;
 
     @Autowired
-    private FriendRepository friendRepository;
+    private FriendshipRepository friendRepository;
 
     @BeforeAll
     static void initializePasswordHash() {
@@ -87,7 +87,7 @@ class ProductControllerSecurityTest {
     void getProducts_allowsRegisteredFriend() throws Exception {
         User owner = persistedUser();
         User recipient = persistedUser();
-        friendRepository.saveAndFlush(new Friend(owner, recipient));
+        friendRepository.saveAndFlush(new Friendship(owner, recipient));
 
         mockMvc.perform(get("/products")
                         .param("recipientUserId", recipient.getId().toString())
@@ -116,13 +116,13 @@ class ProductControllerSecurityTest {
     }
 
     @Test
-    @DisplayName("반대 방향의 친구 관계만 있으면 수신자 조회를 거부한다")
-    void getProducts_rejectsReverseOnlyFriendship() throws Exception {
+    @DisplayName("친구 관계의 생성 방향과 무관하게 수신자 조회를 허용한다")
+    void getProducts_allowsEitherSideOfFriendship() throws Exception {
         User owner = persistedUser();
         User recipient = persistedUser();
-        friendRepository.saveAndFlush(new Friend(recipient, owner));
+        friendRepository.saveAndFlush(new Friendship(recipient, owner));
 
-        expectRecipientNotFound(recipientSearch(owner, recipient));
+        recipientSearch(owner, recipient).andExpect(status().isOk());
     }
 
     @Test
@@ -130,7 +130,7 @@ class ProductControllerSecurityTest {
     void getProducts_rejectsDeletedFriendship() throws Exception {
         User owner = persistedUser();
         User recipient = persistedUser();
-        Friend friendship = new Friend(owner, recipient);
+        Friendship friendship = new Friendship(owner, recipient);
         ReflectionTestUtils.setField(friendship, "deletedAt", LocalDateTime.now());
         friendRepository.saveAndFlush(friendship);
 
@@ -143,7 +143,7 @@ class ProductControllerSecurityTest {
     void getProducts_rejectsUnavailableRecipient(String field) throws Exception {
         User owner = persistedUser();
         User recipient = persistedUser();
-        friendRepository.saveAndFlush(new Friend(owner, recipient));
+        friendRepository.saveAndFlush(new Friendship(owner, recipient));
         ReflectionTestUtils.setField(recipient, field,
                 field.equals("deletedAt") ? LocalDateTime.now() : UserStatus.DELETED);
         userRepository.saveAndFlush(recipient);

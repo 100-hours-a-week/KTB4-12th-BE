@@ -27,22 +27,22 @@ import com.gift.gift.global.common.BaseTimeEntity;
 @Getter
 @Entity
 @Table(
-        name = "friends",
+        name = "friendships",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "uk_friends_user_friend_user",
-                        columnNames = {"user_id", "friend_user_id"}
+                        name = "uk_friendships_pair",
+                        columnNames = {"user_id_1", "user_id_2"}
                 )
         },
         check = {
                 @CheckConstraint(
-                        name = "chk_friends_distinct_users",
-                        constraint = "user_id <> friend_user_id"
+                        name = "chk_friendships_distinct_users",
+                        constraint = "user_id_1 < user_id_2"
                 )
         }
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Friend extends BaseTimeEntity {
+public class Friendship extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -51,28 +51,40 @@ public class Friend extends BaseTimeEntity {
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
-            name = "user_id",
+            name = "user_id_1",
             nullable = false,
             updatable = false,
-            foreignKey = @ForeignKey(name = "fk_friends_user")
+            foreignKey = @ForeignKey(name = "fk_friendships_user1")
     )
-    private User user;
+    private User user1;
 
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
-            name = "friend_user_id",
+            name = "user_id_2",
             nullable = false,
             updatable = false,
-            foreignKey = @ForeignKey(name = "fk_friends_friend_user")
+            foreignKey = @ForeignKey(name = "fk_friendships_user2")
     )
-    private User friendUser;
+    private User user2;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
-    public Friend(User user, User friendUser) {
-        this.user = Objects.requireNonNull(user, "user must not be null");
-        this.friendUser = Objects.requireNonNull(friendUser, "friendUser must not be null");
+    public Friendship(User user, User friendUser) {
+        Objects.requireNonNull(user, "user must not be null");
+        Objects.requireNonNull(friendUser, "friendUser must not be null");
+        this.user1 = user.getId() <= friendUser.getId() ? user : friendUser;
+        this.user2 = user.getId() <= friendUser.getId() ? friendUser : user;
+    }
+
+    public void remove(LocalDateTime now) {
+        if (deletedAt == null) {
+            deletedAt = Objects.requireNonNull(now, "now must not be null");
+        }
+    }
+
+    public void restore() {
+        deletedAt = null;
     }
 }
