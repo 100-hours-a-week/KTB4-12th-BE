@@ -65,10 +65,10 @@ jobs:
           docker info
 
       - name: Run unit tests
-        run: ./gradlew --no-daemon :main-backend:test
+        run: ./gradlew --no-daemon :main-backend:test :payment-server:test
 
-      - name: Build executable JAR
-        run: ./gradlew --no-daemon :main-backend:bootJar
+      - name: Build executable JARs
+        run: ./gradlew --no-daemon :main-backend:bootJar :payment-server:bootJar
 
       - name: Build Docker image
         run: docker build --file main-backend/Dockerfile --tag seonjalal-be:ci .

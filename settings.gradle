@@ -1,3 +1,4 @@
 rootProject.name = 'gift'
 
 include 'main-backend'
+include 'payment-server'
