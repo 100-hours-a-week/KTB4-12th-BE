@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.friend.entity.Friend;
+import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.friend.support.FriendCursor;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
@@ -34,7 +34,7 @@ class FriendQueryRepositoryTest {
     private FriendQueryRepository friendQueryRepository;
 
     @Autowired
-    private FriendRepository friendRepository;
+    private FriendshipRepository friendRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -74,7 +74,7 @@ class FriendQueryRepositoryTest {
     void findFriends_mapsFriendAndUserFields() {
         User owner = persistedUser("김소유", email("owner"));
         User friendUser = persistedUser("김민지", email("minji"), LocalDate.of(2000, 3, 14));
-        Friend friend = friend(owner, friendUser);
+        Friendship friend = friend(owner, friendUser);
         jdbcTemplate.update("UPDATE users SET is_birthday_public = TRUE WHERE id = ?", friendUser.getId());
         entityManager.clear();
 
@@ -104,13 +104,12 @@ class FriendQueryRepositoryTest {
     }
 
     @Test
-    @DisplayName("다른 사용자가 등록한 친구와 반대 방향 관계는 조회하지 않는다")
-    void findFriends_excludesOtherUsersAndReverseRelations() {
+    @DisplayName("양쪽 사용자 모두 관계를 조회하고 다른 사용자의 관계는 제외한다")
+    void findFriends_includesBothSidesAndExcludesOtherUsers() {
         User owner = persistedUser("김소유", email("owner"));
         User mine = persistedUser("김가나", email("mine"));
         User other = persistedUser("김나다", email("other"));
         User othersFriend = persistedUser("김다라", email("others-friend"));
-        friend(owner, mine);
         friend(other, othersFriend);
         friend(mine, owner);
 
@@ -126,9 +125,9 @@ class FriendQueryRepositoryTest {
         User kept = persistedUser("김가나", email("kept"));
         User removed = persistedUser("김나다", email("removed"));
         friend(owner, kept);
-        Friend removedRelation = friend(owner, removed);
+        Friendship removedRelation = friend(owner, removed);
         jdbcTemplate.update(
-                "UPDATE friends SET deleted_at = ? WHERE id = ?",
+                "UPDATE friendships SET deleted_at = ? WHERE id = ?",
                 LocalDateTime.of(2026, 9, 18, 12, 0),
                 removedRelation.getId()
         );
@@ -170,7 +169,7 @@ class FriendQueryRepositoryTest {
         User second = persistedUser("김나다", email("second"));
         User third = persistedUser("김다라", email("third"));
         friend(owner, first);
-        Friend secondRelation = friend(owner, second);
+        Friendship secondRelation = friend(owner, second);
         friend(owner, third);
         FriendCursor cursor = new FriendCursor("김나다", second.getEmail(), secondRelation.getId(), null);
 
@@ -186,7 +185,7 @@ class FriendQueryRepositoryTest {
         User firstA = persistedUser("김가나", email("a"));
         User firstB = persistedUser("김가나", email("b"));
         User firstC = persistedUser("김가나", email("c"));
-        Friend firstARelation = friend(owner, firstA);
+        Friendship firstARelation = friend(owner, firstA);
         friend(owner, firstB);
         friend(owner, firstC);
         FriendCursor cursor = new FriendCursor("김가나", firstA.getEmail(), firstARelation.getId(), null);
@@ -218,8 +217,8 @@ class FriendQueryRepositoryTest {
         assertThat(friendQueryRepository.findFriends(owner.getId(), null)).isEmpty();
     }
 
-    private Friend friend(User user, User friendUser) {
-        return friendRepository.saveAndFlush(new Friend(user, friendUser));
+    private Friendship friend(User user, User friendUser) {
+        return friendRepository.saveAndFlush(new Friendship(user, friendUser));
     }
 
     private String email(String prefix) {

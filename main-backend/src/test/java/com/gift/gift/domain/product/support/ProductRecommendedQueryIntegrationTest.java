@@ -22,7 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.context.transaction.TestTransaction;
 
-import com.gift.gift.domain.friend.entity.Friend;
+import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.product.cursor.ProductCursor;
 import com.gift.gift.domain.product.cursor.ProductCursorCodec;
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
@@ -80,7 +80,7 @@ class ProductRecommendedQueryIntegrationTest {
     void setUp() {
         owner = user();
         recipient = user();
-        entityManager.persist(new Friend(owner, recipient));
+        entityManager.persist(new Friendship(owner, recipient));
         profile = new RecipientProfile(recipient);
         profile.createNextSourceVersion();
         profile.markCompleted(1L);
@@ -294,7 +294,7 @@ class ProductRecommendedQueryIntegrationTest {
     void rejectsFallbackCursorWhenFirstResultsArrive() {
         RecipientProfile fresh = new RecipientProfile(user());
         entityManager.persist(fresh);
-        entityManager.persist(new Friend(owner, fresh.getRecipient()));
+        entityManager.persist(new Friendship(owner, fresh.getRecipient()));
         recipient = fresh.getRecipient();
         profile = fresh;
         addPopularProducts();
@@ -319,7 +319,7 @@ class ProductRecommendedQueryIntegrationTest {
                 .andExpect(jsonPath("$.data.products[0].productId").value(recommended.getId()));
         String cursor = response(null, List.of(category.getId()), null).pagination().nextCursor();
         User other = user();
-        entityManager.persist(new Friend(owner, other));
+        entityManager.persist(new Friendship(owner, other));
         RecipientProfile otherProfile = new RecipientProfile(other);
         otherProfile.createNextSourceVersion();
         otherProfile.markCompleted(1L);
@@ -351,7 +351,7 @@ class ProductRecommendedQueryIntegrationTest {
                     .setParameter("ids", userIds).executeUpdate();
             entityManager.createNativeQuery("DELETE FROM recipient_profiles WHERE recipient_id IN (:ids)")
                     .setParameter("ids", userIds).executeUpdate();
-            entityManager.createNativeQuery("DELETE FROM friends WHERE user_id IN (:ids) OR friend_user_id IN (:ids)")
+            entityManager.createNativeQuery("DELETE FROM friendships WHERE user_id_1 IN (:ids) OR user_id_2 IN (:ids)")
                     .setParameter("ids", userIds).executeUpdate();
             entityManager.createNativeQuery("DELETE FROM products WHERE id IN (:ids)")
                     .setParameter("ids", productIds).executeUpdate();

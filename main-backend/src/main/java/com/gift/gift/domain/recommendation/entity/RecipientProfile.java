@@ -1,5 +1,6 @@
 package com.gift.gift.domain.recommendation.entity;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
@@ -66,9 +67,7 @@ import com.gift.gift.global.common.BaseTimeEntity;
                 ),
                 @CheckConstraint(
                         name = "chk_recipient_profiles_version_order",
-                        constraint = """
-                                analyzed_source_version <= source_version
-                                """
+                        constraint = "analyzed_source_version <= source_version"
                 ),
                 @CheckConstraint(
                         name = "chk_recipient_profiles_retry_count",
@@ -79,6 +78,7 @@ import com.gift.gift.global.common.BaseTimeEntity;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RecipientProfile extends BaseTimeEntity {
 
+    // DB 저장 상한. 일반 요청의 디바운스 재시작은 1회만 허용한다.
     public static final int MAX_RETRY_COUNT = 2;
 
     @Id
@@ -116,10 +116,7 @@ public class RecipientProfile extends BaseTimeEntity {
     private long sourceVersion;
 
     @Min(0)
-    @Column(
-            name = "analyzed_source_version",
-            nullable = false
-    )
+    @Column(name = "analyzed_source_version", nullable = false)
     @ColumnDefault("0")
     private long analyzedSourceVersion;
 
@@ -147,7 +144,6 @@ public class RecipientProfile extends BaseTimeEntity {
                 recipient,
                 "수신자는 null일 수 없습니다."
         );
-
         this.profileStatus = RecipientProfileStatus.NONE;
         this.sourceVersion = 0;
         this.analyzedSourceVersion = 0;
@@ -172,19 +168,32 @@ public class RecipientProfile extends BaseTimeEntity {
         }
 
         lastChangedAt = changedAt;
+
+        // 사용자 신규 변경에는 새로운 재시작 기회를 부여한다.
+        resetRetryCount();
     }
 
     public long createNextSourceVersion() {
-        if (profileStatus == RecipientProfileStatus.PENDING) {
-            throw new IllegalStateException(
-                    "처리 중인 요청이 있는 동안 새 버전을 생성할 수 없습니다."
-            );
-        }
-
+        // PENDING 중에도 새 변경의 번호를 생성할 수 있다.
+        // 번호 생성 자체는 디바운스 재시작 횟수를 초기화하지 않는다.
         sourceVersion = Math.addExact(sourceVersion, 1);
-        resetRetryCount();
-
         return sourceVersion;
+    }
+
+    public void restartDebounce(LocalDateTime now) {
+        Objects.requireNonNull(
+                now,
+                "재시작 시각은 null일 수 없습니다."
+        );
+
+        // quiet-period와 maximum-window를 모두 다시 시작한다.
+        lastChangedAt = now;
+        windowStartedAt = now;
+    }
+
+    public void clearPendingChange() {
+        lastChangedAt = null;
+        windowStartedAt = null;
     }
 
     public void markPending(LocalDateTime startedAt) {
@@ -210,22 +219,22 @@ public class RecipientProfile extends BaseTimeEntity {
 
         analyzedSourceVersion = completedSourceVersion;
 
-        /*
-         * 더 최신 요청이 존재하면 해당 요청의 상태와
-         * pendingSince, retryCount를 유지한다.
-         */
+        // 중간 번호의 결과는 최신 요청의 대기 정보를 변경하지 않는다.
         if (completedSourceVersion < sourceVersion) {
             return;
         }
 
         profileStatus = RecipientProfileStatus.COMPLETED;
         pendingSince = null;
-        resetRetryCount();
+
+        // 늦은 콜백이 신규 변경이나 실패 재시작의 횟수를 지우지 않는다.
+        if (lastChangedAt == null && windowStartedAt == null) {
+            resetRetryCount();
+        }
     }
 
     public void markFailed() {
         requirePendingStatus();
-
         profileStatus = RecipientProfileStatus.FAILED;
         pendingSince = null;
     }
@@ -233,7 +242,7 @@ public class RecipientProfile extends BaseTimeEntity {
     public int increaseRetryCount() {
         if (retryCount >= MAX_RETRY_COUNT) {
             throw new IllegalStateException(
-                    "AI 추천 요청은 최대 2회까지 재시도할 수 있습니다."
+                    "프로파일 재시도 횟수의 저장 상한을 초과했습니다."
             );
         }
 
@@ -255,8 +264,8 @@ public class RecipientProfile extends BaseTimeEntity {
 
     public boolean isDispatchDue(
             LocalDateTime now,
-            java.time.Duration quietPeriod,
-            java.time.Duration maximumWindow
+            Duration quietPeriod,
+            Duration maximumWindow
     ) {
         Objects.requireNonNull(now, "현재 시각은 null일 수 없습니다.");
         Objects.requireNonNull(
@@ -269,10 +278,6 @@ public class RecipientProfile extends BaseTimeEntity {
         );
 
         if (lastChangedAt == null || windowStartedAt == null) {
-            return false;
-        }
-
-        if (profileStatus == RecipientProfileStatus.PENDING) {
             return false;
         }
 
@@ -297,28 +302,27 @@ public class RecipientProfile extends BaseTimeEntity {
                 "AI 요청 접수 시각은 null일 수 없습니다."
         );
 
-        if (acceptedSourceVersion != sourceVersion) {
+        // 더 최신 번호가 이미 준비됐다면 옛 202를 반영하지 않는다.
+        if (acceptedSourceVersion < sourceVersion) {
+            return;
+        }
+
+        if (acceptedSourceVersion > sourceVersion) {
             throw new IllegalStateException(
                     "접수된 요청 버전이 현재 프로파일 버전과 일치하지 않습니다."
             );
         }
 
-        /*
-         * 빠른 콜백으로 같은 버전이 이미 완료됐다면
-         * COMPLETED를 PENDING으로 되돌리지 않는다.
-         */
+        // 빠른 콜백이 완료한 상태를 PENDING으로 되돌리지 않는다.
         if (analyzedSourceVersion < acceptedSourceVersion) {
             profileStatus = RecipientProfileStatus.PENDING;
             pendingSince = acceptedAt;
         }
 
-        /*
-         * 요청 중 사용자가 다시 변경하지 않은 경우에만
-         * 처리 대기 변경 시각을 제거한다.
-         */
+        // 해당 변경의 접수 성공인 경우에만 대기와 횟수를 정리한다.
         if (Objects.equals(lastChangedAt, snapshottedLastChangedAt)) {
-            lastChangedAt = null;
-            windowStartedAt = null;
+            clearPendingChange();
+            resetRetryCount();
         }
     }
 
@@ -336,10 +340,7 @@ public class RecipientProfile extends BaseTimeEntity {
             );
         }
 
-        /*
-         * PR2는 실제 요청 버전을 1부터 생성한다.
-         * 초기 analyzedSourceVersion=0은 저장 완료를 의미하지 않는다.
-         */
+        // 초기 번호 0은 실제 발송 또는 저장 완료를 의미하지 않는다.
         if (callbackSourceVersion == 0) {
             throw new RecommendationException(
                     RecommendationErrorCode.SOURCE_VERSION_NOT_DISPATCHED

@@ -143,8 +143,8 @@ class RecipientProfileRepositoryIntegrationTest {
     }
 
     @Test
-    @DisplayName("마지막 변경 1시간 또는 변경 구간 6시간이 지난 프로파일만 전송 후보로 조회한다")
-    void findDispatchCandidates_returnsDueProfilesAndExcludesPending() {
+    @DisplayName("디바운스가 경과한 신규 변경은 PENDING 중에도 후보로 조회한다")
+    void findDispatchCandidates_returnsDueProfilesIncludingPending() {
         LocalDateTime now = LocalDateTime.of(2026, 9, 24, 18, 0);
 
         RecipientProfile quietPeriodDue = persistProfile();
@@ -166,7 +166,6 @@ class RecipientProfileRepositoryIntegrationTest {
 
         List<RecipientProfile> candidates =
                 profileRepository.findDispatchCandidates(
-                        RecipientProfileStatus.PENDING,
                         now.minusHours(1),
                         now.minusHours(6),
                         PageRequest.of(0, 100)
@@ -176,12 +175,10 @@ class RecipientProfileRepositoryIntegrationTest {
                 .extracting(RecipientProfile::getId)
                 .containsExactlyInAnyOrder(
                         quietPeriodDue.getId(),
-                        maxWindowDue.getId()
-                )
-                .doesNotContain(
-                        notDue.getId(),
+                        maxWindowDue.getId(),
                         pending.getId()
-                );
+                )
+                .doesNotContain(notDue.getId());
     }
 
     @Test
@@ -210,6 +207,71 @@ class RecipientProfileRepositoryIntegrationTest {
                 .extracting(RecipientProfile::getId)
                 .containsExactly(expired.getId())
                 .doesNotContain(active.getId(), none.getId());
+    }
+
+    @Test
+    @DisplayName("복구 후보는 변경 없는 오래된 PENDING만 대기 시각과 ID 순서로 제한 조회한다")
+    void findRecoveryCandidateIds_filtersOrdersAndLimits() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 7, 12, 0);
+
+        RecipientProfile oldest = persistPendingProfile(
+                now.minusHours(8)
+        );
+
+        RecipientProfile tiedFirst = persistPendingProfile(
+                now.minusHours(7)
+        );
+
+        RecipientProfile tiedSecond = persistPendingProfile(
+                now.minusHours(7)
+        );
+
+        RecipientProfile boundary = persistPendingProfile(
+                now.minusHours(6)
+        );
+
+        RecipientProfile recent = persistPendingProfile(
+                now.minusHours(6).plusSeconds(1)
+        );
+
+        RecipientProfile changed = persistPendingProfile(
+                now.minusHours(9)
+        );
+        changed.recordPreferenceChange(now.minusHours(2));
+
+        RecipientProfile completed = persistPendingProfile(
+                now.minusHours(9)
+        );
+        completed.markCompleted(1);
+
+        persistProfile();
+
+        profileRepository.flush();
+
+        List<Long> candidates = profileRepository.findRecoveryCandidateIds(
+                RecipientProfileStatus.PENDING,
+                now.minusHours(6),
+                PageRequest.of(0, 100)
+        );
+
+        assertThat(candidates).containsExactly(
+                oldest.getId(),
+                tiedFirst.getId(),
+                tiedSecond.getId(),
+                boundary.getId()
+        );
+
+        assertThat(candidates).doesNotContain(
+                recent.getId(),
+                changed.getId(),
+                completed.getId()
+        );
+
+        assertThat(profileRepository.findRecoveryCandidateIds(
+                RecipientProfileStatus.PENDING,
+                now.minusHours(6),
+                PageRequest.of(0, 1)
+        )).containsExactly(oldest.getId());
     }
 
     private RecipientProfile persistPendingProfile(

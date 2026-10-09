@@ -14,9 +14,7 @@ import com.gift.gift.domain.friend.query.FriendPage;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
 import com.gift.gift.domain.friend.repository.FriendQueryRow;
-import com.gift.gift.domain.friend.repository.FriendRepository;
 import com.gift.gift.domain.friend.support.FriendCursor;
-import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.InvalidCursorException;
@@ -34,8 +32,6 @@ class FriendServiceTest {
     private static final Long USER_ID = 1L;
 
     private FriendQueryRepository friendQueryRepository;
-    private FriendRepository friendRepository;
-    private UserRepository userRepository;
     private OpaqueCursorCodec cursorCodec;
     private FriendPageAssembler pageAssembler;
     private FriendService friendService;
@@ -43,14 +39,10 @@ class FriendServiceTest {
     @BeforeEach
     void setUp() {
         friendQueryRepository = mock(FriendQueryRepository.class);
-        friendRepository = mock(FriendRepository.class);
-        userRepository = mock(UserRepository.class);
         cursorCodec = mock(OpaqueCursorCodec.class);
         pageAssembler = mock(FriendPageAssembler.class);
         friendService = new FriendService(
                 friendQueryRepository,
-                friendRepository,
-                userRepository,
                 cursorCodec,
                 pageAssembler
         );
@@ -126,8 +118,6 @@ class FriendServiceTest {
     void getFriends_throwsInvalidCursor_whenCursorIsBlank() {
         FriendService serviceWithRealCodec = new FriendService(
                 friendQueryRepository,
-                friendRepository,
-                userRepository,
                 new OpaqueCursorCodec(JsonMapper.builder().build()),
                 pageAssembler
         );

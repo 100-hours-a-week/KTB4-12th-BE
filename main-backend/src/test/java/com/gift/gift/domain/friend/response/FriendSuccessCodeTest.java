@@ -21,18 +21,4 @@ class FriendSuccessCodeTest {
         );
     }
 
-    @Test
-    @DisplayName("친구 추가 성공 코드는 대상 이름을 포함한 메시지를 생성한다")
-    void friendAdded_formatsFriendName() {
-        assertEquals(
-                HttpStatus.CREATED,
-                FriendSuccessCode.FRIEND_ADDED.status()
-        );
-        assertEquals(
-                "김민지님을 친구로 추가했습니다.",
-                FriendSuccessCode.FRIEND_ADDED.formatMessage(
-                        "김민지"
-                )
-        );
-    }
 }

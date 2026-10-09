@@ -35,6 +35,8 @@ public enum ErrorCode {
     ),
     INVALID_CURSOR(HttpStatus.BAD_REQUEST, "페이지 정보를 확인해 주세요."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자 정보를 찾을 수 없습니다."),
+    FRIEND_ALREADY_REQUESTED(HttpStatus.CONFLICT, "이미 친구 요청을 보냈습니다."),
+    CONVERSE_REQUEST_EXISTS(HttpStatus.CONFLICT, "상대방이 보낸 친구 요청을 수락해 주세요."),
     FRIEND_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 등록된 친구입니다."),
     FRIEND_CANNOT_ADD_SELF(HttpStatus.UNPROCESSABLE_CONTENT, "본인은 친구로 추가할 수 없습니다."),
     GIFT_CANNOT_SEND_TO_SELF(HttpStatus.UNPROCESSABLE_CONTENT, "자기 자신에게는 선물을 보낼 수 없습니다."),

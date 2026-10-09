@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -94,7 +95,7 @@ class GiftCommandServiceTest {
         assertThat(result.getIdempotencyKey()).isEqualTo(idempotencyKey);
         assertThat(result.getRequestFingerprint()).isEqualTo(fingerprint);
 
-        var order = inOrder(userQueryService, friendQueryService, productQueryService, productStockService,
+        InOrder order = inOrder(userQueryService, friendQueryService, productQueryService, productStockService,
                 giftHistoryRepository);
         order.verify(userQueryService).findActiveUser(RECIPIENT_ID);
         order.verify(friendQueryService).areFriends(SENDER_ID, RECIPIENT_ID);

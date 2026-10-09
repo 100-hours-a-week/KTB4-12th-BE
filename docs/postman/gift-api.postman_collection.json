@@ -382,7 +382,106 @@
                 { "key": "cursor", "value": "", "description": "이전 응답의 다음 페이지 cursor", "disabled": true }
               ]
             },
-            "description": "내가 등록한 친구를 이름, 이메일 순으로 20건씩 조회한다. 탈퇴·비활성 친구는 제외한다. `birth`는 생일을 공개한 친구만 `MM-dd` 형식이고 비공개이면 null이다. `cursor=`처럼 빈 값으로 보내면 400이다."
+            "description": "양방향으로 연결된 친구를 이름, 이메일 순으로 20건씩 조회한다. 탈퇴·비활성 친구는 제외한다. `birth`는 생일을 공개한 친구만 `MM-dd` 형식이고 비공개이면 null이다. `cursor=`처럼 빈 값으로 보내면 400이다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "friend-requests (인증 필요)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "친구 요청 보내기",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverId\": {{friendRequestReceiverId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/friend-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "friend-requests"
+              ]
+            },
+            "description": "201: PENDING 요청을 생성하고 커밋 후 수신자에게 FRIEND_REQUEST_RECEIVED 알림을 생성한다. 알림은 FRIEND_REQUEST와 요청 ID를 참조하며 중복 요청에는 추가 생성하지 않는다. 친구 관계는 수락 시 생성된다. 같은 방향 중복은 409 FRIEND_ALREADY_REQUESTED, 역방향은 409 CONVERSE_REQUEST_EXISTS만 반환한다. 오류 응답에는 요청 ID가 없으며 받은 요청 목록에서 확인한다."
+          },
+          "response": []
+        },
+        {
+          "name": "받은 친구 요청 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/friend-requests/received",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "friend-requests",
+                "received"
+              ],
+              "query": [
+                {
+                  "key": "cursor",
+                  "value": "{{friendRequestReceivedCursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "활성 사용자 간 삭제되지 않은 PENDING 요청을 createdAt DESC, requestId DESC로 20건 조회한다. 다음 페이지는 data.pagination.nextCursor를 커서 변수에 넣고 query를 활성화한다. 다른 사용자·방향의 커서는 400 INVALID_CURSOR."
+          },
+          "response": []
+        },
+        {
+          "name": "보낸 친구 요청 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/friend-requests/sent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "friend-requests",
+                "sent"
+              ],
+              "query": [
+                {
+                  "key": "cursor",
+                  "value": "{{friendRequestSentCursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "활성 사용자 간 삭제되지 않은 PENDING 요청을 createdAt DESC, requestId DESC로 20건 조회한다. 다음 페이지는 data.pagination.nextCursor를 커서 변수에 넣고 query를 활성화한다. 다른 사용자·방향의 커서는 400 INVALID_CURSOR."
           },
           "response": []
         }
@@ -448,6 +547,100 @@
               "path": ["bug-report"]
             },
             "description": "프론트엔드 버그 제보 위젯이 전송한 Discord embed payload와 첨부 파일을 Discord Webhook으로 전송하고 Google Sheets에도 기록한다. 스크린샷은 Discord에만 첨부하며 Google Drive에는 저장하지 않는다. 제보 ID가 이미 시트에 있으면 행 추가를 생략한다. 인증 없이도 호출 가능하며(로그인 상태면 사용자 ID를 함께 전달), 프론트는 `/api/bug-report`로 요청하고 nginx가 `/api` 접두사를 제거해 이 경로로 전달한다. description이 비어 있거나 payload_json이 없으면 400, 스크린샷 형식/크기가 맞지 않아도 400이다. 로그인 사용자 분당 5회·IP당 분당 20회를 초과하면 429, Discord 또는 Google 연동 설정이 없으면 503, 외부 서비스 전송 실패면 502를 반환한다. 성공 시 204 No Content."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "preferences (인증 필요)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "내 선물 취향 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preferences"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "내 선물 취향 저장",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preferences"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"preference\":\"책과 실용적인 선물을 좋아해요\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "내 선물 취향 비우기",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "preferences"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"preference\":null}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }

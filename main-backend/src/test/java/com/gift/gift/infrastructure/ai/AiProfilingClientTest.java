@@ -47,11 +47,17 @@ class AiProfilingClientTest {
     @BeforeEach
     void setUp() {
         var properties = properties();
-        RestClient configured = new AiProfilingClientConfig()
-                .aiProfilingRestClient(properties);
+        AiProfilingClientConfig config = new AiProfilingClientConfig();
+
+        RestClient configured = config.aiProfilingRestClient(properties);
         RestClient.Builder builder = configured.mutate();
+
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new AiProfilingClient(builder.build());
+
+        client = new AiProfilingClient(
+                builder.build(),
+                config.aiProfilingHealthRestClient(properties)
+        );
     }
 
     @Test
@@ -102,7 +108,7 @@ class AiProfilingClientTest {
     }
 
     @Test
-    @DisplayName("400 응답을 재시도 불가능한 요청 계약 오류로 매핑한다")
+    @DisplayName("400 응답은 요청 오류이며 틱 중단 대상이 아니다")
     void requestProfiling_maps400() {
         assertFailureMapping(
                 HttpStatus.BAD_REQUEST,
@@ -112,7 +118,7 @@ class AiProfilingClientTest {
     }
 
     @Test
-    @DisplayName("401 응답을 재시도 불가능한 서비스 토큰 오류로 매핑한다")
+    @DisplayName("401 응답은 토큰 오류이며 틱 중단 대상이 아니다")
     void requestProfiling_maps401() {
         assertFailureMapping(
                 HttpStatus.UNAUTHORIZED,
@@ -198,7 +204,8 @@ class AiProfilingClientTest {
                 Duration.ofMillis(200),
                 Duration.ofHours(1),
                 Duration.ofHours(6),
-                10
+                10,
+                0
         );
     }
 

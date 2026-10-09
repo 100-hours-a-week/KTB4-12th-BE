@@ -8,9 +8,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.preference.dto.response.DislikeCategoryItemResponse;
 import com.gift.gift.domain.preference.dto.response.DislikeCategoryListResponse;
+import com.gift.gift.domain.preference.dto.response.GiftPreferenceResponse;
 import com.gift.gift.domain.preference.dto.response.PreferenceWarningResult;
 import com.gift.gift.domain.preference.exception.PreferenceException;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
+import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.service.CategoryQueryService;
 import com.gift.gift.domain.user.service.UserQueryService;
@@ -21,6 +23,7 @@ import com.gift.gift.global.exception.ErrorCode;
 @Transactional(readOnly = true)
 public class PreferenceQueryService {
 
+    private final UserGiftPreferenceRepository userGiftPreferenceRepository;
     private final UserDislikeCategoryRepository userDislikeCategoryRepository;
     private final CategoryQueryService categoryQueryService;
     private final UserQueryService userQueryService;
@@ -36,6 +39,14 @@ public class PreferenceQueryService {
         return userDislikeCategoryRepository
                 .findActiveByUserIdAndProductCategoryId(userId, productCategoryId)
                 .map(dislike -> PreferenceWarningResult.from(dislike.getCategory()));
+    }
+
+    public GiftPreferenceResponse getGiftPreference(Long userId) {
+        validateUser(userId);
+        String preference = userGiftPreferenceRepository.findByUser_IdAndDeletedAtIsNull(userId)
+                .map(row -> row.getPreference())
+                .orElse(null);
+        return GiftPreferenceResponse.from(preference);
     }
 
     public DislikeCategoryListResponse getDislikeCategories(Long userId) {

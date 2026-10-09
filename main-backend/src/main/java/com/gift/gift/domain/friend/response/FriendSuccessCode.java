@@ -11,10 +11,6 @@ public enum FriendSuccessCode {
     FRIEND_SEARCH_RESULT_RETRIEVED(
             HttpStatus.OK,
             "친구 검색 결과를 조회했습니다."
-    ),
-    FRIEND_ADDED(
-            HttpStatus.CREATED,
-            "%s님을 친구로 추가했습니다."
     );
 
     private final HttpStatus status;

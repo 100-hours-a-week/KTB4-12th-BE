@@ -15,18 +15,18 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import com.gift.gift.domain.friend.controller.FriendController;
+import com.gift.gift.domain.friend.controller.FriendRequestController;
 import com.gift.gift.global.exception.ValidationDetail;
 import com.gift.gift.global.exception.ValidationErrorReason;
 import com.gift.gift.global.response.ApiResponse;
 
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = FriendController.class)
+@RestControllerAdvice(assignableTypes = FriendRequestController.class)
 public class FriendRequestExceptionHandler {
 
     private static final String TRACE_ID_KEY = "traceId";
-    private static final String FRIEND_USER_ID_FIELD = "friendUserId";
+    private static final String RECEIVER_ID_FIELD = "receiverId";
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValidException(
@@ -51,7 +51,7 @@ public class FriendRequestExceptionHandler {
     ) {
         return invalidCreateRequest(List.of(
                 new ValidationDetail(
-                        FRIEND_USER_ID_FIELD,
+                        RECEIVER_ID_FIELD,
                         ValidationErrorReason.INVALID_FORMAT
                 )
         ));
@@ -61,11 +61,11 @@ public class FriendRequestExceptionHandler {
             List<ValidationDetail> details
     ) {
         FriendErrorCode friendErrorCode =
-                FriendErrorCode.FRIEND_CREATE_INVALID_REQUEST;
+                FriendErrorCode.FRIEND_REQUEST_INVALID_REQUEST;
         String traceId = resolveTraceId();
 
         log.warn(
-                "친구 추가 요청이 거부되었습니다. traceId={}, detailCount={}",
+                "친구 요청이 거부되었습니다. traceId={}, detailCount={}",
                 traceId,
                 details.size()
         );

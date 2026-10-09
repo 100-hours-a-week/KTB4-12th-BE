@@ -114,6 +114,79 @@ class RecipientProfileDispatchTest {
         assertThat(profile.getPendingSince()).isNull();
     }
 
+    @Test
+    @DisplayName("최신 번호의 늦은 콜백은 실패 재시작 시각과 횟수를 유지한다")
+    void markCompleted_preservesDebounceRestart() {
+        RecipientProfile profile = profile();
+        profile.recordPreferenceChange(NOW.minusHours(2));
+        profile.createNextSourceVersion();
+
+        profile.restartDebounce(NOW);
+        profile.increaseRetryCount();
+
+        profile.markCompleted(1);
+
+        assertThat(profile.getRetryCount()).isEqualTo(1);
+        assertThat(profile.getLastChangedAt()).isEqualTo(NOW);
+        assertThat(profile.getWindowStartedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    @DisplayName("옛 202는 이후 변경의 시각과 재시작 횟수를 초기화하지 않는다")
+    void applyAcceptedResponse_preservesNewRestart() {
+        RecipientProfile profile = profile();
+        LocalDateTime oldChange = NOW.minusHours(2);
+
+        profile.recordPreferenceChange(oldChange);
+        profile.createNextSourceVersion();
+
+        profile.recordPreferenceChange(NOW.minusMinutes(1));
+        profile.restartDebounce(NOW);
+        profile.increaseRetryCount();
+
+        profile.applyAcceptedResponse(1, oldChange, NOW);
+
+        assertThat(profile.getRetryCount()).isEqualTo(1);
+        assertThat(profile.getLastChangedAt()).isEqualTo(NOW);
+        assertThat(profile.getWindowStartedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    @DisplayName("해당 변경의 202 접수는 재시작 횟수와 변경 대기를 정리한다")
+    void applyAcceptedResponse_clearsMatchingRestart() {
+        RecipientProfile profile = profile();
+
+        profile.restartDebounce(NOW.minusHours(1));
+        profile.increaseRetryCount();
+        profile.createNextSourceVersion();
+
+        profile.applyAcceptedResponse(1, NOW.minusHours(1), NOW);
+
+        assertThat(profile.getRetryCount()).isZero();
+        assertThat(profile.getLastChangedAt()).isNull();
+        assertThat(profile.getWindowStartedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("더 최신 번호가 있으면 옛 202가 최신 PENDING 정보를 덮지 않는다")
+    void applyAcceptedResponse_ignoresOlderVersion() {
+        RecipientProfile profile = profile();
+
+        profile.recordPreferenceChange(NOW.minusHours(2));
+        profile.createNextSourceVersion();
+        profile.createNextSourceVersion();
+        profile.markPending(NOW.minusMinutes(1));
+        profile.increaseRetryCount();
+
+        profile.applyAcceptedResponse(1, NOW.minusHours(2), NOW);
+
+        assertThat(profile.getPendingSince())
+                .isEqualTo(NOW.minusMinutes(1));
+        assertThat(profile.getRetryCount()).isEqualTo(1);
+        assertThat(profile.getLastChangedAt())
+                .isEqualTo(NOW.minusHours(2));
+    }
+
     private RecipientProfile profile() {
         return new RecipientProfile(new User(
                 "recipient@example.com",
