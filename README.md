@@ -1,6 +1,31 @@
 # KTB4-12th-BE
 KTB4 12th team backend application
 
+## Gradle modules
+
+```text
+backend
+├── build.gradle
+├── settings.gradle
+└── main-backend
+    ├── build.gradle
+    ├── Dockerfile
+    └── src
+```
+
+저장소 루트에서 전체 프로젝트를 빌드할 수 있습니다.
+
+```bash
+./gradlew build
+```
+
+Main Backend만 실행하거나 테스트할 때에는 모듈 경로를 지정합니다.
+
+```bash
+./gradlew :main-backend:bootRun
+./gradlew :main-backend:test
+```
+
 ## IntelliJ IDEA formatter
 
 프로젝트에 포함된 `.editorconfig`와 Project Code Style을 사용합니다.

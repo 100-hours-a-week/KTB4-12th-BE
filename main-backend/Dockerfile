@@ -4,12 +4,13 @@ WORKDIR /workspace
 
 COPY gradlew build.gradle settings.gradle ./
 COPY gradle ./gradle
+COPY main-backend/build.gradle ./main-backend/build.gradle
 RUN chmod +x gradlew
 
-COPY src ./src
+COPY main-backend/src/main ./main-backend/src/main
 RUN set -eux; \
-    ./gradlew --no-daemon clean bootJar; \
-    set -- build/libs/*.jar; \
+    ./gradlew --no-daemon :main-backend:clean :main-backend:bootJar; \
+    set -- main-backend/build/libs/*.jar; \
     [ "$#" -eq 1 ]; \
     cp "$1" app.jar
 
