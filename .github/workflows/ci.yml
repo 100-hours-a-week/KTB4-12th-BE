@@ -24,7 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_NAME: peterj0117/seonjalal-be
+  MAIN_BACKEND_IMAGE_NAME: peterj0117/seonjalal-be
+  PAYMENT_SERVER_IMAGE_NAME: peterj0117/seonjalal-payment-server
 
 jobs:
   validate:
@@ -70,15 +71,19 @@ jobs:
       - name: Build executable JARs
         run: ./gradlew --no-daemon :main-backend:bootJar :payment-server:bootJar
 
-      - name: Build Docker image
-        run: docker build --file main-backend/Dockerfile --tag seonjalal-be:ci .
+      - name: Build Main Backend Docker image
+        run: docker build --file main-backend/Dockerfile --tag seonjalal-main-backend:ci .
+
+      - name: Build Payment Server Docker image
+        run: docker build --file payment-server/Dockerfile --tag seonjalal-payment-server:ci .
 
       - name: Run containers and smoke test
         shell: bash
         run: |
           NETWORK="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          APP_CONTAINER="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MAIN_BACKEND_CONTAINER="seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          PAYMENT_SERVER_CONTAINER="seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           export JWT_SECRET_BASE64="$(openssl rand -base64 32)"
           export JWT_ISSUER="https://ci.seonjalal.test"
@@ -115,7 +120,7 @@ jobs:
           test "$(docker inspect --format '{{.State.Health.Status}}' "$MYSQL_CONTAINER")" = healthy
 
           docker run --detach \
-            --name "$APP_CONTAINER" \
+            --name "$MAIN_BACKEND_CONTAINER" \
             --network "$NETWORK" \
             --publish 127.0.0.1::8080 \
             --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
@@ -135,36 +140,66 @@ jobs:
             --env AI_PROFILE_DISPATCH_INTERVAL \
             --env AI_PROFILE_SCHEDULING_ENABLED \
             --env SCHEDULING_ENABLED \
-            seonjalal-be:ci
+            seonjalal-main-backend:ci
 
-          HOST_PORT="$(docker port "$APP_CONTAINER" 8080/tcp | sed 's/.*://')"
-          if ! HEALTH_RESPONSE="$(
+          docker run --detach \
+            --name "$PAYMENT_SERVER_CONTAINER" \
+            --network "$NETWORK" \
+            --publish 127.0.0.1::8090 \
+            seonjalal-payment-server:ci
+
+          MAIN_BACKEND_HOST_PORT="$(docker port "$MAIN_BACKEND_CONTAINER" 8080/tcp | sed 's/.*://')"
+          if ! MAIN_BACKEND_HEALTH_RESPONSE="$(
             curl --fail-with-body --silent --show-error \
               --retry 30 \
               --retry-all-errors \
               --retry-connrefused \
               --retry-delay 2 \
-              "http://127.0.0.1:${HOST_PORT}/actuator/health"
+              "http://127.0.0.1:${MAIN_BACKEND_HOST_PORT}/actuator/health"
           )"; then
-            echo "$HEALTH_RESPONSE"
+            echo "$MAIN_BACKEND_HEALTH_RESPONSE"
             exit 1
           fi
 
-          echo "$HEALTH_RESPONSE"
+          echo "$MAIN_BACKEND_HEALTH_RESPONSE"
           grep --quiet --extended-regexp \
             '"status"[[:space:]]*:[[:space:]]*"UP"' \
-            <<< "$HEALTH_RESPONSE"
+            <<< "$MAIN_BACKEND_HEALTH_RESPONSE"
+
+          PAYMENT_SERVER_HOST_PORT="$(docker port "$PAYMENT_SERVER_CONTAINER" 8090/tcp | sed 's/.*://')"
+          if ! PAYMENT_SERVER_HEALTH_RESPONSE="$(
+            curl --fail-with-body --silent --show-error \
+              --retry 30 \
+              --retry-all-errors \
+              --retry-connrefused \
+              --retry-delay 2 \
+              "http://127.0.0.1:${PAYMENT_SERVER_HOST_PORT}/actuator/health"
+          )"; then
+            echo "$PAYMENT_SERVER_HEALTH_RESPONSE"
+            exit 1
+          fi
+
+          echo "$PAYMENT_SERVER_HEALTH_RESPONSE"
+          grep --quiet --extended-regexp \
+            '"status"[[:space:]]*:[[:space:]]*"UP"' \
+            <<< "$PAYMENT_SERVER_HEALTH_RESPONSE"
 
       - name: Print validation logs
         if: failure()
         shell: bash
         run: |
-          APP_CONTAINER="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MAIN_BACKEND_CONTAINER="seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          PAYMENT_SERVER_CONTAINER="seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          if docker inspect "$APP_CONTAINER" > /dev/null 2>&1; then
-            echo "Backend container logs:"
-            docker logs "$APP_CONTAINER" || true
+          if docker inspect "$MAIN_BACKEND_CONTAINER" > /dev/null 2>&1; then
+            echo "Main Backend container logs:"
+            docker logs "$MAIN_BACKEND_CONTAINER" || true
+          fi
+
+          if docker inspect "$PAYMENT_SERVER_CONTAINER" > /dev/null 2>&1; then
+            echo "Payment Server container logs:"
+            docker logs "$PAYMENT_SERVER_CONTAINER" || true
           fi
 
           if docker inspect "$MYSQL_CONTAINER" > /dev/null 2>&1; then
@@ -177,7 +212,8 @@ jobs:
         shell: bash
         run: |
           docker rm --force \
-            "seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             "seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             2>/dev/null || true
           docker network rm "seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" 2>/dev/null || true
@@ -226,29 +262,42 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Ensure Docker version tag is unused
+      - name: Ensure Docker version tags are unused
         shell: bash
         run: |
-          IMAGE="${IMAGE_NAME}:${{ steps.version.outputs.value }}"
-          if INSPECT_OUTPUT="$(docker buildx imagetools inspect "$IMAGE" 2>&1)"; then
-            echo "Docker image tag already exists: $IMAGE" >&2
-            exit 1
-          fi
-          if ! grep --extended-regexp --ignore-case 'not found|manifest unknown' <<< "$INSPECT_OUTPUT" > /dev/null; then
-            echo "Could not verify Docker image tag availability: $INSPECT_OUTPUT" >&2
-            exit 1
-          fi
+          for IMAGE_NAME in "$MAIN_BACKEND_IMAGE_NAME" "$PAYMENT_SERVER_IMAGE_NAME"; do
+            IMAGE="${IMAGE_NAME}:${{ steps.version.outputs.value }}"
+            if INSPECT_OUTPUT="$(docker buildx imagetools inspect "$IMAGE" 2>&1)"; then
+              echo "Docker image tag already exists: $IMAGE" >&2
+              exit 1
+            fi
+            if ! grep --extended-regexp --ignore-case 'not found|manifest unknown' <<< "$INSPECT_OUTPUT" > /dev/null; then
+              echo "Could not verify Docker image tag availability: $INSPECT_OUTPUT" >&2
+              exit 1
+            fi
+          done
 
-      - name: Build and push version image
+      - name: Build and push Main Backend version image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: main-backend/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.value }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ env.MAIN_BACKEND_IMAGE_NAME }}:${{ steps.version.outputs.value }}
+          cache-from: type=gha,scope=main-backend
+          cache-to: type=gha,mode=max,scope=main-backend
+
+      - name: Build and push Payment Server version image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: payment-server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.PAYMENT_SERVER_IMAGE_NAME }}:${{ steps.version.outputs.value }}
+          cache-from: type=gha,scope=payment-server
+          cache-to: type=gha,mode=max,scope=payment-server
 
       - name: Create and push Git tag
         shell: bash
