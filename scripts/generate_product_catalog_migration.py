@@ -23,7 +23,7 @@ WORKSPACE_ROOT = BACKEND_ROOT.parent
 DATA_ROOT = WORKSPACE_ROOT / "products-data" / "data"
 OUTPUT = (
     BACKEND_ROOT
-    / "src/main/resources/db/seed/V10__seed_product_catalog.sql"
+    / "main-backend/src/main/resources/db/seed/V10__seed_product_catalog.sql"
 )
 
 
