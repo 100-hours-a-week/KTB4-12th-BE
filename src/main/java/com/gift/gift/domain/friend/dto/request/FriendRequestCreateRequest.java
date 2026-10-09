@@ -5,11 +5,9 @@ import jakarta.validation.constraints.Positive;
 
 import com.gift.gift.global.exception.ValidationErrorReason;
 
-public record FriendCreateRequest(
-
+public record FriendRequestCreateRequest(
         @NotNull(message = ValidationErrorReason.Message.REQUIRED)
         @Positive(message = ValidationErrorReason.Message.INVALID_FORMAT)
-        Long friendUserId
-
+        Long receiverId
 ) {
 }

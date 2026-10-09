@@ -1,5 +1,6 @@
 package com.gift.gift.domain.friend.repository;
 
+import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
@@ -22,7 +23,8 @@ class FriendshipMigrationTest {
             mysql.start();
             Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
                     .locations("classpath:db/migration").target("16").load().migrate();
-            try (var connection = DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
+            try (Connection connection = DriverManager.getConnection(
+                    mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
                 JdbcTemplate jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
                 for (int id = 1; id <= 5; id++) {
                     jdbc.update("""

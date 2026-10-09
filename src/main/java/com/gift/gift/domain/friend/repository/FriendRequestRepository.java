@@ -1,5 +1,6 @@
 package com.gift.gift.domain.friend.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -36,8 +37,12 @@ public interface FriendRequestRepository extends JpaRepository<FriendRequest, Lo
               AND requester.deletedAt IS NULL
               AND receiver.status = com.gift.gift.domain.user.entity.UserStatus.ACTIVE
               AND receiver.deletedAt IS NULL
-              AND (:beforeId IS NULL OR r.id < :beforeId)
-            ORDER BY r.id DESC
+              AND r.deletedAt IS NULL
+              AND (:beforeCreatedAt IS NULL OR r.createdAt < :beforeCreatedAt
+                OR (r.createdAt = :beforeCreatedAt AND r.id < :beforeId))
+            ORDER BY r.createdAt DESC, r.id DESC
             """)
-    List<FriendRequest> findPendingList(Long userId, boolean received, Long beforeId, Pageable pageable);
+    List<FriendRequest> findPendingList(
+            Long userId, boolean received, LocalDateTime beforeCreatedAt, Long beforeId, Pageable pageable
+    );
 }
