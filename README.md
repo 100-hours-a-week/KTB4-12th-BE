@@ -7,7 +7,11 @@ KTB4 12th team backend application
 backend
 ├── build.gradle
 ├── settings.gradle
-└── main-backend
+├── main-backend
+│   ├── build.gradle
+│   ├── Dockerfile
+│   └── src
+└── payment-server
     ├── build.gradle
     ├── Dockerfile
     └── src
@@ -19,12 +23,36 @@ backend
 ./gradlew build
 ```
 
-Main Backend만 실행하거나 테스트할 때에는 모듈 경로를 지정합니다.
+각 애플리케이션을 실행하거나 테스트할 때에는 모듈 경로를 지정합니다.
 
 ```bash
 ./gradlew :main-backend:bootRun
 ./gradlew :main-backend:test
+
+./gradlew :payment-server:bootRun
+./gradlew :payment-server:test
 ```
+
+Main Backend는 기본 포트 `8080`, Payment Server는 기본 포트 `8090`을 사용합니다.
+
+## Docker
+
+Docker 빌드 Context는 두 이미지 모두 저장소 루트를 사용합니다.
+
+```bash
+docker build \
+  --file main-backend/Dockerfile \
+  --tag seonjalal-main-backend:local \
+  .
+
+docker build \
+  --file payment-server/Dockerfile \
+  --tag seonjalal-payment-server:local \
+  .
+```
+
+Health Check 경로는 두 애플리케이션 모두 `/actuator/health`입니다. Payment Server는 외부에
+공개하지 않고 Main Backend가 접근할 수 있는 내부 네트워크에서 실행합니다.
 
 ## IntelliJ IDEA formatter
 
