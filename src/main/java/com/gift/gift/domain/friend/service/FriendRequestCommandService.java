@@ -8,6 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.friend.dto.response.FriendRequestResponse;
 import com.gift.gift.domain.friend.entity.FriendRequest;
+import com.gift.gift.domain.friend.entity.FriendRequestStatus;
+import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.friend.event.FriendRequestCreatedEvent;
 import com.gift.gift.domain.friend.exception.FriendErrorCode;
 import com.gift.gift.domain.friend.exception.FriendException;
@@ -56,6 +58,51 @@ public class FriendRequestCommandService {
     private User activeUser(Long userId) {
         return userRepository.findByIdAndStatusAndDeletedAtIsNull(userId, UserStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    public FriendRequestResponse accept(Long userId, Long requestId) {
+        return complete(userId, requestId, FriendRequestStatus.ACCEPTED);
+    }
+
+    public FriendRequestResponse reject(Long userId, Long requestId) {
+        return complete(userId, requestId, FriendRequestStatus.REJECTED);
+    }
+
+    public FriendRequestResponse cancel(Long userId, Long requestId) {
+        return complete(userId, requestId, FriendRequestStatus.CANCELED);
+    }
+
+    private FriendRequestResponse complete(Long userId, Long requestId, FriendRequestStatus next) {
+        FriendRequest request = requestRepository.findForUpdate(requestId)
+                .filter(existing -> existing.getDeletedAt() == null)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FRIEND_REQUEST_NOT_FOUND));
+        Long requesterId = request.getRequester().getId();
+        Long receiverId = request.getReceiver().getId();
+        if (!userId.equals(requesterId) && !userId.equals(receiverId)) {
+            throw new BusinessException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
+        }
+        Long allowedUserId = next == FriendRequestStatus.CANCELED ? requesterId : receiverId;
+        if (!userId.equals(allowedUserId)) {
+            throw new BusinessException(ErrorCode.FRIEND_REQUEST_FORBIDDEN);
+        }
+        if (request.getStatus() == next) {
+            return FriendRequestResponse.from(request);
+        }
+        if (request.getStatus() != FriendRequestStatus.PENDING) {
+            throw new BusinessException(ErrorCode.FRIEND_REQUEST_ALREADY_PROCESSED);
+        }
+        if (next == FriendRequestStatus.ACCEPTED) {
+            User requester = activeUser(requesterId);
+            User receiver = activeUser(receiverId);
+            friendshipRepository.findPairForUpdate(Math.min(requesterId, receiverId), Math.max(requesterId, receiverId))
+                    .ifPresentOrElse(friendship -> {
+                        if (friendship.getDeletedAt() != null) {
+                            friendship.restore();
+                        }
+                    }, () -> friendshipRepository.saveAndFlush(new Friendship(requester, receiver)));
+        }
+        request.complete(next);
+        return FriendRequestResponse.from(request);
     }
 
     static BusinessException pendingConflict(Long userId, FriendRequest existing) {
