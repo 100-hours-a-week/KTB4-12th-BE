@@ -4,20 +4,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import jakarta.validation.Valid;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.gift.gift.domain.friend.dto.request.FriendCreateRequest;
-import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
 import com.gift.gift.domain.friend.dto.response.FriendListResponse;
 import com.gift.gift.domain.friend.dto.response.FriendSearchResponse;
@@ -98,31 +92,6 @@ public class FriendController {
                 .body(ApiResponse.success(
                         successCode.message(),
                         FriendSearchResponse.from(page)
-                ));
-    }
-
-    @PostMapping
-    public ResponseEntity<ApiResponse<FriendCreateResponse>>
-    createFriend(
-            @CurrentUserId Long userId,
-            @Valid @RequestBody FriendCreateRequest request
-    ) {
-        FriendCreateResponse response =
-                friendService.createFriend(
-                        userId,
-                        request
-                );
-
-        FriendSuccessCode successCode =
-                FriendSuccessCode.FRIEND_ADDED;
-
-        return ResponseEntity
-                .status(successCode.status())
-                .body(ApiResponse.success(
-                        successCode.formatMessage(
-                                response.friendName()
-                        ),
-                        response
                 ));
     }
 

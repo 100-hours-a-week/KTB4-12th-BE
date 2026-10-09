@@ -3,27 +3,16 @@ package com.gift.gift.domain.friend.service;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.friend.dto.request.FriendCreateRequest;
-import com.gift.gift.domain.friend.dto.response.FriendCreateResponse;
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
-import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.friend.exception.FriendErrorCode;
 import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.query.FriendPage;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
-import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.friend.support.FriendCursor;
-import com.gift.gift.domain.user.entity.User;
-import com.gift.gift.domain.user.entity.UserStatus;
-import com.gift.gift.domain.user.exception.UserErrorCode;
-import com.gift.gift.domain.user.exception.UserException;
-import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.InvalidCursorException;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -34,8 +23,6 @@ import com.gift.gift.global.pagination.OpaqueCursorCodec;
 public class FriendService {
 
     private final FriendQueryRepository friendQueryRepository;
-    private final FriendshipRepository friendRepository;
-    private final UserRepository userRepository;
     private final OpaqueCursorCodec cursorCodec;
     private final FriendPageAssembler pageAssembler;
 
@@ -88,43 +75,6 @@ public class FriendService {
         } catch (RuntimeException exception) {
             throw new FriendException(
                     FriendErrorCode.FRIEND_SEARCH_FAILED,
-                    exception
-            );
-        }
-    }
-
-    @Transactional
-    public FriendCreateResponse createFriend(
-            Long userId,
-            FriendCreateRequest request
-    ) {
-        try {
-            Long friendUserId = request.friendUserId();
-
-            validateNotSelf(
-                    userId,
-                    friendUserId
-            );
-
-            User user = findActiveUser(userId);
-            User friendUser = findActiveFriendTarget(friendUserId);
-
-            validateNotAlreadyFriend(
-                    userId,
-                    friendUserId
-            );
-
-            saveFriend(
-                    user,
-                    friendUser
-            );
-
-            return FriendCreateResponse.from(friendUser);
-        } catch (BusinessException exception) {
-            throw exception;
-        } catch (RuntimeException exception) {
-            throw new FriendException(
-                    FriendErrorCode.FRIEND_CREATE_FAILED,
                     exception
             );
         }
@@ -184,114 +134,4 @@ public class FriendService {
         return cursor;
     }
 
-    private void validateNotSelf(Long userId, Long friendUserId) {
-        if (userId.equals(friendUserId)) {
-            throw new FriendException(
-                    FriendErrorCode.FRIEND_CANNOT_ADD_SELF
-            );
-        }
-    }
-
-    private User findActiveUser(Long userId) {
-        return userRepository
-                .findByIdAndStatusAndDeletedAtIsNull(
-                        userId,
-                        UserStatus.ACTIVE
-                )
-                .orElseThrow(() -> new UserException(
-                        UserErrorCode.USER_NOT_FOUND
-                ));
-    }
-
-    private User findActiveFriendTarget(Long friendUserId) {
-        return userRepository
-                .findByIdAndStatusAndDeletedAtIsNull(
-                        friendUserId,
-                        UserStatus.ACTIVE
-                )
-                .orElseThrow(() -> new FriendException(
-                        FriendErrorCode.FRIEND_CREATE_TARGET_NOT_FOUND
-                ));
-    }
-
-    private void validateNotAlreadyFriend(
-            Long userId,
-            Long friendUserId
-    ) {
-        boolean alreadyExists =
-                friendRepository
-                        .existsByUser1_IdAndUser2_IdAndDeletedAtIsNull(
-                                Math.min(userId, friendUserId),
-                                Math.max(userId, friendUserId)
-                        );
-
-        if (alreadyExists) {
-            throw new FriendException(
-                    FriendErrorCode.FRIEND_ALREADY_EXISTS
-            );
-        }
-    }
-
-    private void saveFriend(
-            User user,
-            User friendUser
-    ) {
-        try {
-            friendRepository.saveAndFlush(
-                    new Friendship(
-                            user,
-                            friendUser
-                    )
-            );
-        } catch (DataIntegrityViolationException exception) {
-            if (isFriendUniqueConstraintViolation(exception)) {
-                throw new FriendException(
-                        FriendErrorCode.FRIEND_ALREADY_EXISTS
-                );
-            }
-
-            throw exception;
-        }
-    }
-
-    private boolean isFriendUniqueConstraintViolation(
-            Throwable exception
-    ) {
-        Throwable current = exception;
-
-        while (current != null) {
-            if (current instanceof
-                    org.hibernate.exception.ConstraintViolationException violation) {
-
-                String constraintName =
-                        violation.getConstraintName();
-
-                if (constraintName == null) {
-                    return false;
-                }
-
-                String normalizedName =
-                        constraintName.replace("`", "");
-
-                int separatorIndex =
-                        normalizedName.lastIndexOf('.');
-
-                if (separatorIndex >= 0) {
-                    normalizedName =
-                            normalizedName.substring(
-                                    separatorIndex + 1
-                            );
-                }
-
-                return "uk_friendships_pair"
-                        .equalsIgnoreCase(normalizedName)
-                        && violation.getSQLException()
-                        .getErrorCode() == 1062;
-            }
-
-            current = current.getCause();
-        }
-
-        return false;
-    }
 }
