@@ -63,6 +63,7 @@ app:
     batch-size: ${AI_PROFILE_BATCH_SIZE:100}
     recovery-batch-size: ${AI_PROFILE_RECOVERY_BATCH_SIZE:50}
     dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
+    dispatch-claim-timeout: ${AI_PROFILE_DISPATCH_CLAIM_TIMEOUT:2m}
 
   bug-report:
     webhook-url: ${DISCORD_WEBHOOK_URL:}
