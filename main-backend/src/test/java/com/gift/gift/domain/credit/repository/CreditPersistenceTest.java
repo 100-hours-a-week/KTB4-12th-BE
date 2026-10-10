@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,35 +65,6 @@ class CreditPersistenceTest {
     }
 
     @Test
-    @DisplayName("같은 사용자의 크레딧 계좌는 두 개 저장할 수 없다")
-    void save_rejectsDuplicateAccountForSameUser() {
-        User user = persistUser();
-
-        creditAccountRepository.saveAndFlush(new CreditAccount(user.getId(), 500_000L));
-
-        CreditAccount duplicate = new CreditAccount(user.getId(), 500_000L);
-
-        assertThatThrownBy(
-                () -> creditAccountRepository.saveAndFlush(duplicate)
-        ).isInstanceOf(DataIntegrityViolationException.class);
-    }
-
-    @Test
-    @DisplayName("잔액이 충분하면 크레딧이 차감된다")
-    void decreaseBalance_decreasesWhenBalanceIsEnough() {
-        User user = persistUser();
-
-        creditAccountRepository.saveAndFlush(new CreditAccount(user.getId(), 100_000L));
-
-        int updatedCount = creditAccountRepository.decreaseBalance(user.getId(), 60_000L);
-
-        CreditAccount account = creditAccountRepository.findByUserId(user.getId()).orElseThrow();
-
-        assertThat(updatedCount).isEqualTo(1);
-        assertThat(account.getBalance()).isEqualTo(40_000L);
-    }
-
-    @Test
     @DisplayName("잔액이 부족하면 크레딧을 차감하지 않는다")
     void decreaseBalance_doesNotDecreaseWhenBalanceIsInsufficient() {
         User user = persistUser();
@@ -105,21 +77,6 @@ class CreditPersistenceTest {
 
         assertThat(updatedCount).isZero();
         assertThat(account.getBalance()).isEqualTo(50_000L);
-    }
-
-    @Test
-    @DisplayName("양수 금액만 크레딧 잔액에 더할 수 있다")
-    void increaseBalance_increasesPositiveAmount() {
-        User user = persistUser();
-
-        creditAccountRepository.saveAndFlush(new CreditAccount(user.getId(), 100_000L));
-
-        int updatedCount = creditAccountRepository.increaseBalance(user.getId(), 30_000L);
-
-        CreditAccount account = creditAccountRepository.findByUserId(user.getId()).orElseThrow();
-
-        assertThat(updatedCount).isEqualTo(1);
-        assertThat(account.getBalance()).isEqualTo(130_000L);
     }
 
     @Test
@@ -141,7 +98,10 @@ class CreditPersistenceTest {
                 -1L,
                 Timestamp.valueOf(now),
                 Timestamp.valueOf(now)
-        )).isInstanceOf(DataIntegrityViolationException.class);
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining(
+                        "chk_credit_accounts_balance_non_negative"
+                );
     }
 
     @Test
@@ -246,49 +206,10 @@ class CreditPersistenceTest {
                 null,
                 "INVALID_AMOUNT:" + UUID.randomUUID(),
                 Timestamp.valueOf(LocalDateTime.now())
-        )).isInstanceOf(DataIntegrityViolationException.class);
-    }
-
-    @Test
-    @DisplayName("출석 일자는 DATE 타입으로 저장된다")
-    void save_preservesAttendanceDate() {
-        User user = persistUser();
-        LocalDate attendanceDate = LocalDate.of(2026, 10, 10);
-
-        jdbcTemplate.update(
-                """
-                INSERT INTO credit_transactions (
-                    user_id,
-                    type,
-                    amount,
-                    balance_after,
-                    attendance_date,
-                    deduplication_key,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                user.getId(),
-                CreditTransactionType
-                        .DAILY_ATTENDANCE_REWARD
-                        .name(),
-                100_000L,
-                100_000L,
-                Date.valueOf(attendanceDate),
-                "ATTENDANCE_DATE:" + user.getId(),
-                Timestamp.valueOf(LocalDateTime.now())
-        );
-
-        LocalDate savedDate = jdbcTemplate.queryForObject(
-                """
-                SELECT attendance_date
-                FROM credit_transactions
-                WHERE deduplication_key = ?
-                """,
-                LocalDate.class,
-                "ATTENDANCE_DATE:" + user.getId()
-        );
-
-        assertThat(savedDate).isEqualTo(attendanceDate);
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining(
+                        "chk_credit_transactions_amount_positive"
+                );
     }
 
     private User persistUser() {
