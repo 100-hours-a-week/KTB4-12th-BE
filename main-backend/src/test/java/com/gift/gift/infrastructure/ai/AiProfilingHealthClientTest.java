@@ -39,7 +39,8 @@ class AiProfilingHealthClientTest {
                 Duration.ofHours(1),
                 Duration.ofHours(6),
                 100,
-                0
+                0,
+                Duration.ofMinutes(2)
         );
 
         AiProfilingClientConfig config = new AiProfilingClientConfig();
