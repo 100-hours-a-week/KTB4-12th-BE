@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -54,9 +55,52 @@ public class ProfileDispatchTransactionService {
             return Optional.empty();
         }
 
-        LocalDateTime now = LocalDateTime.now(clock);
+        LocalDateTime claimNow =
+                recipientProfileRepository.findDispatchClaimNow();
 
-        if (!profile.isDispatchDue(
+        if (profile.hasActiveDispatchClaim(
+                claimNow,
+                properties.dispatchClaimTimeout()
+        )) {
+            return Optional.empty();
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        boolean reuseSourceVersion = false;
+
+        String previousToken = profile.getDispatchClaimToken();
+
+        if (previousToken != null) {
+            // 해제 전에 기존 선점의 변경 스냅샷을 확인해야 한다.
+            LocalDateTime previousSnapshot =
+                    profile.getDispatchClaimLastChangedAt();
+
+            boolean currentVersionCompleted =
+                    profile.getSourceVersion() > 0
+                            && profile.getAnalyzedSourceVersion()
+                            >= profile.getSourceVersion();
+
+            if (previousSnapshot != null) {
+                boolean sameChange = Objects.equals(
+                        profile.getLastChangedAt(),
+                        previousSnapshot
+                );
+
+                if (currentVersionCompleted) {
+                    if (sameChange) {
+                        profile.clearPendingChange();
+                        profile.resetRetryCount();
+                    }
+                } else if (sameChange && profile.getSourceVersion() > 0) {
+                    // 접수 여부가 불확실한 같은 변경은 기존 번호로 재전송한다.
+                    reuseSourceVersion = true;
+                }
+            }
+
+            profile.releaseDispatchClaim(previousToken);
+        }
+
+        if (!reuseSourceVersion && !profile.isDispatchDue(
                 now,
                 properties.quietPeriod(),
                 properties.maximumWindow()
@@ -67,12 +111,23 @@ public class ProfileDispatchTransactionService {
         LocalDateTime snapshottedLastChangedAt =
                 profile.getLastChangedAt();
 
-        long sourceVersion = profile.createNextSourceVersion();
+        long sourceVersion = reuseSourceVersion
+                ? profile.getSourceVersion()
+                : profile.createNextSourceVersion();
+
+        String claimToken = UUID.randomUUID().toString();
+
+        profile.claimDispatch(
+                claimToken,
+                claimNow,
+                snapshottedLastChangedAt
+        );
 
         return Optional.of(new PreparedProfileDispatch(
                 profile.getId(),
                 createRequest(profile, sourceVersion),
-                snapshottedLastChangedAt
+                snapshottedLastChangedAt,
+                claimToken
         ));
     }
 
@@ -87,11 +142,33 @@ public class ProfileDispatchTransactionService {
                         "AI 요청을 반영할 프로파일이 없습니다."
                 ));
 
-        profile.applyAcceptedResponse(
-                response.sourceVersion(),
-                dispatch.snapshottedLastChangedAt(),
-                LocalDateTime.now(clock)
-        );
+        if (!profile.matchesDispatchClaim(dispatch.claimToken())) {
+            return;
+        }
+
+        try {
+            if (profile.getSourceVersion() != dispatch.sourceVersion()
+                    || !Objects.equals(
+                    profile.getDispatchClaimLastChangedAt(),
+                    dispatch.snapshottedLastChangedAt()
+            )) {
+                return;
+            }
+
+            if (response.sourceVersion() != dispatch.sourceVersion()) {
+                throw new IllegalStateException(
+                        "AI 응답 번호가 준비한 요청 번호와 일치하지 않습니다."
+                );
+            }
+
+            profile.applyAcceptedResponse(
+                    dispatch.sourceVersion(),
+                    dispatch.snapshottedLastChangedAt(),
+                    LocalDateTime.now(clock)
+            );
+        } finally {
+            profile.releaseDispatchClaim(dispatch.claimToken());
+        }
     }
 
     @Transactional
@@ -104,37 +181,53 @@ public class ProfileDispatchTransactionService {
                         "AI 요청 실패를 반영할 프로파일이 없습니다."
                 ));
 
-        if (profile.getSourceVersion() != dispatch.sourceVersion()) {
+        if (!profile.matchesDispatchClaim(dispatch.claimToken())) {
             return FailedDispatchResult.SKIPPED;
         }
 
-        // 완료 콜백은 HTTP 실패보다 먼저 도착할 수 있다.
-        // 완료된 번호를 다시 전송하도록 예약하지 않는다.
-        if (profile.getAnalyzedSourceVersion() >= dispatch.sourceVersion()) {
-            profile.applyAcceptedResponse(
-                    dispatch.sourceVersion(),
-                    dispatch.snapshottedLastChangedAt(),
-                    LocalDateTime.now(clock)
-            );
-            return FailedDispatchResult.SKIPPED;
-        }
+        try {
+            if (profile.getSourceVersion() != dispatch.sourceVersion()
+                    || !Objects.equals(
+                    profile.getDispatchClaimLastChangedAt(),
+                    dispatch.snapshottedLastChangedAt()
+            )) {
+                return FailedDispatchResult.SKIPPED;
+            }
 
-        if (!Objects.equals(
-                profile.getLastChangedAt(),
-                dispatch.snapshottedLastChangedAt()
-        )) {
-            return FailedDispatchResult.SKIPPED;
-        }
+            // 완료 콜백이 먼저 도착했다면 재시작하지 않는다.
+            if (profile.getAnalyzedSourceVersion()
+                    >= dispatch.sourceVersion()) {
+                profile.applyAcceptedResponse(
+                        dispatch.sourceVersion(),
+                        dispatch.snapshottedLastChangedAt(),
+                        LocalDateTime.now(clock)
+                );
 
-        if (profile.getRetryCount() == 0) {
-            profile.restartDebounce(LocalDateTime.now(clock));
-            profile.increaseRetryCount();
-            return FailedDispatchResult.DEBOUNCE_RESTARTED;
-        }
+                return FailedDispatchResult.SKIPPED;
+            }
 
-        profile.clearPendingChange();
-        profile.resetRetryCount();
-        return FailedDispatchResult.ABANDONED;
+            // 이전 요청의 실패로 신규 변경을 재시작하거나 지우지 않는다.
+            if (!Objects.equals(
+                    profile.getLastChangedAt(),
+                    dispatch.snapshottedLastChangedAt()
+            )) {
+                return FailedDispatchResult.SKIPPED;
+            }
+
+            if (profile.getRetryCount() == 0) {
+                profile.restartDebounce(LocalDateTime.now(clock));
+                profile.increaseRetryCount();
+
+                return FailedDispatchResult.DEBOUNCE_RESTARTED;
+            }
+
+            profile.clearPendingChange();
+            profile.resetRetryCount();
+
+            return FailedDispatchResult.ABANDONED;
+        } finally {
+            profile.releaseDispatchClaim(dispatch.claimToken());
+        }
     }
 
     @Transactional
@@ -149,22 +242,52 @@ public class ProfileDispatchTransactionService {
             return Optional.empty();
         }
 
+        LocalDateTime claimNow = recipientProfileRepository.findDispatchClaimNow();
+
+        if (profile.hasActiveDispatchClaim(
+                claimNow,
+                properties.dispatchClaimTimeout()
+        )) {
+            return Optional.empty();
+        }
+
+        String previousToken = profile.getDispatchClaimToken();
+
+        if (previousToken != null) {
+            // 일반 선점의 회수는 변경 스냅샷을 판단하는 일반 경로가 담당한다.
+            if (profile.getDispatchClaimLastChangedAt() != null) {
+                return Optional.empty();
+            }
+
+            profile.releaseDispatchClaim(previousToken);
+        }
+
         LocalDateTime pendingCutoff = LocalDateTime.now(clock)
                 .minus(properties.maximumWindow());
 
         if (profile.getProfileStatus() != RecipientProfileStatus.PENDING
                 || profile.getPendingSince() == null
                 || profile.getPendingSince().isAfter(pendingCutoff)
-                || profile.getLastChangedAt() != null) {
+                || profile.getLastChangedAt() != null
+                || profile.getSourceVersion() <= 0
+                || profile.getAnalyzedSourceVersion()
+                >= profile.getSourceVersion()) {
             return Optional.empty();
         }
 
-        // 복구는 기존 번호로 현재 비선호를 구성한다.
-        // 번호와 retry_count는 변경하지 않는다.
+        String claimToken = UUID.randomUUID().toString();
+
+        profile.claimDispatch(
+                claimToken,
+                claimNow,
+                null
+        );
+
         return Optional.of(new PreparedRecoveryDispatch(
                 profile.getId(),
                 createRequest(profile, profile.getSourceVersion()),
-                profile.getPendingSince()
+                profile.getPendingSince(),
+                claimToken
         ));
     }
 
@@ -178,20 +301,31 @@ public class ProfileDispatchTransactionService {
                         "AI 복구 결과를 반영할 프로파일이 없습니다."
                 ));
 
-        if (profile.getSourceVersion() != dispatch.sourceVersion()
-                || profile.getProfileStatus() != RecipientProfileStatus.PENDING
-                || !Objects.equals(
-                profile.getPendingSince(),
-                dispatch.snapshottedPendingSince()
-        )) {
+        if (!profile.matchesDispatchClaim(dispatch.claimToken())) {
             return RecoveryDispatchResult.SKIPPED;
         }
 
-        // 번호와 PENDING 상태를 검증한 뒤에만 호출한다.
-        // 신규 변경 시각과 retry_count는 그대로 유지된다.
-        profile.markPending(LocalDateTime.now(clock));
+        try {
+            if (profile.getDispatchClaimLastChangedAt() != null
+                    || profile.getSourceVersion() != dispatch.sourceVersion()
+                    || profile.getAnalyzedSourceVersion()
+                    >= dispatch.sourceVersion()
+                    || profile.getProfileStatus()
+                    != RecipientProfileStatus.PENDING
+                    || profile.getLastChangedAt() != null
+                    || !Objects.equals(
+                    profile.getPendingSince(),
+                    dispatch.snapshottedPendingSince()
+            )) {
+                return RecoveryDispatchResult.SKIPPED;
+            }
 
-        return RecoveryDispatchResult.WAIT_RESTARTED;
+            profile.markPending(LocalDateTime.now(clock));
+
+            return RecoveryDispatchResult.WAIT_RESTARTED;
+        } finally {
+            profile.releaseDispatchClaim(dispatch.claimToken());
+        }
     }
 
     private AiProfileRequest createRequest(

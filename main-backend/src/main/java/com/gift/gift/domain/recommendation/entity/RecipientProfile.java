@@ -72,6 +72,22 @@ import com.gift.gift.global.common.BaseTimeEntity;
                 @CheckConstraint(
                         name = "chk_recipient_profiles_retry_count",
                         constraint = "retry_count BETWEEN 0 AND 2"
+                ),
+
+                @CheckConstraint(
+                        name = "chk_recipient_profiles_dispatch_claim",
+                        constraint = """
+                (
+                    dispatch_claim_token IS NULL
+                    AND dispatch_claimed_at IS NULL
+                    AND dispatch_claim_last_changed_at IS NULL
+                )
+                OR
+                (
+                    dispatch_claim_token IS NOT NULL
+                    AND dispatch_claimed_at IS NOT NULL
+                )
+                """
                 )
         }
 )
@@ -128,6 +144,15 @@ public class RecipientProfile extends BaseTimeEntity {
 
     @Column(name = "pending_since")
     private LocalDateTime pendingSince;
+
+    @Column(name = "dispatch_claim_token", length = 36)
+    private String dispatchClaimToken;
+
+    @Column(name = "dispatch_claimed_at")
+    private LocalDateTime dispatchClaimedAt;
+
+    @Column(name = "dispatch_claim_last_changed_at")
+    private LocalDateTime dispatchClaimLastChangedAt;
 
     @Min(0)
     @Max(MAX_RETRY_COUNT)
@@ -348,5 +373,71 @@ public class RecipientProfile extends BaseTimeEntity {
         }
 
         return callbackSourceVersion != analyzedSourceVersion;
+    }
+
+    public boolean hasActiveDispatchClaim(
+            LocalDateTime now,
+            Duration timeout
+    ) {
+        Objects.requireNonNull(now, "현재 시각은 필수입니다.");
+        Objects.requireNonNull(timeout, "선점 유효 기간은 필수입니다.");
+
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException(
+                    "선점 유효 기간은 0보다 커야 합니다."
+            );
+        }
+
+        if (dispatchClaimToken == null) {
+            return false;
+        }
+
+        Objects.requireNonNull(
+                dispatchClaimedAt,
+                "선점 토큰이 있으면 선점 시각도 있어야 합니다."
+        );
+
+        return now.isBefore(dispatchClaimedAt.plus(timeout));
+    }
+
+    public boolean matchesDispatchClaim(String token) {
+        return token != null && token.equals(dispatchClaimToken);
+    }
+
+    public void claimDispatch(
+            String token,
+            LocalDateTime claimedAt,
+            LocalDateTime lastChangedSnapshot
+    ) {
+        Objects.requireNonNull(token, "선점 토큰은 필수입니다.");
+        Objects.requireNonNull(claimedAt, "선점 시각은 필수입니다.");
+
+        if (token.isBlank() || token.length() > 36) {
+            throw new IllegalArgumentException(
+                    "선점 토큰은 공백이 아닌 36자 이하의 값이어야 합니다."
+            );
+        }
+
+        if (dispatchClaimToken != null) {
+            throw new IllegalStateException(
+                    "기존 선점을 정리한 뒤 새 선점을 저장해야 합니다."
+            );
+        }
+
+        dispatchClaimToken = token;
+        dispatchClaimedAt = claimedAt;
+        dispatchClaimLastChangedAt = lastChangedSnapshot;
+    }
+
+    public boolean releaseDispatchClaim(String token) {
+        if (!matchesDispatchClaim(token)) {
+            return false;
+        }
+
+        dispatchClaimToken = null;
+        dispatchClaimedAt = null;
+        dispatchClaimLastChangedAt = null;
+
+        return true;
     }
 }

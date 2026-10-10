@@ -251,6 +251,7 @@ class RecipientProfileRepositoryIntegrationTest {
         List<Long> candidates = profileRepository.findRecoveryCandidateIds(
                 RecipientProfileStatus.PENDING,
                 now.minusHours(6),
+                profileRepository.findDispatchClaimNow().minusMinutes(2),
                 PageRequest.of(0, 100)
         );
 
@@ -270,6 +271,7 @@ class RecipientProfileRepositoryIntegrationTest {
         assertThat(profileRepository.findRecoveryCandidateIds(
                 RecipientProfileStatus.PENDING,
                 now.minusHours(6),
+                profileRepository.findDispatchClaimNow().minusMinutes(2),
                 PageRequest.of(0, 1)
         )).containsExactly(oldest.getId());
     }

@@ -8,7 +8,8 @@ import com.gift.gift.domain.recommendation.dto.request.AiProfileRequest;
 public record PreparedProfileDispatch(
         Long profileId,
         AiProfileRequest request,
-        LocalDateTime snapshottedLastChangedAt
+        LocalDateTime snapshottedLastChangedAt,
+        String claimToken
 ) {
 
     public PreparedProfileDispatch {
@@ -24,6 +25,11 @@ public record PreparedProfileDispatch(
                 snapshottedLastChangedAt,
                 "스냅샷 변경 시각은 null일 수 없습니다."
         );
+        if (claimToken == null || claimToken.isBlank()) {
+            throw new IllegalArgumentException(
+                    "선점 토큰은 null이거나 공백일 수 없습니다."
+            );
+        }
     }
 
     public long sourceVersion() {
