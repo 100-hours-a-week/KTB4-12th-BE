@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.product.entity.Category;
@@ -34,6 +35,43 @@ class ReviewPersistenceTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Test
+    @DisplayName("프로파일 리뷰는 작성일과 ID 최신순 열 건이며 삭제 및 다른 작성자를 제외한다")
+    void findLatestProfileReviews_limitsBeforeProductDeduplication() {
+        Fixture fixture = persistFixture();
+        LocalDateTime sameTime = LocalDateTime.of(2026, 10, 11, 12, 0);
+        for (int i = 0; i < 12; i++) {
+            GiftHistory gift = new GiftHistory(
+                    fixture.sender(), fixture.recipient(), fixture.giftHistory().getProduct(), 1,
+                    BigDecimal.valueOf(10_000), "선물 상품", UUID.randomUUID(), "a".repeat(64)
+            );
+            entityManager.persist(gift);
+            Review review = reviewRepository.saveAndFlush(new Review(
+                    gift, fixture.recipient(), 5, "리뷰 " + i
+            ));
+            entityManager.createQuery("update Review r set r.createdAt = :time where r.id = :id")
+                    .setParameter("time", sameTime).setParameter("id", review.getId()).executeUpdate();
+        }
+        Review deleted = reviewRepository.saveAndFlush(new Review(
+                fixture.giftHistory(), fixture.recipient(), 1, "삭제 리뷰"
+        ));
+        deleted.softDelete(sameTime.plusHours(1));
+        Fixture other = persistFixture();
+        reviewRepository.saveAndFlush(new Review(other.giftHistory(), other.recipient(), 1, "다른 사용자"));
+        entityManager.flush();
+        entityManager.clear();
+
+        var rows = reviewRepository.findLatestProfileReviews(fixture.recipient().getId(), PageRequest.of(0, 10));
+
+        assertThat(rows).extracting(ProfileReviewRow::reviewText).containsExactly(
+                "리뷰 11", "리뷰 10", "리뷰 9", "리뷰 8", "리뷰 7",
+                "리뷰 6", "리뷰 5", "리뷰 4", "리뷰 3", "리뷰 2"
+        );
+        assertThat(rows).extracting(ProfileReviewRow::productId)
+                .containsOnly(fixture.giftHistory().getProduct().getId());
+        assertThat(reviewRepository.findLatestProfileReviews(-1L, PageRequest.of(0, 10))).isEmpty();
+    }
 
     @Test
     @DisplayName("리뷰를 저장하면 식별자와 감사 시각이 생성된다")

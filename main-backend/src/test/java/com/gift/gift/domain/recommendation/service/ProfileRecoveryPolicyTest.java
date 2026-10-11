@@ -19,6 +19,8 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
+import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
+import com.gift.gift.domain.review.repository.ReviewRepository;
 import com.gift.gift.domain.recommendation.dto.request.AiProfileRequest;
 import com.gift.gift.domain.recommendation.dto.response.AiProfileAcceptedResponse;
 import com.gift.gift.domain.recommendation.entity.RecipientProfile;
@@ -92,6 +94,8 @@ class ProfileRecoveryPolicyTest {
         verify(client).requestProfiling(new AiProfileRequest(
                 10L,
                 1L,
+                List.of(),
+                null,
                 List.of()
         ));
 
@@ -361,6 +365,8 @@ class ProfileRecoveryPolicyTest {
         transactions = spy(new ProfileDispatchTransactionService(
                 repository,
                 dislikeRepository,
+                mock(UserGiftPreferenceRepository.class),
+                mock(ReviewRepository.class),
                 properties,
                 CLOCK
         ));

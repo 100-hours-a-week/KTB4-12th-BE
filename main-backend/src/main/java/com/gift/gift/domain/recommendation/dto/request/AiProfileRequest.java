@@ -3,10 +3,15 @@ package com.gift.gift.domain.recommendation.dto.request;
 import java.util.List;
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record AiProfileRequest(
         Long recipientUserId,
         long sourceVersion,
-        List<DislikedCategoryRequest> dislikedCategories
+        List<DislikedCategoryRequest> dislikedCategories,
+        String giftPreference,
+        List<ProfileReviewRequest> reviews
 ) {
 
     public AiProfileRequest {
@@ -32,5 +37,9 @@ public record AiProfileRequest(
         }
 
         dislikedCategories = List.copyOf(dislikedCategories);
+        reviews = List.copyOf(Objects.requireNonNull(reviews, "리뷰 목록은 null일 수 없습니다."));
+        if (reviews.size() > 10) {
+            throw new IllegalArgumentException("프로파일 리뷰는 최대 10건입니다.");
+        }
     }
 }
