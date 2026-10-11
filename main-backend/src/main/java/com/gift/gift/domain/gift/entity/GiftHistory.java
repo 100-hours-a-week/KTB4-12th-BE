@@ -22,6 +22,10 @@ import com.gift.gift.global.common.BaseTimeEntity;
         @UniqueConstraint(
                 name = "uk_gift_histories_sender_idempotency",
                 columnNames = {"sender_id", "idempotency_key"}
+        ),
+        @UniqueConstraint(
+                name = "uk_gift_histories_order_record",
+                columnNames = "order_record_id"
         )
 }, indexes = {
         @Index(
@@ -130,7 +134,7 @@ public class GiftHistory extends BaseTimeEntity {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 32)
     @ColumnDefault("'COMPLETED'")
     private GiftStatus status = GiftStatus.COMPLETED;
 
