@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      PAYMENT_SERVER_API_KEY: ci-payment-server-api-key
       AWS_REGION: ap-northeast-2
       PRODUCT_IMAGE_BUCKET: ci-test-product-images
       AI_PROFILE_BASE_URL: http://localhost:8000
@@ -174,6 +175,7 @@ jobs:
             --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
             --env DB_USERNAME=gift_smoke \
             --env DB_PASSWORD=gift_smoke_password \
+            --env PAYMENT_SERVER_API_KEY \
             seonjalal-payment-server:ci
 
           PAYMENT_SERVER_HOST_PORT="$(docker port "$PAYMENT_SERVER_CONTAINER" 8090/tcp | sed 's/.*://')"

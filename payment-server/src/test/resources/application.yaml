@@ -22,6 +22,11 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
+payment:
+  security:
+    internal-api:
+      key: test-payment-server-api-key
+
 management:
   endpoints:
     web:

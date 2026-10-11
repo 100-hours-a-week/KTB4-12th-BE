@@ -20,6 +20,11 @@ spring:
   flyway:
     enabled: false
 
+payment:
+  security:
+    internal-api:
+      key: ${PAYMENT_SERVER_API_KEY}
+
 server:
   port: ${PAYMENT_SERVER_PORT:8090}
 
