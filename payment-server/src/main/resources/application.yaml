@@ -2,6 +2,24 @@ spring:
   application:
     name: payment-server
 
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: false
+
 server:
   port: ${PAYMENT_SERVER_PORT:8090}
 
@@ -13,3 +31,8 @@ management:
   endpoint:
     health:
       show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.gift.payment: INFO
