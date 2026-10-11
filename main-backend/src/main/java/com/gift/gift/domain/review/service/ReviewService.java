@@ -21,6 +21,10 @@ import com.gift.gift.domain.review.entity.Review;
 import com.gift.gift.domain.review.exception.ReviewErrorCode;
 import com.gift.gift.domain.review.exception.ReviewException;
 import com.gift.gift.domain.review.repository.ReviewRepository;
+import com.gift.gift.domain.recommendation.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
+import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.domain.user.service.UserQueryService;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +36,8 @@ public class ReviewService {
 
     private final GiftHistoryRepository giftHistoryRepository;
     private final ReviewRepository reviewRepository;
+    private final UserQueryService userQueryService;
+    private final RecipientProfileRepository recipientProfileRepository;
     private final Clock clock;
 
     @Transactional
@@ -47,14 +53,25 @@ public class ReviewService {
                             () -> new ReviewException(ReviewErrorCode.REVIEW_CREATE_GIFT_NOT_FOUND)
                     );
 
+            User recipient = userQueryService.findActiveUserForUpdate(userId)
+                    .orElseThrow(() -> new ReviewException(
+                            ReviewErrorCode.REVIEW_CREATE_GIFT_NOT_FOUND
+                    ));
+
             Review review = new Review(
                     giftHistory,
-                    giftHistory.getRecipient(),
+                    recipient,
                     request.rating(),
                     request.content()
             );
 
             Review savedReview = saveReview(review);
+            RecipientProfile profile = recipientProfileRepository
+                    .findByRecipientIdForUpdate(userId)
+                    .orElseGet(() -> recipientProfileRepository.save(
+                            new RecipientProfile(recipient)
+                    ));
+            profile.recordPreferenceChange(LocalDateTime.now(clock));
 
             return ReviewResponse.from(savedReview);
         } catch (ReviewException exception) {

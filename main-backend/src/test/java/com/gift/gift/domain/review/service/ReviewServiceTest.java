@@ -24,7 +24,10 @@ import com.gift.gift.domain.review.dto.response.ReviewResponse;
 import com.gift.gift.domain.review.entity.Review;
 import com.gift.gift.domain.review.exception.ReviewException;
 import com.gift.gift.domain.review.repository.ReviewRepository;
+import com.gift.gift.domain.recommendation.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +50,8 @@ class ReviewServiceTest {
 
     private GiftHistoryRepository giftHistoryRepository;
     private ReviewRepository reviewRepository;
+    private UserQueryService userQueryService;
+    private RecipientProfileRepository profileRepository;
     private ReviewService reviewService;
     private Clock clock;
 
@@ -54,10 +59,14 @@ class ReviewServiceTest {
     void setUp() {
         giftHistoryRepository = mock(GiftHistoryRepository.class);
         reviewRepository = mock(ReviewRepository.class);
+        userQueryService = mock(UserQueryService.class);
+        profileRepository = mock(RecipientProfileRepository.class);
         clock = Clock.fixed(NOW, ZONE_ID);
         reviewService = new ReviewService(
                 giftHistoryRepository,
                 reviewRepository,
+                userQueryService,
+                profileRepository,
                 clock
         );
     }
@@ -77,6 +86,12 @@ class ReviewServiceTest {
                         GiftStatus.COMPLETED
                 ))
                 .thenReturn(Optional.of(giftHistory));
+        when(userQueryService.findActiveUserForUpdate(USER_ID))
+                .thenReturn(Optional.of(recipient));
+        when(profileRepository.findByRecipientIdForUpdate(USER_ID))
+                .thenReturn(Optional.empty());
+        when(profileRepository.save(any(RecipientProfile.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(reviewRepository.saveAndFlush(any(Review.class)))
                 .thenReturn(savedReview);
 
@@ -106,6 +121,7 @@ class ReviewServiceTest {
                 .isEqualTo(5);
         assertThat(reviewToSave.getReviewText())
                 .isEqualTo("좋아요");
+        verify(profileRepository).save(any(RecipientProfile.class));
     }
 
     @Test
@@ -383,6 +399,8 @@ class ReviewServiceTest {
 
         when(giftHistory.getRecipient())
                 .thenReturn(recipient);
+        when(userQueryService.findActiveUserForUpdate(USER_ID))
+                .thenReturn(Optional.of(recipient));
         when(giftHistoryRepository
                 .findByIdAndRecipient_IdAndStatusAndDeletedAtIsNull(
                         GIFT_ID,
@@ -390,6 +408,11 @@ class ReviewServiceTest {
                         GiftStatus.COMPLETED
                 ))
                 .thenReturn(Optional.of(giftHistory));
+
+        when(profileRepository.findByRecipientIdForUpdate(USER_ID))
+                .thenReturn(Optional.empty());
+        when(profileRepository.save(any(RecipientProfile.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         return giftHistory;
     }
