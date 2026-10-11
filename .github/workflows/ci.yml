@@ -10,6 +10,7 @@ on:
       - 'docs/**'
   push:
     branches:
+      - develop
       - main
     paths-ignore:
       - '**/*.md'
@@ -26,6 +27,8 @@ concurrency:
 env:
   MAIN_BACKEND_IMAGE_NAME: peterj0117/seonjalal-be
   PAYMENT_SERVER_IMAGE_NAME: peterj0117/seonjalal-payment-server
+  DEV_AWS_REGION: ap-northeast-2
+  DEV_ECR_REPOSITORY: seonjalal/develop/backend
 
 jobs:
   validate:
@@ -217,6 +220,99 @@ jobs:
             "seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             2>/dev/null || true
           docker network rm "seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" 2>/dev/null || true
+
+  publish-develop:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: ${{ github.workflow }}-publish-develop
+      cancel-in-progress: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.DEV_ECR_ROLE_ARN }}
+          aws-region: ${{ env.DEV_AWS_REGION }}
+          role-session-name: seonjalal-develop-be-publish
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve immutable images
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for SERVICE in main-backend payment-server; do
+            OUTPUT_PREFIX="${SERVICE//-/_}"
+            IMAGE_TAG="develop-${SERVICE}-${GITHUB_SHA}"
+            IMAGE_URI="${{ steps.ecr.outputs.registry }}/${DEV_ECR_REPOSITORY}:${IMAGE_TAG}"
+
+            if aws ecr describe-images \
+              --region "${DEV_AWS_REGION}" \
+              --repository-name "${DEV_ECR_REPOSITORY}" \
+              --image-ids "imageTag=${IMAGE_TAG}" \
+              >/dev/null 2>&1; then
+              echo "${OUTPUT_PREFIX}_publish=false" >> "${GITHUB_OUTPUT}"
+            else
+              echo "${OUTPUT_PREFIX}_publish=true" >> "${GITHUB_OUTPUT}"
+            fi
+
+            echo "${OUTPUT_PREFIX}_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          done
+
+      - name: Set up Docker Buildx
+        if: steps.images.outputs.main_backend_publish == 'true' || steps.images.outputs.payment_server_publish == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Main Backend develop image
+        if: steps.images.outputs.main_backend_publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: main-backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.main_backend_uri }}
+          cache-from: type=gha,scope=develop-main-backend
+          cache-to: type=gha,mode=max,scope=develop-main-backend
+
+      - name: Build and push Payment Server develop image
+        if: steps.images.outputs.payment_server_publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: payment-server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.payment_server_uri }}
+          cache-from: type=gha,scope=develop-payment-server
+          cache-to: type=gha,mode=max,scope=develop-payment-server
+
+      - name: Record develop images
+        shell: bash
+        run: |
+          {
+            echo "## Develop backend images"
+            echo
+            echo "- Main Backend: \`${{ steps.images.outputs.main_backend_uri }}\`"
+            echo "- Main Backend published in this run: \`${{ steps.images.outputs.main_backend_publish }}\`"
+            echo "- Payment Server: \`${{ steps.images.outputs.payment_server_uri }}\`"
+            echo "- Payment Server published in this run: \`${{ steps.images.outputs.payment_server_publish }}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
