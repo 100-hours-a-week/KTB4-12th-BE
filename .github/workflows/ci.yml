@@ -149,12 +149,6 @@ jobs:
             --env SCHEDULING_ENABLED \
             seonjalal-main-backend:ci
 
-          docker run --detach \
-            --name "$PAYMENT_SERVER_CONTAINER" \
-            --network "$NETWORK" \
-            --publish 127.0.0.1::8090 \
-            seonjalal-payment-server:ci
-
           MAIN_BACKEND_HOST_PORT="$(docker port "$MAIN_BACKEND_CONTAINER" 8080/tcp | sed 's/.*://')"
           if ! MAIN_BACKEND_HEALTH_RESPONSE="$(
             curl --fail-with-body --silent --show-error \
@@ -172,6 +166,15 @@ jobs:
           grep --quiet --extended-regexp \
             '"status"[[:space:]]*:[[:space:]]*"UP"' \
             <<< "$MAIN_BACKEND_HEALTH_RESPONSE"
+
+          docker run --detach \
+            --name "$PAYMENT_SERVER_CONTAINER" \
+            --network "$NETWORK" \
+            --publish 127.0.0.1::8090 \
+            --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
+            --env DB_USERNAME=gift_smoke \
+            --env DB_PASSWORD=gift_smoke_password \
+            seonjalal-payment-server:ci
 
           PAYMENT_SERVER_HOST_PORT="$(docker port "$PAYMENT_SERVER_CONTAINER" 8090/tcp | sed 's/.*://')"
           if ! PAYMENT_SERVER_HEALTH_RESPONSE="$(
