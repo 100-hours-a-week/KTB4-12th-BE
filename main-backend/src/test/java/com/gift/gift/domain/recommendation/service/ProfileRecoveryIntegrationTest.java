@@ -151,6 +151,9 @@ class ProfileRecoveryIntegrationTest {
 
         assertThat(profile().getSourceVersion()).isEqualTo(1);
         assertThat(profile().getProfileStatus()).isEqualTo(RecipientProfileStatus.PENDING);
+    }
+
+    @Test
     @DisplayName("변경 표시 후 디바운스가 지나면 새 번호와 최신 취향을 전송한다")
     void markedChange_waitsForDebounceThenUsesNewVersion() {
         List<AiProfileRequest> sent = dispatchInitialPreference();
