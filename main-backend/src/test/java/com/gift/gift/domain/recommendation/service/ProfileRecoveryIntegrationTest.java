@@ -14,6 +14,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.gift.gift.domain.friend.entity.Friendship;
+import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
 import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
@@ -28,6 +29,8 @@ import com.gift.gift.domain.recommendation.entity.RecipientProfileStatus;
 import com.gift.gift.domain.recommendation.exception.AiProfilingClientException;
 import com.gift.gift.domain.recommendation.exception.AiProfilingFailureType;
 import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
+import com.gift.gift.domain.review.dto.request.CreateReviewRequest;
+import com.gift.gift.domain.review.service.ReviewService;
 import com.gift.gift.infrastructure.ai.AiProfilingClient;
 import com.gift.gift.domain.user.entity.User;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,6 +48,7 @@ class ProfileRecoveryIntegrationTest {
     @Autowired private ProfileDispatchService dispatch;
     @Autowired private ProfileCallbackService callbacks;
     @Autowired private PreferenceSaveService preferences;
+    @Autowired private ReviewService reviews;
     @Autowired private ProductQueryService products;
     @MockitoBean private AiProfilingClient client;
     @MockitoBean private Clock clock;
@@ -81,6 +85,8 @@ class ProfileRecoveryIntegrationTest {
         if (recipientId == null) return;
         tx.executeWithoutResult(status -> {
             sql("DELETE FROM recipient_recommended_products WHERE recipient_id = :id", recipientId);
+            sql("DELETE FROM reviews WHERE user_id = :id", recipientId);
+            sql("DELETE FROM gift_histories WHERE recipient_id = :id", recipientId);
             sql("DELETE FROM recipient_profiles WHERE recipient_id = :id", recipientId);
             sql("DELETE FROM user_dislike_categories WHERE user_id = :id", recipientId);
             sql("DELETE FROM friendships WHERE user_id_1 = :id OR user_id_2 = :id", ownerId);
@@ -121,6 +127,28 @@ class ProfileRecoveryIntegrationTest {
         var response = products.getProducts(request(), ownerId);
         assertThat(response.appliedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
         assertThat(response.products()).extracting(ProductSummaryResponse::productId).containsExactly(firstId, secondId);
+    }
+
+    @Test
+    @DisplayName("리뷰 등록이 수신자 프로파일 변경을 기록해 디바운스 후 요청을 시작한다")
+    void reviewCreation_marksRecipientProfileForDispatch() {
+        setTime(NOW.minusSeconds(3601));
+        Long giftId = tx.execute(status -> {
+            GiftHistory gift = new GiftHistory(entityManager.find(User.class, ownerId),
+                    entityManager.find(User.class, recipientId), entityManager.find(Product.class, firstId),
+                    1, BigDecimal.valueOf(10000), "추천 상품", UUID.randomUUID(), "a".repeat(64));
+            entityManager.persist(gift);
+            return gift.getId();
+        });
+
+        reviews.createReview(giftId, recipientId, new CreateReviewRequest(4, "매일 잘 쓰고 있어요."));
+        assertThat(profile().getLastChangedAt()).isEqualTo(local(NOW.minusSeconds(3601)));
+
+        setTime(NOW);
+        dispatch.dispatchDueProfiles();
+
+        assertThat(profile().getSourceVersion()).isEqualTo(1);
+        assertThat(profile().getProfileStatus()).isEqualTo(RecipientProfileStatus.PENDING);
     }
 
     @ParameterizedTest
