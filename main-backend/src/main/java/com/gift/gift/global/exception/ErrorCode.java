@@ -9,6 +9,7 @@ public enum ErrorCode {
         HttpStatus.INTERNAL_SERVER_ERROR,
         "일시적인 오류가 발생했습니다. 다시 시도해 주세요."
     ),
+    NOT_FOUND(HttpStatus.NOT_FOUND,"요청한 리소스를 찾을 수 없습니다."),
     INVALID_EMAIL_FORMAT(HttpStatus.BAD_REQUEST, "이메일 형식을 확인해 주세요."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요."),
     REQUIRED_TERMS_NOT_AGREED(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해 주세요."),
