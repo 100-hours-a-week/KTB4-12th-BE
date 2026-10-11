@@ -31,6 +31,18 @@ public class FriendRequestService {
     private final FriendRequestRepository requestRepository;
     private final OpaqueCursorCodec cursorCodec;
 
+    public FriendRequestResponse accept(Long userId, Long requestId) {
+        return commandService.accept(userId, requestId);
+    }
+
+    public FriendRequestResponse reject(Long userId, Long requestId) {
+        return commandService.reject(userId, requestId);
+    }
+
+    public FriendRequestResponse cancel(Long userId, Long requestId) {
+        return commandService.cancel(userId, requestId);
+    }
+
     public FriendRequestResponse create(Long userId, FriendRequestCreateRequest request) {
         try {
             return commandService.create(userId, request.receiverId());

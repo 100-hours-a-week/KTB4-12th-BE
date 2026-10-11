@@ -1,6 +1,7 @@
 package com.gift.gift.domain.friend.controller;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,27 @@ import com.gift.gift.global.security.CurrentUserId;
 public class FriendRequestController {
 
     private final FriendRequestService requestService;
+
+    @PostMapping("/{requestId}/accept")
+    public ApiResponse<FriendRequestResponse> accept(
+            @CurrentUserId Long userId, @PathVariable @Positive Long requestId
+    ) {
+        return ApiResponse.success("친구 요청을 수락했습니다.", requestService.accept(userId, requestId));
+    }
+
+    @PostMapping("/{requestId}/reject")
+    public ApiResponse<FriendRequestResponse> reject(
+            @CurrentUserId Long userId, @PathVariable @Positive Long requestId
+    ) {
+        return ApiResponse.success("친구 요청을 거절했습니다.", requestService.reject(userId, requestId));
+    }
+
+    @PostMapping("/{requestId}/cancel")
+    public ApiResponse<FriendRequestResponse> cancel(
+            @CurrentUserId Long userId, @PathVariable @Positive Long requestId
+    ) {
+        return ApiResponse.success("친구 요청을 취소했습니다.", requestService.cancel(userId, requestId));
+    }
 
     @PostMapping
     public ResponseEntity<ApiResponse<FriendRequestResponse>> create(

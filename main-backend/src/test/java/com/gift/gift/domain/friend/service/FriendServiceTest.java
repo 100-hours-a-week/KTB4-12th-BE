@@ -1,5 +1,6 @@
 package com.gift.gift.domain.friend.service;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -14,6 +15,7 @@ import com.gift.gift.domain.friend.query.FriendPage;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
 import com.gift.gift.domain.friend.repository.FriendQueryRow;
+import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.friend.support.FriendCursor;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
@@ -44,7 +46,9 @@ class FriendServiceTest {
         friendService = new FriendService(
                 friendQueryRepository,
                 cursorCodec,
-                pageAssembler
+                pageAssembler,
+                mock(FriendshipRepository.class),
+                Clock.systemUTC()
         );
     }
 
@@ -119,7 +123,9 @@ class FriendServiceTest {
         FriendService serviceWithRealCodec = new FriendService(
                 friendQueryRepository,
                 new OpaqueCursorCodec(JsonMapper.builder().build()),
-                pageAssembler
+                pageAssembler,
+                mock(FriendshipRepository.class),
+                Clock.systemUTC()
         );
 
         assertThatThrownBy(() -> serviceWithRealCodec.getFriends(USER_ID, ""))

@@ -1,5 +1,7 @@
 package com.gift.gift.domain.friend.service;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
@@ -12,7 +14,10 @@ import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.query.FriendPage;
 import com.gift.gift.domain.friend.query.FriendPageAssembler;
 import com.gift.gift.domain.friend.repository.FriendQueryRepository;
+import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.friend.support.FriendCursor;
+import com.gift.gift.global.exception.BusinessException;
+import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.InvalidCursorException;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -25,6 +30,15 @@ public class FriendService {
     private final FriendQueryRepository friendQueryRepository;
     private final OpaqueCursorCodec cursorCodec;
     private final FriendPageAssembler pageAssembler;
+    private final FriendshipRepository friendshipRepository;
+    private final Clock clock;
+
+    @Transactional
+    public void remove(Long userId, Long friendId) {
+        friendshipRepository.findForUpdate(friendId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FRIEND_NOT_FOUND))
+                .remove(LocalDateTime.now(clock));
+    }
 
     public CursorPageResponse<FriendListItem> getFriends(
             Long userId,

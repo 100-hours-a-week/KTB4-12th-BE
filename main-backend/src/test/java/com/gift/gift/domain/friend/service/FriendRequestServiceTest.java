@@ -10,15 +10,22 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.friend.dto.request.FriendRequestCreateRequest;
+import com.gift.gift.domain.friend.dto.response.FriendRequestResponse;
 import com.gift.gift.domain.friend.entity.FriendRequest;
+import com.gift.gift.domain.friend.entity.FriendRequestStatus;
 import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.repository.FriendRequestRepository;
+import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
 
@@ -35,6 +42,39 @@ class FriendRequestServiceTest {
         commands = mock(FriendRequestCommandService.class);
         requests = mock(FriendRequestRepository.class);
         service = new FriendRequestService(commands, requests, mock(OpaqueCursorCodec.class));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = FriendRequestStatus.class, names = {"ACCEPTED", "REJECTED", "CANCELED"})
+    @DisplayName("종료 요청 재처리는 권한 확인 후 성공하며 관계와 알림을 다시 만들지 않는다")
+    void complete_doesNotRepeatSideEffectsOrBypassAuthorization(FriendRequestStatus terminal) {
+        FriendshipRepository friendships = mock(FriendshipRepository.class);
+        UserRepository users = mock(UserRepository.class);
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        FriendRequestCommandService command = new FriendRequestCommandService(requests, friendships, users, events);
+        FriendRequest existing = request(1L, 2L);
+        existing.complete(terminal);
+        when(requests.findForUpdate(10L)).thenReturn(Optional.of(existing));
+        Long actor = terminal == FriendRequestStatus.CANCELED ? 1L : 2L;
+        assertThat(invoke(command, actor, terminal).status()).isEqualTo(terminal);
+        assertThatThrownBy(() -> invoke(command, actor == 1L ? 2L : 1L, terminal))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.FRIEND_REQUEST_FORBIDDEN));
+        assertThatThrownBy(() -> invoke(command, 3L, terminal))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.FRIEND_REQUEST_NOT_FOUND));
+        verifyNoInteractions(friendships, users, events);
+    }
+
+    private FriendRequestResponse invoke(
+            FriendRequestCommandService command, Long actor, FriendRequestStatus terminal
+    ) {
+        return switch (terminal) {
+            case ACCEPTED -> command.accept(actor, 10L);
+            case REJECTED -> command.reject(actor, 10L);
+            case CANCELED -> command.cancel(actor, 10L);
+            default -> throw new IllegalArgumentException("종료 상태만 사용");
+        };
     }
 
     @Test

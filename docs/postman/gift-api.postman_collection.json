@@ -385,6 +385,25 @@
             "description": "양방향으로 연결된 친구를 이름, 이메일 순으로 20건씩 조회한다. 탈퇴·비활성 친구는 제외한다. `birth`는 생일을 공개한 친구만 `MM-dd` 형식이고 비공개이면 null이다. `cursor=`처럼 빈 값으로 보내면 400이다."
           },
           "response": []
+        },
+        {
+          "name": "친구 삭제",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/friends/{{friendId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "friends",
+                "{{friendId}}"
+              ]
+            },
+            "description": "목록의 friendId(관계 ID)를 사용하며 상대 userId와 다르다. 관계 참여자의 토큰 사용. 204 본문 없음. 양쪽 관계를 soft delete하고 반복 삭제는 최초 삭제 시각을 유지하며 204. 타인·없는 관계는 404 FRIEND_NOT_FOUND. 새 요청 수락 시 같은 관계 행을 복구한다."
+          },
+          "response": []
         }
       ]
     },
@@ -482,6 +501,66 @@
               ]
             },
             "description": "활성 사용자 간 삭제되지 않은 PENDING 요청을 createdAt DESC, requestId DESC로 20건 조회한다. 다음 페이지는 data.pagination.nextCursor를 커서 변수에 넣고 query를 활성화한다. 다른 사용자·방향의 커서는 400 INVALID_CURSOR."
+          },
+          "response": []
+        },
+        {
+          "name": "친구 요청 수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/friend-requests/{{friendRequestId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "friend-requests",
+                "{{friendRequestId}}",
+                "accept"
+              ]
+            },
+            "description": "수신자 토큰 사용. 활성 사용자 간 관계를 생성하거나 삭제된 관계를 복구한다. 과거 수락 재호출은 삭제된 관계를 복구하지 않는다. 비활성·탈퇴 사용자는 404 USER_NOT_FOUND. 200과 요청 정보 반환. 같은 작업 재호출은 성공, 다른 처리로 종료된 요청은 409 FRIEND_REQUEST_ALREADY_PROCESSED. 없는·삭제·타인 요청은 404 FRIEND_REQUEST_NOT_FOUND, 참여자의 역할 오류는 403 FRIEND_REQUEST_FORBIDDEN. 경로 ID 형식 오류는 400 INVALID_REQUEST, 인증 없으면 401."
+          },
+          "response": []
+        },
+        {
+          "name": "친구 요청 거절",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/friend-requests/{{friendRequestId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "friend-requests",
+                "{{friendRequestId}}",
+                "reject"
+              ]
+            },
+            "description": "수신자 토큰 사용. 관계를 생성하지 않고 REJECTED로 종료한다. 200과 요청 정보 반환. 같은 작업 재호출은 성공, 다른 처리로 종료된 요청은 409 FRIEND_REQUEST_ALREADY_PROCESSED. 없는·삭제·타인 요청은 404 FRIEND_REQUEST_NOT_FOUND, 참여자의 역할 오류는 403 FRIEND_REQUEST_FORBIDDEN. 경로 ID 형식 오류는 400 INVALID_REQUEST, 인증 없으면 401."
+          },
+          "response": []
+        },
+        {
+          "name": "친구 요청 취소",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/friend-requests/{{friendRequestId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "friend-requests",
+                "{{friendRequestId}}",
+                "cancel"
+              ]
+            },
+            "description": "요청자 토큰 사용. 관계를 생성하지 않고 CANCELED로 종료한다. 200과 요청 정보 반환. 같은 작업 재호출은 성공, 다른 처리로 종료된 요청은 409 FRIEND_REQUEST_ALREADY_PROCESSED. 없는·삭제·타인 요청은 404 FRIEND_REQUEST_NOT_FOUND, 참여자의 역할 오류는 403 FRIEND_REQUEST_FORBIDDEN. 경로 ID 형식 오류는 400 INVALID_REQUEST, 인증 없으면 401."
           },
           "response": []
         }
