@@ -83,6 +83,7 @@ class ProfileRecoveryIntegrationTest {
             sql("DELETE FROM recipient_recommended_products WHERE recipient_id = :id", recipientId);
             sql("DELETE FROM recipient_profiles WHERE recipient_id = :id", recipientId);
             sql("DELETE FROM user_dislike_categories WHERE user_id = :id", recipientId);
+            sql("DELETE FROM user_gift_preferences WHERE user_id = :id", recipientId);
             sql("DELETE FROM friendships WHERE user_id_1 = :id OR user_id_2 = :id", ownerId);
             sql("DELETE FROM products WHERE id = :id", firstId);
             sql("DELETE FROM products WHERE id = :id", secondId);
@@ -124,6 +125,53 @@ class ProfileRecoveryIntegrationTest {
         assertThat(response.products()).extracting(ProductSummaryResponse::productId).containsExactly(firstId, secondId);
     }
 
+    @Test
+    @DisplayName("변경 표시 후 디바운스가 지나면 새 번호와 최신 취향을 전송한다")
+    void markedChange_waitsForDebounceThenUsesNewVersion() {
+        List<AiProfileRequest> sent = dispatchInitialPreference();
+        setTime(NOW.plusSeconds(6 * 3600));
+        savePreferenceAndMarkChanged("커피를 좋아해요.");
+
+        dispatch.dispatchDueProfiles();
+        assertThat(sent).hasSize(1);
+
+        setTime(NOW.plusSeconds(7 * 3600));
+        dispatch.dispatchDueProfiles();
+
+        assertThat(sent).hasSize(2);
+        assertThat(sent.get(1).sourceVersion()).isEqualTo(2);
+        assertThat(sent.get(1).giftPreference()).isEqualTo("커피를 좋아해요.");
+    }
+
+    @Test
+    @DisplayName("복구 HTTP 중 취향 변경이 발생해도 준비된 본문과 신규 변경을 보존한다")
+    void changeDuringRecovery_preservesPreparedInputAndNewChange() throws Exception {
+        List<AiProfileRequest> sent = dispatchInitialPreference();
+        AiProfileRequest original = sent.getFirst();
+        setTime(NOW.plusSeconds(6 * 3600));
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            doAnswer(call -> {
+                AiProfileRequest recovery = call.getArgument(0);
+                assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                executor.submit(() -> savePreferenceAndMarkChanged("커피를 좋아해요."))
+                        .get(5, java.util.concurrent.TimeUnit.SECONDS);
+                assertThat(recovery).isEqualTo(original);
+                return accepted(recovery);
+            }).when(client).requestProfiling(any());
+
+            dispatch.dispatchDueProfiles();
+
+            assertThat(profile().getSourceVersion()).isEqualTo(1);
+            assertThat(profile().getLastChangedAt()).isEqualTo(local(NOW.plusSeconds(6 * 3600)));
+            assertThat(profile().getPendingSince()).isEqualTo(local(NOW));
+            assertThat(profile().getDispatchClaimToken()).isNull();
+        } finally {
+            executor.shutdownNow();
+            executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void callbackDuringRecoveryPreservesCompletedState(boolean failure) {
@@ -159,6 +207,31 @@ class ProfileRecoveryIntegrationTest {
             entityManager.persist(profile);
         });
     }
+
+    private List<AiProfileRequest> dispatchInitialPreference() {
+        setTime(NOW.minusSeconds(3601));
+        preferences.saveGiftPreference(recipientId, "차를 좋아해요.");
+        preferences.saveDislikeCategories(recipientId, List.of(rootId));
+        setTime(NOW);
+        List<AiProfileRequest> sent = new ArrayList<>();
+        doAnswer(call -> {
+            AiProfileRequest request = call.getArgument(0);
+            sent.add(request);
+            return accepted(request);
+        }).when(client).requestProfiling(any());
+        dispatch.dispatchDueProfiles();
+        assertThat(sent).hasSize(1);
+        return sent;
+    }
+
+    private void savePreferenceAndMarkChanged(String preference) {
+        tx.executeWithoutResult(status -> {
+            preferences.saveGiftPreference(recipientId, preference);
+            profiles.findByRecipientIdForUpdate(recipientId).orElseThrow()
+                    .recordPreferenceChange(local(clock.instant()));
+        });
+    }
+
     private RecipientProfile profile() { return profiles.findByRecipient_Id(recipientId).orElseThrow(); }
     private ProductListRequest request() { return new ProductListRequest(null, List.of(childId), ProductSort.AI_RECOMMENDED, recipientId, null); }
     private void setTime(Instant instant) {
