@@ -56,6 +56,18 @@ import com.gift.gift.global.common.BaseTimeEntity;
                 @CheckConstraint(
                         name = "chk_orders_approval_result",
                         constraint = "approval_result IS NULL OR approval_result IN ('APPROVED', 'DECLINED', 'UNKNOWN')"
+                ),
+                @CheckConstraint(
+                        name = "chk_orders_failure_code",
+                        constraint = """
+                                failure_code IS NULL
+                                OR failure_code IN (
+                                    'PAYMENT_DECLINED',
+                                    'PAYMENT_RESULT_UNCONFIRMED',
+                                    'PAYMENT_SERVER_UNAVAILABLE',
+                                    'LOCAL_PROCESSING_FAILED'
+                                )
+                                """
                 )
         }
 )
@@ -109,8 +121,10 @@ public class Order extends BaseTimeEntity {
     @Column(name = "approved_transaction_key", length = 36)
     private String approvedTransactionKey;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "failure_code", length = 60)
-    private String failureCode;
+    private OrderFailureCode failureCode;
 
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
