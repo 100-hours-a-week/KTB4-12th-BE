@@ -17,6 +17,10 @@ CREATE TABLE payments (
                           CONSTRAINT uk_payments_approved_transaction_key UNIQUE (approved_transaction_key),
                           CONSTRAINT chk_payments_amount_positive CHECK (amount > 0),
                           CONSTRAINT chk_payments_status CHECK (status IN ('PENDING', 'COMPLETED', 'DECLINED', 'CANCELED')),
+                          CONSTRAINT chk_payments_failure_code CHECK (
+                              failure_code IS NULL
+                                  OR failure_code IN ('PAYMENT_DECLINED', 'TEMPORARY_PROCESSING_ERROR', 'INVALID_PAYMENT_AMOUNT')
+                              ),
                           CONSTRAINT chk_payments_status_fields CHECK (
                               (
                                   status = 'PENDING'
@@ -64,8 +68,12 @@ CREATE TABLE payment_cancels (
                                  CONSTRAINT pk_payment_cancels PRIMARY KEY (id),
                                  CONSTRAINT uk_payment_cancels_payment_idempotency UNIQUE (payment_id, idempotency_key),
                                  CONSTRAINT uk_payment_cancels_transaction_key UNIQUE (transaction_key),
-                                 CONSTRAINT chk_payment_cancels_status CHECK (status IN ('PENDING', 'COMPLETED', ' DECLINED', 'FAILED')),
+                                 CONSTRAINT chk_payment_cancels_status CHECK (status IN ('PENDING', 'COMPLETED', 'DECLINED', 'FAILED')),
                                  CONSTRAINT chk_payment_cancels_amount_positive CHECK (cancel_amount IS NULL OR cancel_amount > 0),
+                                 CONSTRAINT chk_payment_cancels_failure_code CHECK (
+                                     failure_code IS NULL
+                                         OR failure_code IN ('CANCELLATION_DECLINED', 'TEMPORARY_PROCESSING_ERROR')
+                                     ),
                                  CONSTRAINT chk_payment_cancels_status_fields CHECK (
                                      (
                                          status = 'PENDING'

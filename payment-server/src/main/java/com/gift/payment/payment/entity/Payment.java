@@ -117,8 +117,10 @@ public class Payment extends BaseTimeEntity {
     @Column(name = "approved_transaction_key", length = 36)
     private String approvedTransactionKey;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "failure_code", length = 60)
-    private String failureCode;
+    private PaymentFailureCode failureCode;
 
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;

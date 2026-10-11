@@ -127,8 +127,10 @@ public class PaymentCancel extends BaseTimeEntity {
     @Column(name = "cancel_amount")
     private Long cancelAmount;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "failure_code", length = 60)
-    private String failureCode;
+    private PaymentCancelFailureCode failureCode;
 
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
