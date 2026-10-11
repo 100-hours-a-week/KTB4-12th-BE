@@ -23,6 +23,8 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
+import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
+import com.gift.gift.domain.review.repository.ReviewRepository;
 import com.gift.gift.domain.recommendation.dto.request.AiProfileRequest;
 import com.gift.gift.domain.recommendation.dto.response.AiProfileAcceptedResponse;
 import com.gift.gift.domain.recommendation.entity.RecipientProfile;
@@ -78,6 +80,8 @@ class ProfileDispatchPolicyTest {
         transactions = spy(new ProfileDispatchTransactionService(
                 repository,
                 mock(UserDislikeCategoryRepository.class),
+                mock(UserGiftPreferenceRepository.class),
+                mock(ReviewRepository.class),
                 properties,
                 clock
         ));

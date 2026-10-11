@@ -115,6 +115,7 @@ class ProfileRecoveryIntegrationTest {
         dispatch.dispatchDueProfiles();
         assertThat(requests).hasSize(2);
         assertThat(requests.get(1).sourceVersion()).isEqualTo(requests.get(0).sourceVersion());
+        assertThat(requests.get(1)).isEqualTo(requests.get(0));
         assertThat(profile().getPendingSince()).isEqualTo(local(NOW.plusSeconds(6 * 3600)));
         callbacks.saveCallback(recipientId, recipientId, 1, List.of(firstId));
         assertThat(profile().getProfileStatus()).isEqualTo(RecipientProfileStatus.COMPLETED);
