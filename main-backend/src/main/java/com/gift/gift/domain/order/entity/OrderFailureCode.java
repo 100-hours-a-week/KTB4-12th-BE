@@ -1,0 +1,8 @@
+package com.gift.gift.domain.order.entity;
+
+public enum OrderFailureCode {
+    PAYMENT_DECLINED,
+    PAYMENT_RESULT_UNCONFIRMED,
+    PAYMENT_SERVER_UNAVAILABLE,
+    LOCAL_PROCESSING_FAILED
+}

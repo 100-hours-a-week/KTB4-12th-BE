@@ -53,6 +53,18 @@ import com.gift.gift.global.common.BaseTimeEntity;
                 @CheckConstraint(
                         name = "chk_payment_cancellations_amount_non_negative",
                         constraint = "cancel_amount IS NULL OR cancel_amount >= 0"
+                ),
+                @CheckConstraint(
+                        name = "chk_payment_cancellations_failure_code",
+                        constraint = """
+                                failure_code IS NULL
+                                OR failure_code IN (
+                                    'CANCELLATION_DECLINED',
+                                    'CANCELLATION_RESULT_UNCONFIRMED',
+                                    'PAYMENT_SERVER_UNAVAILABLE',
+                                    'LOCAL_COMPENSATION_FAILED'
+                                )
+                                """
                 )
         }
 )
@@ -91,8 +103,10 @@ public class PaymentCancellation extends BaseTimeEntity {
     @Column(name = "cancel_amount")
     private Long cancelAmount;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "failure_code", length = 60)
-    private String failureCode;
+    private PaymentCancellationFailureCode failureCode;
 
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
