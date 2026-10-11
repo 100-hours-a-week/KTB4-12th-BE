@@ -66,6 +66,7 @@ class GiftPreferenceIntegrationTest {
     @AfterEach
     void cleanUpOwnedData() {
         for (Long userId : createdUserIds) {
+            jdbc.update("DELETE FROM recipient_profiles WHERE recipient_id = ?", userId);
             jdbc.update("DELETE FROM user_gift_preferences WHERE user_id = ?", userId);
             userRepository.deleteById(userId);
         }
@@ -105,7 +106,7 @@ class GiftPreferenceIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM user_dislike_categories WHERE user_id = ?",
                 Long.class, owner.getId())).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM recipient_profiles WHERE recipient_id = ?",
-                Long.class, owner.getId())).isZero();
+                Long.class, owner.getId())).isEqualTo(1L);
     }
 
     @Test
