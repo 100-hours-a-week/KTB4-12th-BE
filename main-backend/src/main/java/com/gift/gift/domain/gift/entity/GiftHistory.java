@@ -10,6 +10,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
@@ -20,6 +22,10 @@ import com.gift.gift.global.common.BaseTimeEntity;
         @UniqueConstraint(
                 name = "uk_gift_histories_sender_idempotency",
                 columnNames = {"sender_id", "idempotency_key"}
+        ),
+        @UniqueConstraint(
+                name = "uk_gift_histories_order_record",
+                columnNames = "order_record_id"
         )
 }, indexes = {
         @Index(
@@ -29,6 +35,18 @@ import com.gift.gift.global.common.BaseTimeEntity;
         @Index(
                 name = "idx_gift_histories_recipient_completed",
                 columnList = "recipient_id, completed_at DESC, id DESC"
+        ),
+        @Index(
+                name = "idx_gifts_recipient_status",
+                columnList = "recipient_id, status, created_at, id"
+        ),
+        @Index(
+                name = "idx_gifts_sender_status",
+                columnList = "sender_id, status, created_at, id"
+        ),
+        @Index(
+                name = "idx_gifts_expiration",
+                columnList = "status, expires_at, id"
         )
 }, check = {
         @CheckConstraint(
@@ -45,7 +63,29 @@ import com.gift.gift.global.common.BaseTimeEntity;
         ),
         @CheckConstraint(
                 name = "chk_gift_histories_status",
-                constraint = "status IN ('PROCESSING', 'COMPLETED', 'FAILED')"
+                constraint = "status IN ('PROCESSING', 'WAITING_FOR_ACCEPTANCE', 'COMPLETED', 'FAILED', 'CANCELED')"
+        ),
+        @CheckConstraint(
+                name = "chk_gift_histories_status_times",
+                constraint = """
+                                status IN ('PROCESSING', 'FAILED')
+                                OR (
+                                    status = 'WAITING_FOR_ACCEPTANCE'
+                                    AND expires_at IS NOT NULL
+                                    AND completed_at IS NULL
+                                    AND canceled_at IS NULL
+                                )
+                                OR (
+                                    status = 'COMPLETED'
+                                    AND completed_at IS NOT NULL
+                                    AND canceled_at IS NULL
+                                )
+                                OR (
+                                    status = 'CANCELED'
+                                    AND completed_at IS NULL
+                                    AND canceled_at IS NOT NULL
+                                )
+                                """
         )
 })
 @Getter
@@ -55,6 +95,9 @@ public class GiftHistory extends BaseTimeEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "order_record_id", updatable = false)
+    private Long orderRecordId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
@@ -83,14 +126,15 @@ public class GiftHistory extends BaseTimeEntity {
     @Column(nullable = false)
     private Integer quantity;
 
-    @Column(precision = 12, scale = 0, nullable = false)
+    @Column(name = "product_price_snapshot", precision = 12, scale = 0, nullable = false)
     private BigDecimal productPriceSnapshot;
 
-    @Column(nullable = false, length = 255)
+    @Column(name = "product_name_snapshot", nullable = false, length = 255)
     private String productNameSnapshot;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(nullable = false, length = 32)
     @ColumnDefault("'COMPLETED'")
     private GiftStatus status = GiftStatus.COMPLETED;
 
@@ -100,22 +144,38 @@ public class GiftHistory extends BaseTimeEntity {
     @Column(name = "request_fingerprint", nullable = false, columnDefinition = "CHAR(64)")
     private String requestFingerprint;
 
-    @Column(name = "completed_at", nullable = false)
+    @Column(name = "completed_at")
     private LocalDateTime completedAt;
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
+    @Column(name = "canceled_at")
+    private LocalDateTime canceledAt;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
-    public GiftHistory(User sender, User recipient, Product product, Integer quantity, BigDecimal productPriceSnapshot,
-                       String productNameSnapshot, UUID idempotencyKey, String requestFingerprint) {
-        if (sender == null || recipient == null || product == null) {
-            throw new IllegalArgumentException("보낸 사람, 받는 사람, 상품은 필수입니다.");
-        }
-
-        if (quantity == null || productPriceSnapshot == null || productNameSnapshot == null
-                || idempotencyKey == null || requestFingerprint == null) {
-            throw new IllegalArgumentException("수량, 가격 스냅샷, 상품명 스냅샷, 멱등성 키, 요청 지문은 필수입니다.");
-        }
+    public GiftHistory(
+            User sender,
+            User recipient,
+            Product product,
+            Integer quantity,
+            BigDecimal productPriceSnapshot,
+            String productNameSnapshot,
+            UUID idempotencyKey,
+            String requestFingerprint
+    ) {
+        validateCommon(
+                sender,
+                recipient,
+                product,
+                quantity,
+                productPriceSnapshot,
+                productNameSnapshot,
+                idempotencyKey,
+                requestFingerprint
+        );
 
         this.sender = sender;
         this.recipient = recipient;
@@ -127,5 +187,100 @@ public class GiftHistory extends BaseTimeEntity {
         this.idempotencyKey = idempotencyKey;
         this.requestFingerprint = requestFingerprint;
         this.completedAt = LocalDateTime.now();
+    }
+
+    private GiftHistory(
+            Long orderRecordId,
+            User sender,
+            User recipient,
+            Product product,
+            Integer quantity,
+            BigDecimal productPriceSnapshot,
+            String productNameSnapshot,
+            UUID idempotencyKey,
+            String requestFingerprint,
+            LocalDateTime expiresAt
+    ) {
+        validateCommon(
+                sender,
+                recipient,
+                product,
+                quantity,
+                productPriceSnapshot,
+                productNameSnapshot,
+                idempotencyKey,
+                requestFingerprint
+        );
+
+        if (orderRecordId == null || orderRecordId <= 0) {
+            throw new IllegalArgumentException("주문 레코드 ID는 양수여야 합니다.");
+        }
+
+        if (expiresAt == null) {
+            throw new IllegalArgumentException(
+                    "선물 만료 시각은 필수입니다."
+            );
+        }
+
+        this.orderRecordId = orderRecordId;
+        this.sender = sender;
+        this.recipient = recipient;
+        this.product = product;
+        this.quantity = quantity;
+        this.productPriceSnapshot = productPriceSnapshot;
+        this.productNameSnapshot = productNameSnapshot;
+        this.status = GiftStatus.WAITING_FOR_ACCEPTANCE;
+        this.idempotencyKey = idempotencyKey;
+        this.requestFingerprint = requestFingerprint;
+        this.expiresAt = expiresAt;
+    }
+
+    public static GiftHistory waitingForAcceptance(
+            Long orderRecordId,
+            User sender,
+            User recipient,
+            Product product,
+            Integer quantity,
+            BigDecimal productPriceSnapshot,
+            String productNameSnapshot,
+            UUID idempotencyKey,
+            String requestFingerprint,
+            LocalDateTime expiresAt
+    ) {
+        return new GiftHistory(
+                orderRecordId,
+                sender,
+                recipient,
+                product,
+                quantity,
+                productPriceSnapshot,
+                productNameSnapshot,
+                idempotencyKey,
+                requestFingerprint,
+                expiresAt
+        );
+    }
+
+    private static void validateCommon(
+            User sender,
+            User recipient,
+            Product product,
+            Integer quantity,
+            BigDecimal productPriceSnapshot,
+            String productNameSnapshot,
+            UUID idempotencyKey,
+            String requestFingerprint
+    ) {
+        if (sender == null || recipient == null || product == null) {
+            throw new IllegalArgumentException("보낸 사람, 받는 사람, 상품은 필수입니다.");
+        }
+
+        if (quantity == null
+                || productPriceSnapshot == null
+                || productNameSnapshot == null
+                || idempotencyKey == null
+                || requestFingerprint == null) {
+            throw new IllegalArgumentException("수량, 가격 스냅샷, 상품명 스냅샷, 멱등성 키, 요청 지문은 필수입니다.");
+        }
     }
 }
