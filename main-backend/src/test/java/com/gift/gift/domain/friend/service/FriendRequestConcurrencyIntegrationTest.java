@@ -75,6 +75,7 @@ class FriendRequestConcurrencyIntegrationTest {
         Friendship old = null;
         if (restore) {
             old = friendships.saveAndFlush(new Friendship(first, second));
+            old = friendships.findById(old.getId()).orElseThrow();
             friendService.remove(first.getId(), old.getId());
         }
         Long id = requests.saveAndFlush(new FriendRequest(first, second)).getId();
