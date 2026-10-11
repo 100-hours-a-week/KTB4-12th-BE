@@ -5,6 +5,7 @@ WORKDIR /workspace
 COPY gradlew build.gradle settings.gradle ./
 COPY gradle ./gradle
 COPY main-backend/build.gradle ./main-backend/build.gradle
+COPY payment-server/build.gradle ./payment-server/build.gradle
 RUN chmod +x gradlew
 
 COPY main-backend/src/main ./main-backend/src/main

@@ -56,6 +56,8 @@ class ProfileDispatchPolicyTest {
     @BeforeEach
     void setUp() {
         repository = mock(RecipientProfileRepository.class);
+        when(repository.findDispatchClaimNow())
+                .thenReturn(LocalDateTime.of(2026, 10, 7, 3, 0));
         client = mock(AiProfilingClient.class);
         clock = mock(Clock.class);
 
@@ -67,7 +69,8 @@ class ProfileDispatchPolicyTest {
                 Duration.ofHours(1),
                 Duration.ofHours(6),
                 100,
-                0
+                0,
+                Duration.ofMinutes(2)
         );
 
         setTime(NOW);
@@ -94,7 +97,7 @@ class ProfileDispatchPolicyTest {
                 .thenReturn(Optional.of(first));
         when(repository.findByIdForUpdate(2L))
                 .thenReturn(Optional.of(second));
-        when(repository.findDispatchCandidateIds(any(), any(), any()))
+        when(repository.findDispatchCandidateIds(any(), any(), any(), any()))
                 .thenReturn(List.of(1L, 2L));
         when(client.isHealthy()).thenReturn(true);
 
@@ -118,7 +121,7 @@ class ProfileDispatchPolicyTest {
         assertThat(first.getWindowStartedAt()).isEqualTo(local(NOW));
         assertThat(second.getSourceVersion()).isZero();
 
-        when(repository.findDispatchCandidateIds(any(), any(), any()))
+        when(repository.findDispatchCandidateIds(any(), any(), any(), any()))
                 .thenReturn(List.of(1L));
 
         setTime(NOW.plusSeconds(59 * 60));
@@ -224,7 +227,7 @@ class ProfileDispatchPolicyTest {
         service.dispatchDueProfiles();
 
         verify(repository, never())
-                .findDispatchCandidateIds(any(), any(), any());
+                .findDispatchCandidateIds(any(), any(), any(), any());
         verify(client, never()).requestProfiling(any());
         assertThat(first.getSourceVersion()).isZero();
     }

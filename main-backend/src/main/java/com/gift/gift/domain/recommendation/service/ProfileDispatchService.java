@@ -41,10 +41,15 @@ public class ProfileDispatchService {
 
         LocalDateTime now = LocalDateTime.now(clock);
 
+        LocalDateTime claimExpiredCutoff =
+                recipientProfileRepository.findDispatchClaimNow()
+                        .minus(properties.dispatchClaimTimeout());
+
         List<Long> profileIds =
                 recipientProfileRepository.findDispatchCandidateIds(
                         now.minus(properties.quietPeriod()),
                         now.minus(properties.maximumWindow()),
+                        claimExpiredCutoff,
                         PageRequest.of(0, properties.batchSize())
                 );
 
@@ -61,10 +66,16 @@ public class ProfileDispatchService {
         LocalDateTime recoveryCutoff = LocalDateTime.now(clock)
                 .minus(properties.maximumWindow());
 
+        // 일반 배치의 HTTP 처리 중 시간이 흘렀을 수 있어 다시 조회한다.
+        LocalDateTime recoveryClaimExpiredCutoff =
+                recipientProfileRepository.findDispatchClaimNow()
+                        .minus(properties.dispatchClaimTimeout());
+
         List<Long> recoveryIds =
                 recipientProfileRepository.findRecoveryCandidateIds(
                         RecipientProfileStatus.PENDING,
                         recoveryCutoff,
+                        recoveryClaimExpiredCutoff,
                         PageRequest.of(0, properties.recoveryBatchSize())
                 );
 

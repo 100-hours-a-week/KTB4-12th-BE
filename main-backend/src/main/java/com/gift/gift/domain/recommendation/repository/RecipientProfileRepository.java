@@ -43,21 +43,37 @@ public interface RecipientProfileRepository
     );
 
     @Query("""
-            select profile.id
-            from RecipientProfile profile
-            where profile.lastChangedAt is not null
-              and profile.windowStartedAt is not null
-              and (
-                    profile.lastChangedAt <= :quietPeriodCutoff
-                    or profile.windowStartedAt <= :maxWindowCutoff
-              )
-            order by profile.windowStartedAt asc, profile.id asc
-            """)
+        select profile.id
+        from RecipientProfile profile
+        where (
+            profile.dispatchClaimToken is null
+            and profile.lastChangedAt is not null
+            and profile.windowStartedAt is not null
+            and (
+                profile.lastChangedAt <= :quietPeriodCutoff
+                or profile.windowStartedAt <= :maxWindowCutoff
+            )
+        )
+        or (
+            profile.dispatchClaimToken is not null
+            and profile.dispatchClaimedAt <= :claimExpiredCutoff
+        )
+        order by
+            case
+                when profile.dispatchClaimToken is not null then 0
+                else 1
+            end asc,
+            profile.dispatchClaimedAt asc,
+            profile.windowStartedAt asc,
+            profile.id asc
+        """)
     List<Long> findDispatchCandidateIds(
             @Param("quietPeriodCutoff")
             LocalDateTime quietPeriodCutoff,
             @Param("maxWindowCutoff")
             LocalDateTime maxWindowCutoff,
+            @Param("claimExpiredCutoff")
+            LocalDateTime claimExpiredCutoff,
             Pageable pageable
     );
 
@@ -80,18 +96,26 @@ public interface RecipientProfileRepository
     );
 
     @Query("""
-            select profile.id
-            from RecipientProfile profile
-            where profile.profileStatus = :pendingStatus
-              and profile.pendingSince <= :pendingCutoff
-              and profile.lastChangedAt is null
-            order by profile.pendingSince asc, profile.id asc
-            """)
+        select profile.id
+        from RecipientProfile profile
+        where profile.profileStatus = :pendingStatus
+          and profile.pendingSince <= :pendingCutoff
+          and profile.lastChangedAt is null
+          and profile.sourceVersion > profile.analyzedSourceVersion
+          and profile.dispatchClaimLastChangedAt is null
+          and (
+              profile.dispatchClaimToken is null
+              or profile.dispatchClaimedAt <= :claimExpiredCutoff
+          )
+        order by profile.pendingSince asc, profile.id asc
+        """)
     List<Long> findRecoveryCandidateIds(
             @Param("pendingStatus")
             RecipientProfileStatus pendingStatus,
             @Param("pendingCutoff")
             LocalDateTime pendingCutoff,
+            @Param("claimExpiredCutoff")
+            LocalDateTime claimExpiredCutoff,
             Pageable pageable
     );
 
@@ -109,4 +133,7 @@ public interface RecipientProfileRepository
             LocalDateTime pendingCutoff,
             Pageable pageable
     );
+
+    @Query(value = "SELECT UTC_TIMESTAMP(6)", nativeQuery = true)
+    LocalDateTime findDispatchClaimNow();
 }

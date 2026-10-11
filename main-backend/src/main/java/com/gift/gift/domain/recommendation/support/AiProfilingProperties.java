@@ -16,7 +16,8 @@ public record AiProfilingProperties(
         Duration quietPeriod,
         Duration maximumWindow,
         int batchSize,
-        @DefaultValue("50") int recoveryBatchSize
+        @DefaultValue("50") int recoveryBatchSize,
+        @DefaultValue("2m") Duration dispatchClaimTimeout
 ) {
 
     public AiProfilingProperties {
@@ -43,6 +44,11 @@ public record AiProfilingProperties(
         Objects.requireNonNull(
                 maximumWindow,
                 "최대 대기 시간은 필수입니다."
+        );
+
+        Objects.requireNonNull(
+                dispatchClaimTimeout,
+                "선점 유효 기간은 필수입니다."
         );
 
         if (serviceToken.isBlank()) {
@@ -90,6 +96,13 @@ public record AiProfilingProperties(
         if ((long) batchSize + recoveryBatchSize > 200) {
             throw new IllegalArgumentException(
                     "일반 Batch와 복구 Batch의 합계는 200 이하여야 합니다."
+            );
+        }
+
+        if (dispatchClaimTimeout.isZero()
+                || dispatchClaimTimeout.isNegative()){
+            throw new IllegalArgumentException(
+                    "선점 유효 기간은 0보다 커야 합니다."
             );
         }
     }

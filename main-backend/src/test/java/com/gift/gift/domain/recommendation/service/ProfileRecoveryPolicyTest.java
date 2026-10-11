@@ -57,6 +57,8 @@ class ProfileRecoveryPolicyTest {
     @BeforeEach
     void setUp() {
         repository = mock(RecipientProfileRepository.class);
+        when(repository.findDispatchClaimNow())
+                .thenReturn(LocalDateTime.of(2026, 10, 7, 3, 0));
         dislikeRepository = mock(UserDislikeCategoryRepository.class);
         client = mock(AiProfilingClient.class);
 
@@ -69,9 +71,9 @@ class ProfileRecoveryPolicyTest {
 
         when(repository.findByIdForUpdate(1L))
                 .thenReturn(Optional.of(profile));
-        when(repository.findDispatchCandidateIds(any(), any(), any()))
+        when(repository.findDispatchCandidateIds(any(), any(), any(), any()))
                 .thenReturn(List.of());
-        when(repository.findRecoveryCandidateIds(any(), any(), any()))
+        when(repository.findRecoveryCandidateIds(any(), any(), any(), any()))
                 .thenReturn(List.of(1L));
         when(dislikeRepository.findAllActiveByUserIdWithCategory(any()))
                 .thenReturn(List.of());
@@ -179,6 +181,7 @@ class ProfileRecoveryPolicyTest {
     @ValueSource(booleans = {false, true})
     void recovery_preservesNewChangeAndRestartCount(boolean fail) {
         LocalDateTime changedAt = NOW.plusSeconds(1);
+        LocalDateTime originalPendingSince = profile.getPendingSince();
 
         doAnswer(invocation -> {
             profile.recordPreferenceChange(changedAt);
@@ -198,7 +201,8 @@ class ProfileRecoveryPolicyTest {
         assertThat(profile.getLastChangedAt()).isEqualTo(changedAt);
         assertThat(profile.getWindowStartedAt()).isEqualTo(changedAt);
         assertThat(profile.getRetryCount()).isEqualTo(1);
-        assertThat(profile.getPendingSince()).isEqualTo(NOW);
+        assertThat(profile.getPendingSince()).isEqualTo(originalPendingSince);
+        assertThat(profile.getDispatchClaimToken()).isNull();
     }
 
     @Test
@@ -225,7 +229,7 @@ class ProfileRecoveryPolicyTest {
         service.dispatchDueProfiles();
 
         verify(repository, never())
-                .findRecoveryCandidateIds(any(), any(), any());
+                .findRecoveryCandidateIds(any(), any(), any(), any());
         verify(client, never()).requestProfiling(any());
     }
 
@@ -236,6 +240,7 @@ class ProfileRecoveryPolicyTest {
         verify(repository).findRecoveryCandidateIds(
                 eq(RecipientProfileStatus.PENDING),
                 eq(NOW.minusHours(6)),
+                eq(NOW.minusMinutes(2)),
                 eq(org.springframework.data.domain.PageRequest.of(0, 1))
         );
         verify(client, times(1)).requestProfiling(any());
@@ -248,14 +253,14 @@ class ProfileRecoveryPolicyTest {
 
         when(repository.findByIdForUpdate(2L))
                 .thenReturn(Optional.of(changed));
-        when(repository.findDispatchCandidateIds(any(), any(), any()))
+        when(repository.findDispatchCandidateIds(any(), any(), any(), any()))
                 .thenReturn(List.of(2L));
         doThrow(failure()).when(client).requestProfiling(any());
 
         service.dispatchDueProfiles();
 
         verify(repository, never())
-                .findRecoveryCandidateIds(any(), any(), any());
+                .findRecoveryCandidateIds(any(), any(), any(), any());
         assertThat(profile.getPendingSince())
                 .isEqualTo(NOW.minusHours(7));
     }
@@ -268,7 +273,7 @@ class ProfileRecoveryPolicyTest {
 
         configure(2);
 
-        when(repository.findRecoveryCandidateIds(any(), any(), any()))
+        when(repository.findRecoveryCandidateIds(any(), any(), any(), any()))
                 .thenReturn(List.of(1L, 2L));
         when(repository.findByIdForUpdate(2L))
                 .thenReturn(Optional.of(second));
@@ -286,7 +291,7 @@ class ProfileRecoveryPolicyTest {
     void completedOrdinaryRequest_doesNotRestartOnLateFailure() {
         profile.recordPreferenceChange(NOW.minusHours(2));
 
-        when(repository.findDispatchCandidateIds(any(), any(), any()))
+        when(repository.findDispatchCandidateIds(any(), any(), any(), any()))
                 .thenReturn(List.of(1L));
         doAnswer(invocation -> {
             AiProfileRequest request = invocation.getArgument(0);
@@ -317,8 +322,8 @@ class ProfileRecoveryPolicyTest {
     void unhealthy_skipsBothCandidateQueries() {
         when(client.isHealthy()).thenReturn(false);
         service.dispatchDueProfiles();
-        verify(repository, never()).findDispatchCandidateIds(any(), any(), any());
-        verify(repository, never()).findRecoveryCandidateIds(any(), any(), any());
+        verify(repository, never()).findDispatchCandidateIds(any(), any(), any(), any());
+        verify(repository, never()).findRecoveryCandidateIds(any(), any(), any(), any());
         verify(client, never()).requestProfiling(any());
         assertThat(profile.getPendingSince()).isEqualTo(NOW.minusHours(7));
     }
@@ -332,7 +337,7 @@ class ProfileRecoveryPolicyTest {
         second.createNextSourceVersion();
         second.markPending(NOW.minusHours(8));
         when(repository.findByIdForUpdate(2L)).thenReturn(Optional.of(second));
-        when(repository.findRecoveryCandidateIds(any(), any(), any())).thenReturn(List.of(1L, 2L));
+        when(repository.findRecoveryCandidateIds(any(), any(), any(), any())).thenReturn(List.of(1L, 2L));
         doThrow(new AiProfilingClientException(type, "failure")).when(client).requestProfiling(any());
         service.dispatchDueProfiles();
         verify(client, times(2)).requestProfiling(any());
@@ -349,7 +354,8 @@ class ProfileRecoveryPolicyTest {
                 Duration.ofHours(1),
                 Duration.ofHours(6),
                 100,
-                recoveryBatchSize
+                recoveryBatchSize,
+                Duration.ofMinutes(2)
         );
 
         transactions = spy(new ProfileDispatchTransactionService(

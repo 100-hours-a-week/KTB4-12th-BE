@@ -8,7 +8,8 @@ import com.gift.gift.domain.recommendation.dto.request.AiProfileRequest;
 public record PreparedRecoveryDispatch(
         Long profileId,
         AiProfileRequest request,
-        LocalDateTime snapshottedPendingSince
+        LocalDateTime snapshottedPendingSince,
+        String claimToken
 ) {
 
     public PreparedRecoveryDispatch {

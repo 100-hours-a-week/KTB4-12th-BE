@@ -22,6 +22,6 @@ class AiProfilingPropertiesTest {
     private AiProfilingProperties properties(int normal, int recovery) {
         return new AiProfilingProperties(URI.create("http://ai.test"), "test-token",
                 Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofHours(1),
-                Duration.ofHours(6), normal, recovery);
+                Duration.ofHours(6), normal, recovery, Duration.ofMinutes(2));
     }
 }
