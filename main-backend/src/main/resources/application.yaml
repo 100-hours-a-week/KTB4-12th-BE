@@ -52,6 +52,11 @@ app:
     login-rate-limit:
       hmac-secret-base64: ${LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64}
 
+  ai-chat:
+    conversation-token:
+      secret-base64: ${CHAT_CONVERSATION_TOKEN_SECRET_BASE64}
+      issuer: ${CHAT_CONVERSATION_TOKEN_ISSUER}
+
   ai-profile:
     scheduling-enabled: ${AI_PROFILE_SCHEDULING_ENABLED:false}
     base-url: ${AI_PROFILE_BASE_URL}

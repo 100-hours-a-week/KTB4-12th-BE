@@ -82,7 +82,9 @@ class AiProfilingClientTest {
                               "categoryId": 3,
                               "categoryName": "뷰티"
                             }
-                          ]
+                          ],
+                          "giftPreference": null,
+                          "reviews": []
                         }
                         """))
                 .andRespond(acceptedResponse());
@@ -234,7 +236,9 @@ class AiProfilingClientTest {
         return new AiProfileRequest(
                 10L,
                 1L,
-                List.of(new DislikedCategoryRequest(3L, "뷰티"))
+                List.of(new DislikedCategoryRequest(3L, "뷰티")),
+                null,
+                List.of()
         );
     }
 

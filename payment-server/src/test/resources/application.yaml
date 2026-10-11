@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: payment-server
+
+  datasource:
+    hikari:
+      maximum-pool-size: 4
+      minimum-idle: 0
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
+payment:
+  security:
+    internal-api:
+      key: test-payment-server-api-key
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.gift.payment: INFO

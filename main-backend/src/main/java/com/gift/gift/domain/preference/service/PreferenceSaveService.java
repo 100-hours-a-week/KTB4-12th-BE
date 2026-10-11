@@ -51,12 +51,18 @@ public class PreferenceSaveService {
 
         UserGiftPreference existing = userGiftPreferenceRepository
                 .findByUser_IdAndDeletedAtIsNull(userId).orElse(null);
+        boolean changed = false;
         if (existing == null) {
             if (normalized != null) {
                 userGiftPreferenceRepository.save(new UserGiftPreference(user, normalized));
+                changed = true;
             }
         } else if (!Objects.equals(existing.getPreference(), normalized)) {
             existing.changePreference(normalized);
+            changed = true;
+        }
+        if (changed) {
+            recordProfileChange(userId, LocalDateTime.now(clock), user);
         }
         return GiftPreferenceResponse.from(normalized);
     }
@@ -126,16 +132,23 @@ public class PreferenceSaveService {
         }
 
         if (selectionChanged) {
-            RecipientProfile profile = recipientProfileRepository
-                    .findByRecipient_Id(userId)
-                    .orElseGet(() -> recipientProfileRepository.save(
-                            new RecipientProfile(user)
-                    ));
-
-            profile.recordPreferenceChange(now);
+            recordProfileChange(userId, now, user);
         }
 
         return SaveDislikeCategoriesResponse.from(categoryIds);
+    }
+
+    private void recordProfileChange(
+            Long userId,
+            LocalDateTime changedAt,
+            User user
+    ) {
+        RecipientProfile profile = recipientProfileRepository
+                .findByRecipientIdForUpdate(userId)
+                .orElseGet(() -> recipientProfileRepository.save(
+                        new RecipientProfile(user)
+                ));
+        profile.recordPreferenceChange(changedAt);
     }
 
     private void validateCount(List<Long> categoryIds) {

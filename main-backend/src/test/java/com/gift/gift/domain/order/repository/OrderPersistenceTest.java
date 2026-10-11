@@ -10,13 +10,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.entity.Order;
+import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
+import com.gift.gift.domain.order.entity.PaymentCancellationFailureCode;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
@@ -40,6 +44,9 @@ class OrderPersistenceTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     @DisplayName("주문과 결제 취소를 저장하면 초기 상태와 참조 정보가 보존된다")
@@ -123,6 +130,85 @@ class OrderPersistenceTest {
 
         assertThatThrownBy(() -> paymentCancellationRepository.saveAndFlush(duplicate))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("주문과 결제 취소 실패 코드는 VARCHAR 문자열을 Enum으로 조회한다")
+    void find_mapsFailureCodesToEnums() {
+        TestData data = persistTestData();
+        Order order = saveOrder(data, UUID.randomUUID().toString(), "PAYMENT-" + UUID.randomUUID());
+        PaymentCancellation cancellation = paymentCancellationRepository.saveAndFlush(
+                new PaymentCancellation(
+                        order.getId(),
+                        data.payerId(),
+                        CancellationSource.USER,
+                        "CANCEL-" + UUID.randomUUID(),
+                        REQUEST_HASH
+                )
+        );
+
+        jdbcTemplate.update(
+                """
+                UPDATE orders
+                SET status = 'DECLINED',
+                    approval_result = 'DECLINED',
+                    failure_code = ?
+                WHERE id = ?
+                """,
+                OrderFailureCode.PAYMENT_DECLINED.name(),
+                order.getId()
+        );
+        jdbcTemplate.update(
+                """
+                UPDATE payment_cancellations
+                SET status = 'DECLINED',
+                    failure_code = ?
+                WHERE id = ?
+                """,
+                PaymentCancellationFailureCode.CANCELLATION_DECLINED.name(),
+                cancellation.getId()
+        );
+        entityManager.clear();
+
+        assertThat(orderRepository.findById(order.getId()).orElseThrow().getFailureCode())
+                .isEqualTo(OrderFailureCode.PAYMENT_DECLINED);
+        assertThat(paymentCancellationRepository.findById(cancellation.getId()).orElseThrow().getFailureCode())
+                .isEqualTo(PaymentCancellationFailureCode.CANCELLATION_DECLINED);
+    }
+
+    @Test
+    @DisplayName("정의되지 않은 주문 실패 코드는 DB CHECK 제약이 거부한다")
+    void update_rejectsUnknownOrderFailureCode() {
+        TestData data = persistTestData();
+        Order order = saveOrder(data, UUID.randomUUID().toString(), "PAYMENT-" + UUID.randomUUID());
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "UPDATE orders SET failure_code = 'UNKNOWN_FAILURE' WHERE id = ?",
+                order.getId()
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("chk_orders_failure_code");
+    }
+
+    @Test
+    @DisplayName("정의되지 않은 결제 취소 실패 코드는 DB CHECK 제약이 거부한다")
+    void update_rejectsUnknownCancellationFailureCode() {
+        TestData data = persistTestData();
+        Order order = saveOrder(data, UUID.randomUUID().toString(), "PAYMENT-" + UUID.randomUUID());
+        PaymentCancellation cancellation = paymentCancellationRepository.saveAndFlush(
+                new PaymentCancellation(
+                        order.getId(),
+                        data.payerId(),
+                        CancellationSource.USER,
+                        "CANCEL-" + UUID.randomUUID(),
+                        REQUEST_HASH
+                )
+        );
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "UPDATE payment_cancellations SET failure_code = 'UNKNOWN_FAILURE' WHERE id = ?",
+                cancellation.getId()
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("chk_payment_cancellations_failure_code");
     }
 
     private Order saveOrder(TestData data, String orderId, String idempotencyKey) {

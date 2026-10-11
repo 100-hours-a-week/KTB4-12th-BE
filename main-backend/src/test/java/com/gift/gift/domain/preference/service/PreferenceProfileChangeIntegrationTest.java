@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.repository.CategoryRepository;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
+import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
 import com.gift.gift.domain.recommendation.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.entity.User;
@@ -52,6 +53,9 @@ class PreferenceProfileChangeIntegrationTest {
     @Autowired
     private UserDislikeCategoryRepository dislikeRepository;
 
+    @Autowired
+    private UserGiftPreferenceRepository giftPreferenceRepository;
+
     @MockitoBean
     private Clock clock;
 
@@ -59,6 +63,7 @@ class PreferenceProfileChangeIntegrationTest {
     void setUpClock() {
         profileRepository.deleteAll();
         dislikeRepository.deleteAll();
+        giftPreferenceRepository.deleteAll();
         categoryRepository.deleteAll();
         userRepository.deleteAll();
         setCurrentTime(FIRST_INSTANT);
@@ -163,6 +168,35 @@ class PreferenceProfileChangeIntegrationTest {
         RecipientProfile profile = findProfile(user.getId());
         assertThat(profile.getLastChangedAt()).isEqualTo(secondTime());
         assertThat(profile.getWindowStartedAt()).isEqualTo(firstTime());
+    }
+
+    @Test
+    @DisplayName("취향 최초 저장과 실제 변경·비우기를 프로파일 변경으로 기록한다")
+    void saveGiftPreference_recordsOnlyActualChanges() {
+        User user = saveUser();
+
+        preferenceSaveService.saveGiftPreference(user.getId(), "차를 좋아해요.");
+        RecipientProfile profile = findProfile(user.getId());
+        assertThat(profile.getLastChangedAt()).isEqualTo(firstTime());
+
+        preferenceSaveService.saveGiftPreference(user.getId(), " 차를 좋아해요. ");
+        assertThat(profile.getLastChangedAt()).isEqualTo(firstTime());
+
+        setCurrentTime(SECOND_INSTANT);
+        preferenceSaveService.saveGiftPreference(user.getId(), null);
+        RecipientProfile updatedProfile = findProfile(user.getId());
+        assertThat(updatedProfile.getLastChangedAt()).isEqualTo(secondTime());
+        assertThat(updatedProfile.getWindowStartedAt()).isEqualTo(firstTime());
+    }
+
+    @Test
+    @DisplayName("처음부터 비어 있는 취향 저장은 프로파일을 만들지 않는다")
+    void saveGiftPreference_doesNotMarkUnchangedEmptyPreference() {
+        User user = saveUser();
+
+        preferenceSaveService.saveGiftPreference(user.getId(), " \n ");
+
+        assertThat(profileRepository.findByRecipient_Id(user.getId())).isEmpty();
     }
 
     private void setCurrentTime(Instant instant) {
