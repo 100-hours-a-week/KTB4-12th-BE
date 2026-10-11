@@ -314,6 +314,157 @@ jobs:
             echo "- Commit: \`${GITHUB_SHA}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
 
+  deploy-develop:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: publish-develop
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: ${{ github.workflow }}-deploy-develop-backend
+      cancel-in-progress: false
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.DEV_CD_ROLE_ARN }}
+          aws-region: ${{ env.DEV_AWS_REGION }}
+          role-session-name: seonjalal-develop-be-deploy
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
+
+      - name: Reconcile backend on Develop runtime
+        shell: bash
+        env:
+          DEV_EC2_INSTANCE_ID: ${{ vars.DEV_EC2_INSTANCE_ID }}
+          DESIRED_SHA_PARAMETER: /seonjalal/develop/release/backend_sha
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${DEV_EC2_INSTANCE_ID}" =~ ^i-[0-9a-f]+$ ]]; then
+            echo "DEV_EC2_INSTANCE_ID is invalid." >&2
+            exit 1
+          fi
+
+          if [[ ! "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GITHUB_SHA is invalid." >&2
+            exit 1
+          fi
+
+          PREVIOUS_SHA="$(
+            aws ssm get-parameter \
+              --region "${DEV_AWS_REGION}" \
+              --name "${DESIRED_SHA_PARAMETER}" \
+              --query 'Parameter.Value' \
+              --output text
+          )"
+
+          if [[ ! "${PREVIOUS_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Previous backend SHA parameter is invalid." >&2
+            exit 1
+          fi
+
+          aws ssm put-parameter \
+            --region "${DEV_AWS_REGION}" \
+            --name "${DESIRED_SHA_PARAMETER}" \
+            --type String \
+            --value "${GITHUB_SHA}" \
+            --overwrite \
+            >/dev/null
+
+          PING_STATUS="$(
+            aws ssm describe-instance-information \
+              --region "${DEV_AWS_REGION}" \
+              --filters "Key=InstanceIds,Values=${DEV_EC2_INSTANCE_ID}" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text
+          )"
+
+          if [[ "${PING_STATUS}" != "Online" ]]; then
+            {
+              echo "## Develop backend deployment"
+              echo
+              echo "- Desired commit: \`${GITHUB_SHA}\`"
+              echo "- Runtime: offline"
+              echo "- Result: next instance boot reconciliation pending"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          COMMAND_ID="$(
+            aws ssm send-command \
+              --region "${DEV_AWS_REGION}" \
+              --instance-ids "${DEV_EC2_INSTANCE_ID}" \
+              --document-name seonjalal-v2-develop-reconcile \
+              --comment "Reconcile Develop backend ${GITHUB_SHA}" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+
+          COMMAND_STATUS=Pending
+          for ATTEMPT in {1..72}; do
+            set +e
+            COMMAND_STATUS="$(
+              aws ssm get-command-invocation \
+                --region "${DEV_AWS_REGION}" \
+                --command-id "${COMMAND_ID}" \
+                --instance-id "${DEV_EC2_INSTANCE_ID}" \
+                --query Status \
+                --output text \
+                2>/dev/null
+            )"
+            LOOKUP_STATUS=$?
+            set -e
+
+            if [[ "${LOOKUP_STATUS}" -ne 0 ]]; then
+              sleep 10
+              continue
+            fi
+
+            case "${COMMAND_STATUS}" in
+              Success|Cancelled|Failed|TimedOut|Cancelling)
+                break
+                ;;
+              Pending|InProgress|Delayed)
+                sleep 10
+                ;;
+              *)
+                echo "Unexpected SSM command status: ${COMMAND_STATUS}" >&2
+                break
+                ;;
+            esac
+          done
+
+          if [[ "${COMMAND_STATUS}" != "Success" ]]; then
+            aws ssm get-command-invocation \
+              --region "${DEV_AWS_REGION}" \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${DEV_EC2_INSTANCE_ID}" \
+              --query '{Status:Status,Output:StandardOutputContent,Errors:StandardErrorContent}' \
+              --output json || true
+
+            aws ssm put-parameter \
+              --region "${DEV_AWS_REGION}" \
+              --name "${DESIRED_SHA_PARAMETER}" \
+              --type String \
+              --value "${PREVIOUS_SHA}" \
+              --overwrite \
+              >/dev/null
+
+            echo "Develop backend deployment failed; desired SHA restored." >&2
+            exit 1
+          fi
+
+          {
+            echo "## Develop backend deployment"
+            echo
+            echo "- Desired commit: \`${GITHUB_SHA}\`"
+            echo "- Runtime: online"
+            echo "- Result: deployed and verified"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate
