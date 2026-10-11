@@ -143,13 +143,35 @@ class GiftHistoryTest {
 
         assertThat(table.uniqueConstraints())
                 .extracting(uniqueConstraint -> uniqueConstraint.name())
-                .containsExactly("uk_gift_histories_sender_idempotency");
+                .containsExactly(
+                        "uk_gift_histories_sender_idempotency",
+                        "uk_gift_histories_order_record"
+                );
         assertThat(Arrays.stream(table.check()).map(CheckConstraint::constraint))
                 .containsExactlyInAnyOrder(
                         "sender_id <> recipient_id",
                         "quantity >= 1",
                         "product_price_snapshot >= 0",
-                        "status IN ('PROCESSING', 'COMPLETED', 'FAILED')"
+                        "status IN ('PROCESSING', 'WAITING_FOR_ACCEPTANCE', 'COMPLETED', 'FAILED', 'CANCELED')",
+                        """
+                                status IN ('PROCESSING', 'FAILED')
+                                OR (
+                                    status = 'WAITING_FOR_ACCEPTANCE'
+                                    AND expires_at IS NOT NULL
+                                    AND completed_at IS NULL
+                                    AND canceled_at IS NULL
+                                )
+                                OR (
+                                    status = 'COMPLETED'
+                                    AND completed_at IS NOT NULL
+                                    AND canceled_at IS NULL
+                                )
+                                OR (
+                                    status = 'CANCELED'
+                                    AND completed_at IS NULL
+                                    AND canceled_at IS NOT NULL
+                                )
+                                """
                 );
         assertThat(GiftHistory.class.getDeclaredField("status").getAnnotation(ColumnDefault.class).value())
                 .isEqualTo("'COMPLETED'");
@@ -163,12 +185,18 @@ class GiftHistoryTest {
         assertThat(Arrays.stream(table.indexes()).map(Index::name))
                 .containsExactly(
                         "idx_gift_histories_sender_completed",
-                        "idx_gift_histories_recipient_completed"
+                        "idx_gift_histories_recipient_completed",
+                        "idx_gifts_recipient_status",
+                        "idx_gifts_sender_status",
+                        "idx_gifts_expiration"
                 );
         assertThat(Arrays.stream(table.indexes()).map(Index::columnList))
                 .containsExactly(
                         "sender_id, completed_at DESC, id DESC",
-                        "recipient_id, completed_at DESC, id DESC"
+                        "recipient_id, completed_at DESC, id DESC",
+                        "recipient_id, status, created_at, id",
+                        "sender_id, status, created_at, id",
+                        "status, expires_at, id"
                 );
     }
 
