@@ -8,6 +8,7 @@ import com.gift.payment.global.exception.ErrorCode;
 import com.gift.payment.payment.entity.Payment;
 import com.gift.payment.payment.entity.PaymentStatus;
 import com.gift.payment.payment.support.PaymentScenario;
+import com.gift.payment.payment.support.PaymentScenarioDelayer;
 
 @Service
 @RequiredArgsConstructor
@@ -15,8 +16,10 @@ public class PaymentApprovalService {
 
     private final PaymentIdempotencyService idempotencyService;
     private final PaymentTransactionService transactionService;
+    private final PaymentScenarioDelayer scenarioDelayer;
 
     public Payment confirm(String orderId, Long amount, PaymentScenario scenario) {
+
         PaymentStartResult result = idempotencyService.start(orderId, amount);
 
         if (!result.created()) {
@@ -30,8 +33,11 @@ public class PaymentApprovalService {
             case DECLINE ->
                     decline(result.payment().getId());
 
-            case TEMPORARY_ERROR ->
-                    throw new BusinessException(ErrorCode.TEMPORARY_PROCESSING_ERROR);
+            case TEMPORARY_ERROR -> temporaryError();
+
+            case TIMEOUT_BEFORE_APPROVAL -> timeoutBeforeApproval();
+
+            case TIMEOUT_AFTER_APPROVAL -> timeoutAfterApproval(result.payment().getId());
         };
     }
 
@@ -47,5 +53,23 @@ public class PaymentApprovalService {
         transactionService.decline(paymentId);
 
         throw new BusinessException(ErrorCode.PAYMENT_DECLINED);
+    }
+
+    private Payment temporaryError() {
+        throw new BusinessException(ErrorCode.TEMPORARY_PROCESSING_ERROR);
+    }
+
+    private Payment timeoutBeforeApproval() {
+        scenarioDelayer.delay();
+
+        throw new BusinessException(ErrorCode.TEMPORARY_PROCESSING_ERROR);
+    }
+
+    private Payment timeoutAfterApproval(Long paymentId) {
+        Payment payment = transactionService.approve(paymentId);
+
+        scenarioDelayer.delay();
+
+        return payment;
     }
 }

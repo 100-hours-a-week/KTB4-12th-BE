@@ -26,6 +26,9 @@ payment:
   security:
     internal-api:
       key: test-payment-server-api-key
+  test-scenario:
+    delay: 10ms
+
 
 management:
   endpoints:

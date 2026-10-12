@@ -4,5 +4,7 @@ public enum PaymentScenario {
 
     APPROVE,
     DECLINE,
-    TEMPORARY_ERROR
+    TEMPORARY_ERROR,
+    TIMEOUT_BEFORE_APPROVAL,
+    TIMEOUT_AFTER_APPROVAL
 }
