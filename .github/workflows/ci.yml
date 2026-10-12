@@ -36,8 +36,14 @@ jobs:
     timeout-minutes: 30
     env:
       PAYMENT_SERVER_API_KEY: ci-payment-server-api-key
+      PAYMENT_SERVER_BASE_URL: http://payment-server:8090
+      PAYMENT_CONNECT_TIMEOUT: 1s
+      PAYMENT_COMMAND_TIMEOUT: 3s
+      PAYMENT_QUERY_TIMEOUT: 2s
+
       AWS_REGION: ap-northeast-2
       PRODUCT_IMAGE_BUCKET: ci-test-product-images
+
       AI_CHAT_BASE_URL: http://localhost:8000/v1/chat/conversations
       AI_CHAT_SERVICE_TOKEN: ci-chat-service-token
       AI_CHAT_CONNECT_TIMEOUT: 3s
@@ -49,6 +55,7 @@ jobs:
       AI_PROFILE_BATCH_SIZE: 100
       AI_PROFILE_DISPATCH_INTERVAL: 1m
       AI_PROFILE_SCHEDULING_ENABLED: 'false'
+
       SCHEDULING_ENABLED: 'true'
 
     steps:
@@ -156,6 +163,11 @@ jobs:
             --env AI_PROFILE_DISPATCH_INTERVAL \
             --env AI_PROFILE_SCHEDULING_ENABLED \
             --env SCHEDULING_ENABLED \
+            --env PAYMENT_SERVER_BASE_URL \
+            --env PAYMENT_SERVER_API_KEY \
+            --env PAYMENT_CONNECT_TIMEOUT \
+            --env PAYMENT_COMMAND_TIMEOUT \
+            --env PAYMENT_QUERY_TIMEOUT \
             seonjalal-main-backend:ci
 
           MAIN_BACKEND_HOST_PORT="$(docker port "$MAIN_BACKEND_CONTAINER" 8080/tcp | sed 's/.*://')"
@@ -179,6 +191,7 @@ jobs:
           docker run --detach \
             --name "$PAYMENT_SERVER_CONTAINER" \
             --network "$NETWORK" \
+            --network-alias payment-server \
             --publish 127.0.0.1::8090 \
             --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
             --env DB_USERNAME=gift_smoke \
