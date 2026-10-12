@@ -1,0 +1,1277 @@
+{
+  "info": {
+    "name": "AI Chat PR2 시나리오 검증",
+    "description": "BE를 AI /v1/chat/test/conversations에 연결한 뒤 AI Chat Local 환경으로 전체 컬렉션을 Runner에서 실행. Iterations=1, Delay=500ms 권장. 60초는 테스트 조회 중단 기준이며 제품 timeout 정책이 아님. 가이드의 9개 시나리오를 JSON API 범위로 검사. SSE delta 경계 및 reconnect 자체는 PR 3 범위. 가상 상품으로 실제 구매하지 않음.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "for (const key of ['baseUrl', 'accessToken', 'recipientUserId']) {",
+          "  if (!pm.environment.get(key)) throw new Error('AI Chat Local 환경의 ' + key + ' 값을 입력하세요.');",
+          "}",
+          "if (!Number.isSafeInteger(Number(pm.environment.get('recipientUserId'))) || Number(pm.environment.get('recipientUserId')) < 1) {",
+          "  throw new Error('recipientUserId는 활성 회원의 양의 정수 ID여야 합니다.');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "scenarioConversationId",
+      "value": ""
+    },
+    {
+      "key": "scenarioConversationToken",
+      "value": ""
+    },
+    {
+      "key": "scenarioTurnId",
+      "value": ""
+    },
+    {
+      "key": "scenarioStartedAt",
+      "value": ""
+    },
+    {
+      "key": "scenarioLastEventId",
+      "value": ""
+    },
+    {
+      "key": "scenarioPartialText",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "00 테스트용 대화 생성",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"recipientUserId\":{{recipientUserId}}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('scenarioConversationId', pm.variables.replaceIn('{{$guid}}'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('대화 생성·복구 성공', () => pm.expect([200, 201].includes(pm.response.code)).to.be.true);",
+              "if (![200, 201].includes(pm.response.code)) {",
+              "  pm.execution.setNextRequest(null);",
+              "} else {",
+              "  const data = pm.response.json().data;",
+              "  pm.test('대화 토큰 발급', () => pm.expect(typeof data.conversationToken === 'string' && data.conversationToken.length > 0).to.be.true);",
+              "  pm.collectionVariables.set('scenarioConversationToken', data.conversationToken);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 cards",
+      "description": "/mock cards 시나리오 검증",
+      "item": [
+        {
+          "name": "01 cards - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock cards\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "01 cards - 최종 결과 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 COMPLETED', () => pm.expect(data.status).to.equal('COMPLETED'));",
+                  "    pm.test('가상 카드 3개', () => pm.expect(cards.length === 1 && cards[0].products.length === 3).to.be.true);",
+                  "    pm.test('텍스트와 카드 함께 제공', () => pm.expect(text.length > 0).to.be.true);    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 text",
+      "description": "/mock text 시나리오 검증",
+      "item": [
+        {
+          "name": "02 text - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock text\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 text - 최종 결과 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 COMPLETED', () => pm.expect(data.status).to.equal('COMPLETED'));",
+                  "    pm.test('한글 텍스트', () => pm.expect(/[가-힣]/.test(text)).to.be.true);",
+                  "    pm.test('이모지 텍스트', () => pm.expect(/\\p{Extended_Pictographic}/u.test(text)).to.be.true);    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 no_match",
+      "description": "/mock no_match 시나리오 검증",
+      "item": [
+        {
+          "name": "03 no_match - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock no_match\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 no_match - 최종 결과 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 COMPLETED', () => pm.expect(data.status).to.equal('COMPLETED'));",
+                  "    pm.test('카드 없이 결과 없음 텍스트', () => pm.expect(cards.length === 0 && text.length > 0).to.be.true);    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 long",
+      "description": "/mock long 시나리오 검증",
+      "item": [
+        {
+          "name": "04 long - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock long\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 long - 최종 결과 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 COMPLETED', () => pm.expect(data.status).to.equal('COMPLETED'));",
+                  "    pm.test('긴 텍스트 전달', () => pm.expect(Array.from(text).length).to.be.at.least(2000));",
+                  "    pm.test('여러 줄 텍스트', () => pm.expect(text.split('\\n').length).to.be.at.least(30));",
+                  "    pm.test('HTML 형태 문자열 보존', () => pm.expect(/<[^>]+>/.test(text)).to.be.true);    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 slow",
+      "description": "/mock slow 시나리오 검증",
+      "item": [
+        {
+          "name": "05 slow - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock slow\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 slow - 즉시 취소",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}/cancellation"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('취소 요청 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.test('생성 중 취소 반영', () => pm.expect(data.status).to.equal('CANCELLED'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 slow - 취소 결과 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 CANCELLED', () => pm.expect(data.status).to.equal('CANCELLED'));",
+                  "    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 delayed_tokens",
+      "description": "/mock delayed_tokens 시나리오 검증",
+      "item": [
+        {
+          "name": "06 delayed_tokens - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock delayed_tokens\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 delayed_tokens - 부분 답변 대기",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && text.length > 0) {",
+                  "    pm.collectionVariables.set('scenarioPartialText', text);",
+                  "    pm.test('생성 중 부분 답변 확인', () => pm.expect(text.length > 0).to.be.true);",
+                  "  } else if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('60초 이내 생성 중 부분 답변 확보', () => pm.expect(false).to.be.true);",
+                  "    pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 delayed_tokens - 부분 답변 후 취소",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}/cancellation"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('취소 요청 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.test('생성 중 취소 반영', () => pm.expect(data.status).to.equal('CANCELLED'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 delayed_tokens - 부분 답변 보존 확인",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 CANCELLED', () => pm.expect(data.status).to.equal('CANCELLED'));",
+                  "    const partial = pm.collectionVariables.get('scenarioPartialText');",
+                  "    pm.test('취소 후 기존 부분 답변 보존', () => pm.expect(partial.length > 0 && text.startsWith(partial)).to.be.true);    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 reconnect",
+      "description": "JSON GET 검증. reconnect의 실제 SSE 재연결은 PR 3에서 별도 검증.",
+      "item": [
+        {
+          "name": "07 reconnect - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock reconnect\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 reconnect - 최종 결과 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 COMPLETED', () => pm.expect(data.status).to.equal('COMPLETED'));",
+                  "    pm.test('GET으로 전체 답변 복구', () => pm.expect(text.length > 0 && data.lastEventId > 0).to.be.true);    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 failed",
+      "description": "/mock failed 시나리오 검증",
+      "item": [
+        {
+          "name": "08 failed - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock failed\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 failed - 최종 결과 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 FAILED', () => pm.expect(data.status).to.equal('FAILED'));",
+                  "    pm.test('실패해도 부분 답변 보존', () => pm.expect(text.length > 0).to.be.true);",
+                  "    pm.test('MOCK 오류 표시', () => pm.expect(data.error.message).to.include('[MOCK]'));    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09 timeout",
+      "description": "/mock timeout 시나리오 검증",
+      "item": [
+        {
+          "name": "09 timeout - 질문 접수",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\": \"/mock timeout\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('새 질문 접수', () => pm.expect(pm.response.code).to.equal(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 timeout - 최종 결과 조회",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('조회 성공', () => pm.expect(pm.response.code).to.equal(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  const data = pm.response.json().data;",
+                  "  const text = data.blocks.filter(b => b.type === 'text').map(b => b.text).join('\\n');",
+                  "  const cards = data.blocks.filter(b => b.type === 'cards');",
+                  "  pm.test('동일 턴 조회', () => pm.expect(data.turnId).to.equal(pm.collectionVariables.get('scenarioTurnId')));",
+                  "  const previous = Number(pm.collectionVariables.get('scenarioLastEventId') || 0);",
+                  "  pm.test('이벤트 번호는 감소하지 않음', () => pm.expect(data.lastEventId).to.be.at.least(previous));",
+                  "  pm.collectionVariables.set('scenarioLastEventId', String(data.lastEventId));",
+                  "  const elapsed = Date.now() - Number(pm.collectionVariables.get('scenarioStartedAt'));",
+                  "  if (data.status === 'PROCESSING' && elapsed < 60000) {",
+                  "    pm.execution.setNextRequest(pm.info.requestId);",
+                  "  } else {",
+                  "    pm.test('최종 상태 FAILED', () => pm.expect(data.status).to.equal('FAILED'));",
+                  "    pm.test('부분 답변과 실패 원인 제공', () => pm.expect(text.length > 0 && typeof data.error.message === 'string' && data.error.message.length > 0).to.be.true);    if (data.status === 'PROCESSING') pm.execution.setNextRequest(null);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10 정의되지 않은 mock 명령",
+      "item": [
+        {
+          "name": "10 unknown - 질문 거절",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"message\":\"/mock unknown_scenario\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('scenarioTurnId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('scenarioStartedAt', Date.now().toString());",
+                  "pm.collectionVariables.set('scenarioLastEventId', '0');",
+                  "pm.collectionVariables.set('scenarioPartialText', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('알 수 없는 mock 명령 거절', () => pm.expect(pm.response.code).to.equal(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 unknown - 턴 미저장 확인",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Conversation-Token",
+                "value": "{{scenarioConversationToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/recommendations/conversations/{{scenarioConversationId}}/turns/{{scenarioTurnId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('거절한 질문은 저장하지 않음', () => pm.expect(pm.response.code).to.equal(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

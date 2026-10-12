@@ -153,6 +153,7 @@ public class SecurityConfig {
         configuration.setAllowedHeaders(
                 List.of(
                         "Authorization",
+                        "X-Conversation-Token",
                         "Content-Type",
                         "Idempotency-Key"
                 )
