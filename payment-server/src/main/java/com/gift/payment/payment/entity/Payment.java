@@ -144,6 +144,41 @@ public class Payment extends BaseTimeEntity {
         this.amount = amount;
     }
 
+    public void approve(String transactionKey, LocalDateTime approvedAt) {
+
+        requirePending();
+        validateText(transactionKey, 36, "승인 거래 키");
+
+        if (approvedAt == null) {
+            throw new IllegalArgumentException("승인 시각은 null일 수 없습니다.");
+        }
+
+        this.status = PaymentStatus.COMPLETED;
+        this.approvedTransactionKey = transactionKey;
+        this.approvedAt = approvedAt;
+        this.failureCode = null;
+    }
+
+    public void decline(PaymentFailureCode failureCode) {
+
+        requirePending();
+
+        if (failureCode == null) {
+            throw new IllegalArgumentException("실패 코드는 null일 수 없습니다.");
+        }
+
+        this.status = PaymentStatus.DECLINED;
+        this.failureCode = failureCode;
+        this.approvedTransactionKey = null;
+        this.approvedAt = null;
+    }
+
+    private void requirePending() {
+        if (status != PaymentStatus.PENDING) {
+            throw new IllegalStateException("대기 중인 결제만 승인 결과를 확정할 수 있습니다.");
+        }
+    }
+
     private static void validateText(String value, int maxLength, String fieldName) {
         if (value == null || value.isBlank() || value.length() > maxLength) {
             throw new IllegalArgumentException(fieldName + " 형식을 확인해 주세요.");
