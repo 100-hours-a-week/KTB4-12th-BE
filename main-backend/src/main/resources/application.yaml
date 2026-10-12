@@ -76,6 +76,14 @@ app:
     dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
     dispatch-claim-timeout: ${AI_PROFILE_DISPATCH_CLAIM_TIMEOUT:2m}
 
+  payment:
+    client:
+      base-url: ${PAYMENT_SERVER_BASE_URL}
+      api-key: ${PAYMENT_SERVER_API_KEY}
+      connect-timeout: ${PAYMENT_CONNECT_TIMEOUT:1s}
+      command-timeout: ${PAYMENT_COMMAND_TIMEOUT:3s}
+      query-timeout: ${PAYMENT_QUERY_TIMEOUT:2s}
+
   bug-report:
     webhook-url: ${DISCORD_WEBHOOK_URL:}
     google-sheets:
