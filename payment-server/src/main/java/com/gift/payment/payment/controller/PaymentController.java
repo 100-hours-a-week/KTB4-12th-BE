@@ -23,8 +23,7 @@ import com.gift.payment.payment.support.PaymentScenarioResolver;
 @RequiredArgsConstructor
 public class PaymentController {
 
-    public static final String SCENARIO_HEADER =
-            "X-Payment-Scenario";
+    public static final String SCENARIO_HEADER = "X-Payment-Scenario";
 
     private final PaymentApprovalService approvalService;
     private final PaymentScenarioResolver scenarioResolver;
@@ -32,10 +31,7 @@ public class PaymentController {
     @PostMapping("/confirm")
     public ResponseEntity<ApiSuccessResponse<PaymentResponse>> confirm(
             @Valid @RequestBody PaymentConfirmRequest request,
-            @RequestHeader(
-                    value = SCENARIO_HEADER,
-                    required = false
-            )
+            @RequestHeader(value = SCENARIO_HEADER, required = false)
             String scenarioHeader
     ) {
         PaymentScenario scenario = scenarioResolver.resolve(scenarioHeader);
