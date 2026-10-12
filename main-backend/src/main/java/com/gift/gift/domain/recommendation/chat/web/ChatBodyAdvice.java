@@ -13,8 +13,8 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.RequestBodyAdviceAdapter;
 
 import com.gift.gift.domain.recommendation.chat.controller.ChatController;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 
 @ControllerAdvice(assignableTypes = ChatController.class)
 public class ChatBodyAdvice extends RequestBodyAdviceAdapter {
@@ -59,7 +59,7 @@ public class ChatBodyAdvice extends RequestBodyAdviceAdapter {
         };
     }
 
-    private BusinessException tooLarge() {
-        return new BusinessException(ErrorCode.PAYLOAD_TOO_LARGE);
+    private ChatException tooLarge() {
+        return new ChatException(ChatErrorCode.PAYLOAD_TOO_LARGE);
     }
 }

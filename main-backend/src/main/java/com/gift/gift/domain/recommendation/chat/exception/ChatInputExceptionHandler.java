@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.gift.gift.domain.recommendation.chat.controller.ChatController;
-import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.ValidationDetail;
 import com.gift.gift.global.response.ApiResponse;
 
@@ -35,8 +34,8 @@ public class ChatInputExceptionHandler {
 
         return ResponseEntity.badRequest().body(
                 ApiResponse.error(
-                        ErrorCode.INVALID_REQUEST,
-                        "입력값을 확인해 주세요.",
+                        ChatErrorCode.INVALID_MESSAGE.errorCode(),
+                        exception.getMessage(),
                         traceId,
                         List.of(new ValidationDetail("message", exception.reason()))
                 )

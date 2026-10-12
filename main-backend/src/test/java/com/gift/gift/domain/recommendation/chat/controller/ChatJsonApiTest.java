@@ -189,11 +189,49 @@ class ChatJsonApiTest {
                     .andExpect(jsonPath("$.error.code").value(
                             expected == 503 ? "SERVICE_UNAVAILABLE" : codes[i]
                     ))
+                    .andExpect(jsonPath("$.message").value(switch (expected) {
+                        case 400 -> "요청 형식이나 값이 올바르지 않습니다.";
+                        case 404 -> "대화 또는 질문을 찾을 수 없습니다.";
+                        case 409 -> "같은 대화 ID에 다른 사용자 정보를 사용할 수 없습니다.";
+                        case 413 -> "요청 본문 크기가 너무 큽니다.";
+                        case 429 -> "요청이 너무 많아요. 잠시 후 다시 시도해주세요.";
+                        default -> "AI 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+                    }))
                     .andExpect(jsonPath("$.error.traceId").isNotEmpty())
                     .andExpect(jsonPath("$.data").doesNotExist());
         }
 
         verify(tokens, never()).issue(any(), any());
+    }
+
+    @Test
+    @DisplayName("질문 충돌은 공개 CONFLICT 코드와 질문 전용 메시지를 반환한다")
+    void turnConflict_keepsPublicCodeAndChatMessage() throws Exception {
+        server.expect(requestTo(BASE + "/" + ID + "/turns/" + TURN))
+                .andRespond(withStatus(HttpStatus.CONFLICT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(error("CONFLICT")));
+
+        mvc.perform(put(PUBLIC + "/turns/" + TURN)
+                        .header("X-Conversation-Token", conversationToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"선물 추천\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.message").value(
+                        "질문 ID 또는 현재 대화 처리 상태가 요청과 충돌합니다."
+                ));
+    }
+
+    @Test
+    @DisplayName("대화 토큰 누락·변조는 동일한 채팅 404 메시지로 AI 호출 전에 차단된다")
+    void inaccessibleConversation_usesUniformNotFound() throws Exception {
+        for (String token : new String[]{"", "invalid-token"}) {
+            mvc.perform(get(PUBLIC).header("X-Conversation-Token", token))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+                    .andExpect(jsonPath("$.message").value("대화 또는 질문을 찾을 수 없습니다."));
+        }
     }
 
     @Test

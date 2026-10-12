@@ -17,6 +17,8 @@ import org.springframework.security.oauth2.jwt.*;
 import org.springframework.stereotype.Component;
 
 import com.gift.gift.domain.recommendation.chat.config.ChatConversationTokenProperties;
+import com.gift.gift.domain.recommendation.chat.exception.ChatErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
@@ -219,7 +221,7 @@ public class ChatConversationTokenProvider {
         );
     }
 
-    private BusinessException notFound() {
-        return new BusinessException(ErrorCode.NOT_FOUND);
+    private ChatException notFound() {
+        return new ChatException(ChatErrorCode.RESOURCE_NOT_FOUND);
     }
 }

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.*;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 
+import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 import com.gift.gift.domain.recommendation.chat.config.ChatConversationTokenProperties;
 import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
 import com.gift.gift.global.config.JwtConfig;
@@ -418,8 +419,8 @@ class ChatConversationTokenProviderTest {
     private void assertNotFound(
             org.junit.jupiter.api.function.Executable executable
     ) {
-        BusinessException exception = assertThrows(
-                BusinessException.class,
+        ChatException exception = assertThrows(
+                ChatException.class,
                 executable
         );
 
@@ -427,6 +428,7 @@ class ChatConversationTokenProviderTest {
                 ErrorCode.NOT_FOUND,
                 exception.getErrorCode()
         );
+        assertEquals("대화 또는 질문을 찾을 수 없습니다.", exception.getMessage());
     }
 
     private static String base64(int firstByte) {

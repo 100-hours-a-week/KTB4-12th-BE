@@ -6,7 +6,7 @@ public class ChatInputException extends RuntimeException {
     private final ValidationErrorReason reason;
 
     public ChatInputException(ValidationErrorReason reason) {
-        super("입력값을 확인해 주세요.");
+        super(ChatErrorCode.INVALID_MESSAGE.message());
         this.reason = reason;
     }
 

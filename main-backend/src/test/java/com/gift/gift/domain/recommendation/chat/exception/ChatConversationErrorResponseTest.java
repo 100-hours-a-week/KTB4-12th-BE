@@ -24,17 +24,12 @@ class ChatConversationErrorResponseTest {
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
 
-        for (ErrorCode code : new ErrorCode[] {
-                ErrorCode.NOT_FOUND,
-                ErrorCode.UNAUTHORIZED,
-                ErrorCode.RECIPIENT_NOT_FOUND,
-                ErrorCode.INVALID_REQUEST
-        }) {
+        for (ChatErrorCode code : ChatErrorCode.values()) {
             mvc.perform(
                             get("/test/chat-errors/{code}", code.name())
                     )
                     .andExpect(
-                            status().is(code.status().value())
+                            status().is(code.errorCode().status().value())
                     )
                     .andExpect(
                             jsonPath("$.message")
@@ -42,7 +37,7 @@ class ChatConversationErrorResponseTest {
                     )
                     .andExpect(
                             jsonPath("$.error.code")
-                                    .value(code.name())
+                                    .value(code.errorCode().code())
                     )
                     .andExpect(
                             jsonPath("$.error.traceId")
@@ -59,15 +54,39 @@ class ChatConversationErrorResponseTest {
         }
     }
 
+    @Test
+    @DisplayName("공통 충돌·장애 메시지는 채팅 문구를 포함하지 않는다")
+    void commonDefaults_remainIndependentOfChat() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(new ErrorController())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mvc.perform(get("/test/common-errors/CONFLICT"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.message").value("요청이 현재 상태와 충돌합니다."));
+
+        mvc.perform(get("/test/common-errors/SERVICE_UNAVAILABLE"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error.code").value("SERVICE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value(
+                        "서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."
+                ));
+    }
+
     // 테스트 전용 Controller이며 운영 API로 등록되지 않는다.
     @RestController
     static class ErrorController {
 
+        @GetMapping("/test/common-errors/{code}")
+        public void common(@PathVariable String code) {
+            throw new BusinessException(ErrorCode.valueOf(code));
+        }
+
+
         @GetMapping("/test/chat-errors/{code}")
         public void fail(@PathVariable String code) {
-            throw new BusinessException(
-                    ErrorCode.valueOf(code)
-            );
+            throw new ChatException(ChatErrorCode.valueOf(code));
         }
     }
 }

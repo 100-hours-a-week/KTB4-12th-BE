@@ -14,9 +14,10 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.*;
+import com.gift.gift.domain.recommendation.chat.exception.ChatErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
 import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 
 @Slf4j
 @Component
@@ -203,7 +204,7 @@ public class AiChatClient {
         }
     }
 
-    private BusinessException mapped(
+    private ChatException mapped(
             int status,
             JsonNode envelope,
             boolean creation
@@ -218,39 +219,22 @@ public class AiChatClient {
 
         return switch (status) {
             case 400 -> "INVALID_REQUEST".equals(code)
-                    ? new BusinessException(
-                    ErrorCode.INVALID_REQUEST,
-                    "요청 형식이나 값이 올바르지 않습니다."
-            )
+                    ? new ChatException(ChatErrorCode.INVALID_REQUEST)
                     : unavailable();
-
             case 404 -> "NOT_FOUND".equals(code)
-                    ? new BusinessException(
-                    ErrorCode.NOT_FOUND,
-                    "대화 또는 질문을 찾을 수 없습니다."
-            )
+                    ? new ChatException(ChatErrorCode.RESOURCE_NOT_FOUND)
                     : unavailable();
-
             case 409 -> "CONFLICT".equals(code)
-                    ? new BusinessException(
-                    ErrorCode.CONFLICT,
-                    creation
-                            ? "같은 대화 ID에 다른 사용자 정보를 사용할 수 없습니다."
-                            : "질문 ID 또는 현재 대화 처리 상태가 요청과 충돌합니다."
-            )
+                    ? new ChatException(creation
+                            ? ChatErrorCode.CONVERSATION_CONFLICT
+                            : ChatErrorCode.TURN_CONFLICT)
                     : unavailable();
-
             case 413 -> "PAYLOAD_TOO_LARGE".equals(code)
-                    ? new BusinessException(ErrorCode.PAYLOAD_TOO_LARGE)
+                    ? new ChatException(ChatErrorCode.PAYLOAD_TOO_LARGE)
                     : unavailable();
-
             case 429 -> "TOO_MANY_REQUESTS".equals(code)
-                    ? new BusinessException(
-                    ErrorCode.TOO_MANY_REQUESTS,
-                    "요청이 너무 많아요. 잠시 후 다시 시도해주세요."
-            )
+                    ? new ChatException(ChatErrorCode.RATE_LIMIT_EXCEEDED)
                     : unavailable();
-
             default -> unavailable();
         };
     }
@@ -324,7 +308,7 @@ public class AiChatClient {
         return "/" + id + "/turns/" + turnId;
     }
 
-    private static BusinessException unavailable() {
-        return new BusinessException(ErrorCode.SERVICE_UNAVAILABLE);
+    private static ChatException unavailable() {
+        return new ChatException(ChatErrorCode.AI_SERVICE_UNAVAILABLE);
     }
 }

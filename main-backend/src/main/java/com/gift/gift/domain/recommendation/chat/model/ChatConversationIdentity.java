@@ -3,8 +3,8 @@ package com.gift.gift.domain.recommendation.chat.model;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 
 public record ChatConversationIdentity(
         UUID conversationId,
@@ -23,7 +23,7 @@ public record ChatConversationIdentity(
         if (conversationId == null
                 || conversationId.version() != 4
                 || conversationId.variant() != 2) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new ChatException(ChatErrorCode.INVALID_REQUEST);
         }
 
         requireUserId(senderUserId);
@@ -32,7 +32,7 @@ public record ChatConversationIdentity(
 
     public static UUID parseConversationId(String value) {
         if (value == null || !UUID_V4.matcher(value).matches()) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new ChatException(ChatErrorCode.INVALID_REQUEST);
         }
 
         return UUID.fromString(value);
@@ -40,7 +40,7 @@ public record ChatConversationIdentity(
 
     public static long requireUserId(Long value) {
         if (value == null || value < 1 || value > MAX_USER_ID) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new ChatException(ChatErrorCode.INVALID_REQUEST);
         }
 
         return value;
