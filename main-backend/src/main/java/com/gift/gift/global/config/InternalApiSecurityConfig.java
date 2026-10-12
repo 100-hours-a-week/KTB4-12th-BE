@@ -9,7 +9,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
-import com.gift.gift.domain.recommendation.support.AiProfilingProperties;
+import com.gift.gift.domain.recommendation.profiling.support.AiProfilingProperties;
 import com.gift.gift.global.security.ApiAuthenticationEntryPoint;
 import com.gift.gift.global.security.SecurityErrorResponseWriter;
 import com.gift.gift.global.security.ServiceTokenAuthenticationFilter;

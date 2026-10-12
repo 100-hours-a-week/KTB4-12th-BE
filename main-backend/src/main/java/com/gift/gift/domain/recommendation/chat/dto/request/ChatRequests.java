@@ -3,8 +3,8 @@ package com.gift.gift.domain.recommendation.chat.dto.request;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import tools.jackson.databind.JsonNode;
 
-import com.gift.gift.domain.recommendation.chat.ChatConversationIdentity;
 import com.gift.gift.domain.recommendation.chat.exception.ChatInputException;
+import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.ValidationErrorReason;

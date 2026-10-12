@@ -36,8 +36,8 @@ import com.gift.gift.domain.product.repository.ProductSearchCondition;
 import com.gift.gift.domain.product.repository.ProductSort;
 import com.gift.gift.domain.product.repository.ProductSummaryProjection;
 import com.gift.gift.domain.product.service.ProductQueryService;
-import com.gift.gift.domain.recommendation.entity.RecipientProfile;
-import com.gift.gift.domain.recommendation.entity.RecipientRecommendedProduct;
+import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.profiling.entity.RecipientRecommendedProduct;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.global.exception.ErrorCode;
 
