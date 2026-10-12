@@ -10,9 +10,12 @@ public enum ErrorCode {
         "일시적인 오류가 발생했습니다. 다시 시도해 주세요."
     ),
     NOT_FOUND(HttpStatus.NOT_FOUND,"요청한 리소스를 찾을 수 없습니다."),
-    CONFLICT(HttpStatus.CONFLICT, "대화 ID 또는 질문 ID가 현재 상태와 충돌합니다."),
+    CONFLICT(HttpStatus.CONFLICT, "요청이 현재 상태와 충돌합니다."),
     PAYLOAD_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "요청 본문 크기가 너무 큽니다."),
-    SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "AI 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    SERVICE_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."
+    ),
     INVALID_EMAIL_FORMAT(HttpStatus.BAD_REQUEST, "이메일 형식을 확인해 주세요."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요."),
     REQUIRED_TERMS_NOT_AGREED(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해 주세요."),

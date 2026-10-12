@@ -5,6 +5,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import com.gift.gift.domain.recommendation.chat.exception.ChatErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
 import com.gift.gift.domain.recommendation.chat.security.ChatConversationTokenProvider;
 import com.gift.gift.domain.user.service.AuthenticatedUserService;
@@ -34,10 +36,7 @@ public class ChatConversationAccessService {
         );
 
         if (!authenticatedUserService.isActive(recipientId)) {
-            throw new BusinessException(
-                    ErrorCode.RECIPIENT_NOT_FOUND,
-                    "선택한 수신자 정보를 확인할 수 없습니다."
-            );
+            throw new ChatException(ChatErrorCode.RECIPIENT_NOT_FOUND);
         }
 
         return new ChatConversationIdentity(
@@ -67,7 +66,7 @@ public class ChatConversationAccessService {
         if (!authenticatedUserService.isActive(
                 identity.recipientUserId()
         )) {
-            throw new BusinessException(ErrorCode.NOT_FOUND);
+            throw new ChatException(ChatErrorCode.RESOURCE_NOT_FOUND);
         }
 
         return identity;

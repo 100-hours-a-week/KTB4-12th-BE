@@ -3,10 +3,10 @@ package com.gift.gift.domain.recommendation.chat.dto.request;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import tools.jackson.databind.JsonNode;
 
+import com.gift.gift.domain.recommendation.chat.exception.ChatErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 import com.gift.gift.domain.recommendation.chat.exception.ChatInputException;
 import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.ValidationErrorReason;
 
 public final class ChatRequests {
@@ -69,10 +69,7 @@ public final class ChatRequests {
         }
     }
 
-    public static BusinessException invalid() {
-        return new BusinessException(
-                ErrorCode.INVALID_REQUEST,
-                "요청 형식이나 값이 올바르지 않습니다."
-        );
+    public static ChatException invalid() {
+        return new ChatException(ChatErrorCode.INVALID_REQUEST);
     }
 }

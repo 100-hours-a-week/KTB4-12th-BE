@@ -20,7 +20,7 @@ domain/recommendation/
     ├── controller/       공개 채팅 JSON API
     ├── dto/request/      대화 생성·질문 입력
     ├── dto/response/     Conversation·Turn·응답 블록 (ChatModels)
-    ├── exception/        기존 채팅 입력 예외·처리기
+    ├── exception/        채팅 오류·전용 메시지·입력 예외 처리기
     ├── model/            대화 UUID·발신자·수신자 식별 정보
     ├── security/         대화 토큰 발급·검증·발급 결과
     ├── service/          사용자 검증·대화 소유권 검사·AI 호출 흐름
@@ -35,4 +35,4 @@ infrastructure/ai/
 
 채팅 식별 정보는 DB Entity가 아니므로 `model`에 둔다. 외부 AI 서버와 통신하는 코드는 기존대로 `infrastructure`에 둔다.
 
-API URL·요청·응답·오류 코드, JWT audience·만료 규칙, Bean 이름과 설정 키, DB 테이블·마이그레이션은 변경하지 않는다. 채팅 예외를 별도 도메인 예외로 정리하는 작업은 후속 변경으로 진행한다.
+API URL·요청·응답·오류 코드, JWT audience·만료 규칙, Bean 이름과 설정 키, DB 테이블·마이그레이션은 변경하지 않는다. 이슈 #339의 [채팅 오류 처리](chat-error-handling.md)는 내부 예외·메시지를 분리하면서 공개 오류 코드를 유지한다.
