@@ -20,9 +20,7 @@ import com.gift.payment.payment.support.PaymentRequestHasher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentIdempotencyServiceTest {
@@ -149,7 +147,7 @@ class PaymentIdempotencyServiceTest {
         assertThat(result.payment()).isSameAs(payment);
         assertThat(result.created()).isFalse();
 
-        verify(paymentRepository).findByOrderId(orderId);
+        verify(paymentRepository, times(2)).findByOrderId(orderId);
     }
 
     @Test
