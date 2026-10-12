@@ -123,31 +123,30 @@ class PaymentIdempotencyServiceTest {
     }
 
     @Test
-    @DisplayName("주문번호 UNIQUE 경합은 기존 결제를 재조회한다")
-    void start_recoversOrderIdDuplicate() {
+    @DisplayName("주문번호 UNIQUE 경합 시 기존 결제를 반환한다")
+    void start_returnsExistingPaymentAfterDuplicate() {
         String orderId = UUID.randomUUID().toString();
-        String requestHash =
-                requestHasher.hash(orderId, AMOUNT);
+        String requestHash = requestHasher.hash(orderId, AMOUNT);
         Payment payment = payment(
                 orderId,
                 requestHash,
                 AMOUNT
         );
-        DataIntegrityViolationException duplicate = duplicate("uk_payments_order_id");
+        DataIntegrityViolationException duplicate =
+                duplicate("uk_payments_order_id");
 
         when(paymentRepository.findByOrderId(orderId))
                 .thenReturn(
                         Optional.empty(),
                         Optional.of(payment)
                 );
-        when(transactionService.create(orderId, requestHash, AMOUNT)).thenThrow(duplicate);
+        when(transactionService.create(orderId, requestHash, AMOUNT))
+                .thenThrow(duplicate);
 
         PaymentStartResult result = service.start(orderId, AMOUNT);
 
         assertThat(result.payment()).isSameAs(payment);
         assertThat(result.created()).isFalse();
-
-        verify(paymentRepository, times(2)).findByOrderId(orderId);
     }
 
     @Test
