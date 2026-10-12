@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 import com.gift.payment.global.security.InternalApiKeyProperties;
 
-@Configuration
+@Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(InternalApiKeyProperties.class)
 public class InternalApiSecurityConfig {
 }

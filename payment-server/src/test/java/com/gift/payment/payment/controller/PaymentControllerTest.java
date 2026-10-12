@@ -13,14 +13,17 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import com.gift.payment.payment.entity.Payment;
 import com.gift.payment.payment.service.PaymentApprovalService;
+import com.gift.payment.payment.service.PaymentQueryService;
 import com.gift.payment.payment.support.PaymentScenario;
 import com.gift.payment.payment.support.PaymentScenarioResolver;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -31,6 +34,7 @@ class PaymentControllerTest {
     private static final String REQUEST_HASH = "a".repeat(64);
 
     private PaymentApprovalService approvalService;
+    private PaymentQueryService queryService;
     private PaymentScenarioResolver scenarioResolver;
     private LocalValidatorFactoryBean validator;
     private MockMvc mockMvc;
@@ -38,6 +42,7 @@ class PaymentControllerTest {
     @BeforeEach
     void setUp() {
         approvalService = mock(PaymentApprovalService.class);
+        queryService = mock(PaymentQueryService.class);
         scenarioResolver = mock(PaymentScenarioResolver.class);
 
         validator = new LocalValidatorFactoryBean();
@@ -47,6 +52,7 @@ class PaymentControllerTest {
                 .standaloneSetup(
                         new PaymentController(
                                 approvalService,
+                                queryService,
                                 scenarioResolver
                         )
                 )
@@ -65,15 +71,8 @@ class PaymentControllerTest {
         String orderId = UUID.randomUUID().toString();
         Payment payment = completedPayment(orderId);
 
-        when(scenarioResolver.resolve("APPROVE"))
-                .thenReturn(
-                        PaymentScenario.APPROVE
-                );
-        when(approvalService.confirm(
-                orderId,
-                AMOUNT,
-                PaymentScenario.APPROVE
-        )).thenReturn(payment);
+        when(scenarioResolver.resolve("APPROVE")).thenReturn(PaymentScenario.APPROVE);
+        when(approvalService.confirm(orderId, AMOUNT, PaymentScenario.APPROVE)).thenReturn(payment);
 
         mockMvc.perform(post("/payments/confirm")
                         .header(
@@ -100,7 +99,7 @@ class PaymentControllerTest {
     }
 
     @Test
-    @DisplayName("주문번호 형식이 잘못되면 서비스를 호출하지 않는다")
+    @DisplayName("주문번호 형식이 잘못되면 승인 서비스를 호출하지 않는다")
     void confirm_rejectsInvalidOrderId() throws Exception {
         mockMvc.perform(post("/payments/confirm")
                         .contentType(APPLICATION_JSON)
@@ -112,19 +111,44 @@ class PaymentControllerTest {
                                 """))
                 .andExpect(status().isBadRequest());
 
-        verifyNoInteractions(
-                approvalService,
-                scenarioResolver
-        );
+        verifyNoInteractions(approvalService, queryService, scenarioResolver);
     }
 
-    private Payment completedPayment(String orderId) {
-        Payment payment = new Payment(
+    @Test
+    @DisplayName("주문번호로 처리 중인 결제 상태를 조회한다")
+    void getByOrderId_returnsPendingPayment()
+            throws Exception {
+        String orderId = UUID.randomUUID().toString();
+        Payment payment = payment(orderId);
+
+        when(queryService.getByOrderId(orderId))
+                .thenReturn(payment);
+
+        mockMvc.perform(get("/payments/orders/{orderId}", orderId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("결제 상태를 조회했습니다."))
+                .andExpect(jsonPath("$.data.orderId").value(orderId))
+                .andExpect(jsonPath("$.data.paymentKey").value(payment.getPaymentKey()))
+                .andExpect(jsonPath("$.data.transactionKey").value(nullValue()))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.amount").value(64000))
+                .andExpect(jsonPath("$.data.approvedAt").value(nullValue()));
+
+        verify(queryService).getByOrderId(orderId);
+        verifyNoInteractions(approvalService, scenarioResolver);
+    }
+
+    private Payment payment(String orderId) {
+        return new Payment(
                 orderId,
                 UUID.randomUUID().toString(),
                 REQUEST_HASH,
                 AMOUNT
         );
+    }
+
+    private Payment completedPayment(String orderId) {
+        Payment payment = payment(orderId);
 
         payment.approve(
                 UUID.randomUUID().toString(),

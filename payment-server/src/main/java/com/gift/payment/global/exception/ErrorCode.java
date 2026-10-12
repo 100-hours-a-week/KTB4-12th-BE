@@ -8,6 +8,8 @@ public enum ErrorCode {
 
     INVALID_INTERNAL_API_KEY(HttpStatus.UNAUTHORIZED, "내부 API 인증에 실패했습니다."),
 
+    PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "결제를 찾을 수 없습니다."),
+
     ORDER_ID_CONFLICT(HttpStatus.CONFLICT, "같은 주문번호로 다른 결제를 요청할 수 없습니다."),
 
     PAYMENT_DECLINED(HttpStatus.UNPROCESSABLE_ENTITY, "결제가 거절되었습니다."),
