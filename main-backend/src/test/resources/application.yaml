@@ -70,6 +70,14 @@ app:
     recovery-batch-size: 50
     dispatch-interval: 1h
 
+  payment:
+    client:
+      base-url: http://localhost:8090
+      api-key: test-payment-server-api-key
+      connect-timeout: 1s
+      command-timeout: 3s
+      query-timeout: 2s
+
 sentry:
   dsn: ""
   environment: test
