@@ -1,4 +1,4 @@
-package com.gift.payment.support;
+package com.gift.payment.payment.support;
 
 import org.springframework.boot.test.util.TestPropertyValues;
 import org.springframework.context.ApplicationContextInitializer;
