@@ -1,2 +1,2 @@
 org.springframework.context.ApplicationContextInitializer=\
-com.gift.payment.support.MySqlTestContainerInitializer
+com.gift.payment.payment.support.MySqlTestContainerInitializer
