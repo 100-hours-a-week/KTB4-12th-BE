@@ -8,10 +8,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
-import com.gift.gift.domain.recommendation.chat.ChatModels.Conversation;
-import com.gift.gift.domain.recommendation.chat.ChatModels.CreatedConversation;
-import com.gift.gift.domain.recommendation.chat.ChatModels.Turn;
 import com.gift.gift.domain.recommendation.chat.dto.request.ChatRequests;
+import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.Conversation;
+import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.CreatedConversation;
+import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.Turn;
 import com.gift.gift.domain.recommendation.chat.service.ChatService;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;

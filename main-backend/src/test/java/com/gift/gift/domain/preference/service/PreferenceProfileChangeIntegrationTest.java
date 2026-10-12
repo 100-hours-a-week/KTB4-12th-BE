@@ -20,8 +20,8 @@ import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.repository.CategoryRepository;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
 import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
-import com.gift.gift.domain.recommendation.entity.RecipientProfile;
-import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
+import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 

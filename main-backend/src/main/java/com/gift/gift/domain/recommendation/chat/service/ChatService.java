@@ -6,17 +6,16 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import com.gift.gift.domain.recommendation.chat.ChatConversationAccessService;
-import com.gift.gift.domain.recommendation.chat.ChatConversationIdentity;
-import com.gift.gift.domain.recommendation.chat.ChatConversationTokenProvider;
-import com.gift.gift.domain.recommendation.chat.ChatModels.Conversation;
-import com.gift.gift.domain.recommendation.chat.ChatModels.CreatedConversation;
-import com.gift.gift.domain.recommendation.chat.ChatModels.Turn;
 import com.gift.gift.domain.recommendation.chat.dto.request.ChatRequests;
+import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.Conversation;
+import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.CreatedConversation;
+import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.Turn;
 import com.gift.gift.domain.recommendation.chat.exception.ChatInputException;
+import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
+import com.gift.gift.domain.recommendation.chat.security.ChatConversationTokenProvider;
 import com.gift.gift.global.exception.ValidationErrorReason;
-import com.gift.gift.infrastructure.ai.AiChatClient;
-import com.gift.gift.infrastructure.ai.AiChatClient.Result;
+import com.gift.gift.infrastructure.ai.chat.AiChatClient.Result;
+import com.gift.gift.infrastructure.ai.chat.AiChatClient;
 
 @Service
 @RequiredArgsConstructor

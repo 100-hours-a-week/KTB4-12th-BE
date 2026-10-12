@@ -21,8 +21,8 @@ import com.gift.gift.domain.review.entity.Review;
 import com.gift.gift.domain.review.exception.ReviewErrorCode;
 import com.gift.gift.domain.review.exception.ReviewException;
 import com.gift.gift.domain.review.repository.ReviewRepository;
-import com.gift.gift.domain.recommendation.entity.RecipientProfile;
-import com.gift.gift.domain.recommendation.repository.RecipientProfileRepository;
+import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserQueryService;
 
