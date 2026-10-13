@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,6 +25,7 @@ import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -82,7 +84,15 @@ class NotificationSseEventListenerIntegrationTest {
                 .filter(item -> deduplicationKey.equals(item.getDeduplicationKey()))
                 .findFirst()
                 .orElseThrow();
-        verify(sseHub).publish(recipientId, NotificationListItem.from(notification));
+        ArgumentCaptor<NotificationListItem> published = ArgumentCaptor.forClass(NotificationListItem.class);
+        verify(sseHub).publish(eq(recipientId), published.capture());
+        assertThat(published.getValue().notificationId()).isEqualTo(notification.getId());
+        assertThat(published.getValue().type()).isEqualTo(NotificationType.GIFT_RECEIVED);
+        assertThat(published.getValue().title()).isEqualTo("선물이 도착했어요");
+        assertThat(published.getValue().message()).isEqualTo("새 선물이 도착했습니다.");
+        assertThat(published.getValue().referenceType()).isEqualTo(NotificationReferenceType.GIFT);
+        assertThat(published.getValue().referenceId()).isEqualTo(501L);
+        assertThat(published.getValue().isRead()).isFalse();
     }
 
     @Test
