@@ -5,7 +5,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
@@ -21,7 +23,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
+import com.gift.gift.domain.user.dto.response.SignupResponse;
 import com.gift.gift.domain.user.entity.Term;
+import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.TermConsentRepository;
 import com.gift.gift.domain.user.repository.TermRepository;
 import com.gift.gift.domain.user.repository.UserRepository;
@@ -114,8 +118,8 @@ class SignupPersistenceTest {
     @Test
     @DisplayName("회원과 필수 약관 동의를 실제 MySQL에 저장한다")
     void signup_persistsUserAndConsentsWithBcryptHash() {
-        var response = service.signup(request());
-        var user = userRepository.findById(response.userId()).orElseThrow();
+        SignupResponse response = service.signup(request());
+        User user = userRepository.findById(response.userId()).orElseThrow();
 
         assertEquals(email, user.getEmail());
         assertNotEquals("Password1!", user.getPasswordHash());
@@ -157,7 +161,7 @@ class SignupPersistenceTest {
     @Test
     @DisplayName("선택 약관 동의를 실제 MySQL에 true로 저장한다")
     void signup_persistsOptionalConsentAsAgreed() {
-        var response = service.signup(request(optionalConsent(true)));
+        SignupResponse response = service.signup(request(optionalConsent(true)));
 
         Boolean agreed = jdbcTemplate.queryForObject("""
                 SELECT is_agreed
@@ -172,7 +176,7 @@ class SignupPersistenceTest {
     @Test
     @DisplayName("선택 약관 미동의를 실제 MySQL에 false로 저장한다")
     void signup_persistsOptionalConsentAsNotAgreed() {
-        var response = service.signup(request(optionalConsent(false)));
+        SignupResponse response = service.signup(request(optionalConsent(false)));
 
         Boolean agreed = jdbcTemplate.queryForObject("""
                 SELECT is_agreed
@@ -218,11 +222,11 @@ class SignupPersistenceTest {
             }
         };
 
-        var executor = Executors.newFixedThreadPool(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
-            var first = executor.submit(signup);
-            var second = executor.submit(signup);
+            Future<String> first = executor.submit(signup);
+            Future<String> second = executor.submit(signup);
 
             List<String> results = List.of(
                     first.get(30, TimeUnit.SECONDS),

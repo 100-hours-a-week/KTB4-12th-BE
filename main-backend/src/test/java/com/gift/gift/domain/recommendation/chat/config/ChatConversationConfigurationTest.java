@@ -23,7 +23,7 @@ class ChatConversationConfigurationTest {
         byte[] chatKey = new byte[32];
         chatKey[0] = 1;
 
-        try (var context = new AnnotationConfigApplicationContext()) {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             context.registerBean(
                     "app.security.jwt-com.gift.gift.global.security.JwtProperties",
                     JwtProperties.class,

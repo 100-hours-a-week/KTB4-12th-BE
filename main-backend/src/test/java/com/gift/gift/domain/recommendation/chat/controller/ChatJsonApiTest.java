@@ -20,6 +20,7 @@ import org.springframework.security.web.method.annotation.AuthenticationPrincipa
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.recommendation.chat.config.ChatConversationTokenProperties;
@@ -59,20 +60,20 @@ class ChatJsonApiTest {
 
     @BeforeEach
     void setUp() {
-        var props = new AiChatProperties(
+        AiChatProperties props = new AiChatProperties(
                 URI.create(BASE),
                 "stub-service-token",
                 Duration.ofSeconds(1),
                 Duration.ofSeconds(2)
         );
 
-        var builder = new AiChatClientConfig()
+        RestClient.Builder builder = new AiChatClientConfig()
                 .aiChatRestClient(props)
                 .mutate();
 
         server = MockRestServiceServer.bindTo(builder).build();
 
-        var client = new AiChatClient(
+        AiChatClient client = new AiChatClient(
                 builder.build(),
                 JsonMapper.builder().build()
         );
@@ -86,11 +87,11 @@ class ChatJsonApiTest {
                 Clock.fixed(NOW, ZoneOffset.UTC)
         ));
 
-        var users = mock(AuthenticatedUserService.class);
+        AuthenticatedUserService users = mock(AuthenticatedUserService.class);
         when(users.isActive(anyLong())).thenReturn(true);
 
-        var access = new ChatConversationAccessService(users, tokens);
-        var service = new ChatService(access, tokens, client);
+        ChatConversationAccessService access = new ChatConversationAccessService(users, tokens);
+        ChatService service = new ChatService(access, tokens, client);
 
         mvc = MockMvcBuilders.standaloneSetup(new ChatController(service))
                 .setCustomArgumentResolvers(
@@ -549,7 +550,7 @@ class ChatJsonApiTest {
     }
 
     private void login(long id) {
-        var jwt = Jwt.withTokenValue("login-test-token")
+        Jwt jwt = Jwt.withTokenValue("login-test-token")
                 .header("alg", "HS256")
                 .subject(Long.toString(id))
                 .issuedAt(NOW)

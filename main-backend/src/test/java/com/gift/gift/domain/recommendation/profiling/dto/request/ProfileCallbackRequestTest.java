@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import com.gift.gift.support.TestValidatorFactory;
 
@@ -85,7 +86,7 @@ class ProfileCallbackRequestTest {
     @ValueSource(strings = {"recipientUserId", "sourceVersion", "profileStatus", "recommendedProductIds"})
     @DisplayName("필수 필드를 생략하면 거부한다")
     void request_rejectsMissingField(String field) {
-        var body = objectMapper.createObjectNode();
+        ObjectNode body = objectMapper.createObjectNode();
         body.put("recipientUserId", 10);
         body.put("sourceVersion", 1);
         body.put("profileStatus", "COMPLETED");

@@ -22,7 +22,7 @@ public final class ChatModels {
         public void validate(UUID expectedId) {
             require(expectedId.equals(conversationId) && turns != null);
 
-            var ids = new HashSet<UUID>();
+            HashSet<UUID> ids = new HashSet<UUID>();
 
             for (Turn turn : turns) {
                 require(turn != null);
@@ -78,7 +78,7 @@ public final class ChatModels {
                     : error == null);
 
             int cards = 0;
-            var productIds = new HashSet<Long>();
+            HashSet<Long> productIds = new HashSet<Long>();
 
             for (Block block : blocks) {
                 require(block != null);

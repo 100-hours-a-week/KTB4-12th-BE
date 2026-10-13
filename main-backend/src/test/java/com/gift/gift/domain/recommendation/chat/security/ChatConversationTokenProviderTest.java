@@ -3,6 +3,7 @@ package com.gift.gift.domain.recommendation.chat.security;
 import java.time.*;
 import java.util.*;
 
+import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.junit.jupiter.api.*;
@@ -54,7 +55,7 @@ class ChatConversationTokenProviderTest {
     @Test
     @DisplayName("정상 토큰은 동일 발신자와 대화에서만 통과하고 만료 정보를 반환한다")
     void issueAndVerify_succeedForOwner() {
-        var token = provider.issue(identity, NOW.plusSeconds(3600));
+        IssuedChatConversationToken token = provider.issue(identity, NOW.plusSeconds(3600));
 
         assertEquals(
                 identity,
@@ -81,10 +82,10 @@ class ChatConversationTokenProviderTest {
     @DisplayName("대화 토큰은 별도 기간 계산 없이 전달받은 로그인 만료 시각을 사용한다")
     void issue_usesLoginAccessTokenExpiration() {
         Instant loginExpiration = NOW.plusSeconds(137);
-        var issued = provider.issue(identity, loginExpiration);
+        IssuedChatConversationToken issued = provider.issue(identity, loginExpiration);
         assertEquals(loginExpiration, issued.expiresAt());
         assertEquals(identity, provider.verify(issued.value(), 1L, ID));
-        var expired = new ChatConversationTokenProvider(
+        ChatConversationTokenProvider expired = new ChatConversationTokenProvider(
                 properties, login, Clock.fixed(loginExpiration, ZoneOffset.UTC)
         );
         assertNotFound(() -> expired.verify(issued.value(), 1L, ID));
@@ -144,7 +145,7 @@ class ChatConversationTokenProviderTest {
     void verify_checksExactExpiryBoundary() {
         String value = provider.issue(identity, NOW.plusSeconds(3600)).value();
 
-        var before = new ChatConversationTokenProvider(
+        ChatConversationTokenProvider before = new ChatConversationTokenProvider(
                 properties,
                 login,
                 Clock.fixed(
@@ -158,7 +159,7 @@ class ChatConversationTokenProviderTest {
                 before.verify(value, 1L, ID)
         );
 
-        var expired = new ChatConversationTokenProvider(
+        ChatConversationTokenProvider expired = new ChatConversationTokenProvider(
                 properties,
                 login,
                 Clock.fixed(
@@ -189,7 +190,7 @@ class ChatConversationTokenProviderTest {
         valid.put("senderUserId", 1L);
         valid.put("recipientUserId", 2L);
 
-        for (var replacement : List.of(
+        for (Map.Entry<String, Object> replacement : List.of(
                 Map.entry(
                         "iss",
                         (Object) "https://other.example"
@@ -235,7 +236,7 @@ class ChatConversationTokenProviderTest {
                         (Object) NOW
                 )
         )) {
-            var claims = new LinkedHashMap<>(valid);
+            LinkedHashMap<String, Object> claims = new LinkedHashMap<>(valid);
             claims.put(
                     replacement.getKey(),
                     replacement.getValue()
@@ -251,7 +252,7 @@ class ChatConversationTokenProviderTest {
         }
 
         for (String name : valid.keySet()) {
-            var claims = new LinkedHashMap<>(valid);
+            LinkedHashMap<String, Object> claims = new LinkedHashMap<>(valid);
             claims.remove(name);
 
             assertNotFound(
@@ -263,7 +264,7 @@ class ChatConversationTokenProviderTest {
     @Test
     @DisplayName("다른 대화 서명키의 토큰은 거부한다")
     void verify_rejectsOtherSigningKey() {
-        var other = new ChatConversationTokenProvider(
+        ChatConversationTokenProvider other = new ChatConversationTokenProvider(
                 new ChatConversationTokenProperties(
                         base64(2),
                         properties.issuer()
@@ -284,12 +285,12 @@ class ChatConversationTokenProviderTest {
     @Test
     @DisplayName("로그인 토큰과 대화 토큰은 서로 바꿔 사용할 수 없다")
     void loginAndChatTokens_cannotBeInterchanged() {
-        var config = new JwtConfig();
-        var key = config.jwtSigningKey(login);
-        var loginEncoder = config.jwtEncoder(key);
-        var loginDecoder = config.jwtDecoder(key, login, clock);
+        JwtConfig config = new JwtConfig();
+        SecretKey key = config.jwtSigningKey(login);
+        JwtEncoder loginEncoder = config.jwtEncoder(key);
+        JwtDecoder loginDecoder = config.jwtDecoder(key, login, clock);
 
-        var access = new AccessTokenProvider(
+        AccessTokenProvider access = new AccessTokenProvider(
                 loginEncoder,
                 login,
                 clock
@@ -321,7 +322,7 @@ class ChatConversationTokenProviderTest {
     @Test
     @DisplayName("로그인 키·발급자 재사용과 잘못된 키 설정은 시작 단계에서 거절한다")
     void configuration_rejectsUnsafeSettings() {
-        for (var setting : List.of(
+        for (ChatConversationTokenProperties setting : List.of(
                 new ChatConversationTokenProperties(
                         login.secretBase64(),
                         properties.issuer()
@@ -398,7 +399,7 @@ class ChatConversationTokenProviderTest {
     }
 
     private String sign(Map<String, Object> claims) {
-        var encoder = NimbusJwtEncoder.withSecretKey(
+        NimbusJwtEncoder encoder = NimbusJwtEncoder.withSecretKey(
                 new SecretKeySpec(
                         Base64.getDecoder()
                                 .decode(properties.secretBase64()),

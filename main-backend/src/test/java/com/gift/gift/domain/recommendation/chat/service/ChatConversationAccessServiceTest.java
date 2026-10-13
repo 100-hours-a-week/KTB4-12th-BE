@@ -74,7 +74,7 @@ class ChatConversationAccessServiceTest {
     @Test
     @DisplayName("후속 요청은 로그인 사용자와 경로 UUID를 토큰 검증에 전달한다")
     void authorize_validatesTokenAndCurrentRecipient() {
-        var identity = new ChatConversationIdentity(ID, 1L, 2L);
+        ChatConversationIdentity identity = new ChatConversationIdentity(ID, 1L, 2L);
 
         when(users.isActive(1L)).thenReturn(true);
         when(users.isActive(2L)).thenReturn(true);

@@ -13,7 +13,7 @@ import org.springframework.web.client.RestClient;
 public class AiChatClientConfig {
     @Bean
     public RestClient aiChatRestClient(AiChatProperties properties) {
-        var factory = new SimpleClientHttpRequestFactory();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
 
         factory.setConnectTimeout(properties.connectTimeout());
         factory.setReadTimeout(properties.readTimeout());

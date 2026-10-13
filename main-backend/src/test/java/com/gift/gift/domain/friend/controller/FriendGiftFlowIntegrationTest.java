@@ -18,9 +18,11 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.domain.product.entity.Category;
@@ -147,14 +149,14 @@ class FriendGiftFlowIntegrationTest {
                         .with(jwt().jwt(j -> j.subject(owner.getId().toString()))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.friends.length()").value(count))
                 .andReturn();
-        var search = mvc.perform(get("/friends/search").param("query", other.getName())
+        ResultActions search = mvc.perform(get("/friends/search").param("query", other.getName())
                         .with(jwt().jwt(j -> j.subject(owner.getId().toString()))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.friends.length()").value(count));
         if (count == 0) {
             return 0;
         }
         search.andExpect(jsonPath("$.data.friends[0].userId").value(other.getId()));
-        var friend = mapper.readTree(result.getResponse().getContentAsString()).path("data").path("friends").get(0);
+        JsonNode friend = mapper.readTree(result.getResponse().getContentAsString()).path("data").path("friends").get(0);
         assertThat(friend.path("userId").asLong()).isEqualTo(other.getId());
         assertThat(friend.path("name").asText()).isEqualTo(other.getName());
         assertThat(friend.path("email").asText()).isEqualTo(other.getEmail());
@@ -163,7 +165,7 @@ class FriendGiftFlowIntegrationTest {
     }
 
     private void preflight(User sender, User recipient, boolean allowed) throws Exception {
-        var result = mvc.perform(post("/gifts/preflight")
+        ResultActions result = mvc.perform(post("/gifts/preflight")
                 .with(jwt().jwt(j -> j.subject(sender.getId().toString())))
                 .contentType(MediaType.APPLICATION_JSON).content(giftBody(recipient, false)));
         if (allowed) {

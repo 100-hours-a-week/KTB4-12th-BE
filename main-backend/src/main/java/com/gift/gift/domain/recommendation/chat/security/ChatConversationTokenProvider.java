@@ -65,14 +65,14 @@ public class ChatConversationTokenProvider {
         this.properties = properties;
         this.clock = clock;
 
-        var key = new SecretKeySpec(keyBytes, "HmacSHA256");
+        SecretKeySpec key = new SecretKeySpec(keyBytes, "HmacSHA256");
 
         // 로그인용 JWT Bean을 추가하거나 교체하지 않는다.
         this.encoder = NimbusJwtEncoder.withSecretKey(key)
                 .algorithm(MacAlgorithm.HS256)
                 .build();
 
-        var chatDecoder = NimbusJwtDecoder.withSecretKey(key)
+        NimbusJwtDecoder chatDecoder = NimbusJwtDecoder.withSecretKey(key)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
 

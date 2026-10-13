@@ -44,8 +44,8 @@ public class AiChatClient {
         }
     }
 
-    public Result<Conversation> create(ChatConversationIdentity identity) {
-        var result = call(
+    public Result<Conversation> createOrRecoverConversation(ChatConversationIdentity identity) {
+        Result<Conversation> result = callAiServer(
                 HttpMethod.PUT,
                 "/" + identity.conversationId(),
                 new CreateBody(identity.senderUserId(), identity.recipientUserId()),
@@ -57,8 +57,8 @@ public class AiChatClient {
         return result;
     }
 
-    public Conversation conversation(UUID id) {
-        var result = call(
+    public Conversation getConversation(UUID id) {
+        Result<Conversation> result = callAiServer(
                 HttpMethod.GET,
                 "/" + id,
                 null,
@@ -70,8 +70,8 @@ public class AiChatClient {
         return result.data();
     }
 
-    public Result<Turn> submit(UUID id, UUID turnId, String message) {
-        var result = call(
+    public Result<Turn> submitTurn(UUID id, UUID turnId, String message) {
+        Result<Turn> result = callAiServer(
                 HttpMethod.PUT,
                 turnPath(id, turnId),
                 new SubmitBody(message),
@@ -92,8 +92,8 @@ public class AiChatClient {
         return result;
     }
 
-    public Turn turn(UUID id, UUID turnId) {
-        var result = call(
+    public Turn getTurn(UUID id, UUID turnId) {
+        Result<Turn> result = callAiServer(
                 HttpMethod.GET,
                 turnPath(id, turnId),
                 null,
@@ -105,8 +105,8 @@ public class AiChatClient {
         return result.data();
     }
 
-    public Turn cancel(UUID id, UUID turnId) {
-        var result = call(
+    public Turn cancelTurn(UUID id, UUID turnId) {
+        Result<Turn> result = callAiServer(
                 HttpMethod.PUT,
                 turnPath(id, turnId) + "/cancellation",
                 null,
@@ -125,7 +125,7 @@ public class AiChatClient {
         return result.data();
     }
 
-    private <T> Result<T> call(
+    private <T> Result<T> callAiServer(
             HttpMethod method,
             String path,
             Object body,
@@ -133,7 +133,7 @@ public class AiChatClient {
             boolean creation
     ) {
         try {
-            var request = client.method(method).uri(path);
+            RestClient.RequestBodySpec request = client.method(method).uri(path);
 
             if (body != null) {
                 request.contentType(MediaType.APPLICATION_JSON).body(body);
@@ -163,7 +163,7 @@ public class AiChatClient {
                             status
                     );
 
-                    throw mapped(status, envelope, creation);
+                    throw mapErrorResponse(status, envelope, creation);
                 }
 
                 boolean accepted = status == 200
@@ -204,7 +204,7 @@ public class AiChatClient {
         }
     }
 
-    private ChatException mapped(
+    private ChatException mapErrorResponse(
             int status,
             JsonNode envelope,
             boolean creation

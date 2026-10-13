@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -34,6 +35,7 @@ import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfileStatus;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.recommendation.profiling.support.PreparedProfileDispatch;
+import com.gift.gift.domain.recommendation.profiling.support.PreparedRecoveryDispatch;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.infrastructure.ai.profiling.AiProfilingClient;
@@ -94,7 +96,7 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void concurrentNormalPreparationHasOneOwner() throws Exception {
         changeDue();
-        var results = race(() -> transactions.prepareDispatch(profileId),
+        List<Optional<PreparedProfileDispatch>> results = race(() -> transactions.prepareDispatch(profileId),
                 () -> transactions.prepareDispatch(profileId));
         assertThat(results.stream().filter(Optional::isPresent).count()).isEqualTo(1);
         assertThat(profile().getSourceVersion()).isEqualTo(1);
@@ -104,11 +106,11 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void concurrentDebounceRestartDoesNotIncreaseCountsTwice() throws Exception {
         changeDue();
-        var first = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch first = transactions.prepareDispatch(profileId).orElseThrow();
         transactions.applyFailedDispatch(first);
         assertThat(profile().getRetryCount()).isEqualTo(1);
         when(clock.instant()).thenReturn(NOW.plusHours(1).toInstant(ZoneOffset.UTC));
-        var results = race(() -> transactions.prepareDispatch(profileId),
+        List<Optional<PreparedProfileDispatch>> results = race(() -> transactions.prepareDispatch(profileId),
                 () -> transactions.prepareDispatch(profileId));
         assertThat(results.stream().filter(Optional::isPresent).count()).isEqualTo(1);
         assertThat(profile().getSourceVersion()).isEqualTo(2);
@@ -118,7 +120,7 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void concurrentRecoveryPreparationHasOneOwner() throws Exception {
         pendingDue();
-        var results = race(() -> transactions.prepareRecovery(profileId),
+        List<Optional<PreparedRecoveryDispatch>> results = race(() -> transactions.prepareRecovery(profileId),
                 () -> transactions.prepareRecovery(profileId));
         assertThat(results.stream().filter(Optional::isPresent).count()).isEqualTo(1);
         assertThat(profile().getSourceVersion()).isEqualTo(1);
@@ -130,7 +132,7 @@ class ProfileDispatchClaimIntegrationTest {
     void normalAndRecoveryRaceRechecksChangedState() throws Exception {
         pendingDue();
         changeDue();
-        var results = race(() -> transactions.prepareDispatch(profileId).isPresent(),
+        List<Boolean> results = race(() -> transactions.prepareDispatch(profileId).isPresent(),
                 () -> transactions.prepareRecovery(profileId).isPresent());
         assertThat(results).containsExactly(true, false);
         assertThat(profile().getSourceVersion()).isEqualTo(2);
@@ -150,7 +152,7 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void activeRecoveryClaimBlocksBothPathsEvenAfterNewChange() {
         pendingDue();
-        var recovery = transactions.prepareRecovery(profileId).orElseThrow();
+        PreparedRecoveryDispatch recovery = transactions.prepareRecovery(profileId).orElseThrow();
         changeDue();
         assertThat(transactions.prepareDispatch(profileId)).isEmpty();
         assertThat(transactions.prepareRecovery(profileId)).isEmpty();
@@ -161,12 +163,12 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void committedPreparationWithoutHttpCanBeReclaimedWithSameVersion() {
         changeDue();
-        var first = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch first = transactions.prepareDispatch(profileId).orElseThrow();
         assertThat(profile().getDispatchClaimToken()).isEqualTo(first.claimToken());
         // 결과를 반영하지 않고 준비 커밋 후 실행자가 종료한 상태를 재현한다.
         expireClaim();
         assertThat(normalCandidates()).contains(profileId);
-        var second = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch second = transactions.prepareDispatch(profileId).orElseThrow();
         assertThat(second.sourceVersion()).isEqualTo(first.sourceVersion());
         assertThat(second.claimToken()).isNotEqualTo(first.claimToken());
         assertThat(profile().getRetryCount()).isZero();
@@ -175,10 +177,10 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void expiredRecoveryUsesSameVersionAndOriginalPendingTime() {
         pendingDue();
-        var first = transactions.prepareRecovery(profileId).orElseThrow();
+        PreparedRecoveryDispatch first = transactions.prepareRecovery(profileId).orElseThrow();
         expireClaim();
         assertThat(recoveryCandidates()).contains(profileId);
-        var second = transactions.prepareRecovery(profileId).orElseThrow();
+        PreparedRecoveryDispatch second = transactions.prepareRecovery(profileId).orElseThrow();
         assertThat(second.sourceVersion()).isEqualTo(first.sourceVersion());
         assertThat(second.claimToken()).isNotEqualTo(first.claimToken());
         assertThat(second.snapshottedPendingSince()).isEqualTo(first.snapshottedPendingSince());
@@ -188,9 +190,9 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void oldNormalSuccessFailureAndReleaseCannotChangeNewClaim() {
         changeDue();
-        var first = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch first = transactions.prepareDispatch(profileId).orElseThrow();
         expireClaim();
-        var second = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch second = transactions.prepareDispatch(profileId).orElseThrow();
         RecipientProfile before = profile();
         transactions.applyAcceptedResponse(first, accepted(first));
         assertThat(transactions.applyFailedDispatch(first))
@@ -207,9 +209,9 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void oldRecoveryResultCannotChangeNewClaim() {
         pendingDue();
-        var first = transactions.prepareRecovery(profileId).orElseThrow();
+        PreparedRecoveryDispatch first = transactions.prepareRecovery(profileId).orElseThrow();
         expireClaim();
-        var second = transactions.prepareRecovery(profileId).orElseThrow();
+        PreparedRecoveryDispatch second = transactions.prepareRecovery(profileId).orElseThrow();
         assertThat(transactions.applyRecoveryResult(first))
                 .isEqualTo(ProfileDispatchTransactionService.RecoveryDispatchResult.SKIPPED);
         assertThat(profile().getDispatchClaimToken()).isEqualTo(second.claimToken());
@@ -220,7 +222,7 @@ class ProfileDispatchClaimIntegrationTest {
     @ValueSource(booleans = {false, true})
     void callbackBeforeNormalHttpResultPreservesCompletion(boolean failure) {
         changeDue();
-        var prepared = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch prepared = transactions.prepareDispatch(profileId).orElseThrow();
         update(profile -> profile.markCompleted(prepared.sourceVersion()));
         if (failure) transactions.applyFailedDispatch(prepared);
         else transactions.applyAcceptedResponse(prepared, accepted(prepared));
@@ -234,7 +236,7 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void expiredCompletedRecoveryClaimIsFoundAndCleanedWithoutResend() {
         pendingDue();
-        var prepared = transactions.prepareRecovery(profileId).orElseThrow();
+        PreparedRecoveryDispatch prepared = transactions.prepareRecovery(profileId).orElseThrow();
         update(profile -> profile.markCompleted(prepared.sourceVersion()));
         expireClaim();
         assertThat(normalCandidates()).contains(profileId);
@@ -248,7 +250,7 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void expiredCompletedNormalClaimClearsOnlyItsOwnChange() {
         changeDue();
-        var prepared = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch prepared = transactions.prepareDispatch(profileId).orElseThrow();
         update(profile -> profile.markCompleted(prepared.sourceVersion()));
         expireClaim();
         assertThat(transactions.prepareDispatch(profileId)).isEmpty();
@@ -261,7 +263,7 @@ class ProfileDispatchClaimIntegrationTest {
     @ValueSource(booleans = {false, true})
     void expiredClaimPreservesNewChangeUntilDebounceIsDue(boolean completed) {
         changeDue();
-        var first = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch first = transactions.prepareDispatch(profileId).orElseThrow();
         update(profile -> {
             if (completed) profile.markCompleted(first.sourceVersion());
             profile.recordPreferenceChange(NOW);
@@ -273,7 +275,7 @@ class ProfileDispatchClaimIntegrationTest {
         assertThat(profile().getLastChangedAt()).isEqualTo(NOW);
         assertThat(profile().getSourceVersion()).isEqualTo(1);
         when(clock.instant()).thenReturn(NOW.plusHours(1).toInstant(ZoneOffset.UTC));
-        var next = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch next = transactions.prepareDispatch(profileId).orElseThrow();
         assertThat(next.sourceVersion()).isEqualTo(2);
     }
 
@@ -281,7 +283,7 @@ class ProfileDispatchClaimIntegrationTest {
     @ValueSource(booleans = {false, true})
     void normalHttpResultPreservesNewChange(boolean failure) {
         changeDue();
-        var prepared = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch prepared = transactions.prepareDispatch(profileId).orElseThrow();
         update(profile -> {
             profile.recordPreferenceChange(NOW);
             profile.increaseRetryCount();
@@ -297,7 +299,7 @@ class ProfileDispatchClaimIntegrationTest {
     @ValueSource(booleans = {false, true})
     void recoveryResultPreservesCallbackOrNewChange(boolean completed) {
         pendingDue();
-        var prepared = transactions.prepareRecovery(profileId).orElseThrow();
+        PreparedRecoveryDispatch prepared = transactions.prepareRecovery(profileId).orElseThrow();
         update(profile -> {
             if (completed) profile.markCompleted(prepared.sourceVersion());
             else profile.recordPreferenceChange(NOW);
@@ -317,7 +319,7 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void repeatedFailureIncreasesRetryOnlyOnce() {
         changeDue();
-        var prepared = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch prepared = transactions.prepareDispatch(profileId).orElseThrow();
         transactions.applyFailedDispatch(prepared);
         transactions.applyFailedDispatch(prepared);
         assertThat(profile().getRetryCount()).isEqualTo(1);
@@ -327,7 +329,7 @@ class ProfileDispatchClaimIntegrationTest {
     @Test
     void expiredButUnreclaimedOwnerCanStillApplyResponse() {
         changeDue();
-        var prepared = transactions.prepareDispatch(profileId).orElseThrow();
+        PreparedProfileDispatch prepared = transactions.prepareDispatch(profileId).orElseThrow();
         expireClaim();
         transactions.applyAcceptedResponse(prepared, accepted(prepared));
         assertThat(profile().getProfileStatus()).isEqualTo(RecipientProfileStatus.PENDING);
@@ -338,7 +340,7 @@ class ProfileDispatchClaimIntegrationTest {
     void httpRunsAfterClaimCommitWithoutHoldingRowLock() throws Exception {
         changeDue();
         when(client.isHealthy()).thenReturn(true);
-        var executor = Executors.newSingleThreadExecutor();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
             doAnswer(invocation -> {
                 assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
@@ -366,7 +368,7 @@ class ProfileDispatchClaimIntegrationTest {
         when(client.isHealthy()).thenReturn(true);
         CountDownLatch enteredHttp = new CountDownLatch(1);
         CountDownLatch releaseHttp = new CountDownLatch(1);
-        var executor = Executors.newSingleThreadExecutor();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
             doAnswer(invocation -> {
                 assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
@@ -462,7 +464,7 @@ class ProfileDispatchClaimIntegrationTest {
     private <T> List<T> race(Callable<T> first, Callable<T> second) throws Exception {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
-        var executor = Executors.newFixedThreadPool(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             Future<T> firstResult = executor.submit(() -> {
                 ready.countDown();
