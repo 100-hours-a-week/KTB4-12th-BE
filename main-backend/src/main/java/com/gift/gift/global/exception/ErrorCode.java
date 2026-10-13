@@ -156,6 +156,14 @@ public enum ErrorCode {
             HttpStatus.CONFLICT,
             "동일한 요청 키를 다른 요청에 사용할 수 없습니다."
     ),
+    PAYMENT_DECLINED(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "결제가 거절되었습니다."
+    ),
+    PAYMENT_RESULT_UNCONFIRMED(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "결제 결과를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요."
+    ),
     GIFT_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "선물 내역을 찾을 수 없습니다."
