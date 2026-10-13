@@ -3,6 +3,7 @@ package com.gift.gift.domain.notification.dto.response;
 import java.time.LocalDateTime;
 
 import com.gift.gift.domain.notification.entity.NotificationReferenceType;
+import com.gift.gift.domain.notification.entity.Notification;
 import com.gift.gift.domain.notification.entity.NotificationType;
 import com.gift.gift.domain.notification.repository.NotificationQueryRow;
 
@@ -27,6 +28,19 @@ public record NotificationListItem(
                 row.referenceId(),
                 row.notifiedAt(),
                 row.readAt() != null
+        );
+    }
+
+    public static NotificationListItem from(Notification notification) {
+        return new NotificationListItem(
+                notification.getId(),
+                notification.getType(),
+                notification.getTitle(),
+                notification.getMessage(),
+                notification.getReferenceType(),
+                notification.getReferenceId(),
+                notification.getCreatedAt(),
+                notification.isRead()
         );
     }
 }

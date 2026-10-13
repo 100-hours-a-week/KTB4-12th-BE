@@ -724,6 +724,45 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "notifications (인증 필요)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "실시간 알림 SSE 연결",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "description": "fetch 기반 SSE 클라이언트에서 Authorization Bearer 토큰으로 연결합니다. notification 이벤트의 data는 알림 목록 항목과 같은 구조입니다. 재연결 시 놓친 알림은 GET /notifications로 동기화합니다.",
+            "url": {
+              "raw": "{{baseUrl}}/notifications/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "events"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
