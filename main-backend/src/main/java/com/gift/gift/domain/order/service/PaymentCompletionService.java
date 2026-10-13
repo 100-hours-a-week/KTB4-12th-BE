@@ -160,9 +160,7 @@ public class PaymentCompletionService {
         Order order = findOrder(orderRecordId);
 
         if (order.getStatus() != OrderStatus.COMPLETED) {
-            throw new OrderException(
-                    OrderErrorCode.PAYMENT_STATE_CONFLICT
-            );
+            throw new OrderException(OrderErrorCode.PAYMENT_STATE_CONFLICT);
         }
 
         return restore(order);
