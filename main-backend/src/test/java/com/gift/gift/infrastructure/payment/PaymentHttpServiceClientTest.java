@@ -12,9 +12,11 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.infrastructure.payment.client.PaymentCommandClient;
 import com.gift.gift.infrastructure.payment.client.PaymentQueryClient;
+import com.gift.gift.infrastructure.payment.client.PaymentServerErrorHandler;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerResponse;
@@ -34,11 +36,12 @@ class PaymentHttpServiceClientTest {
     private static final String ORDER_ID = "550e8400-e29b-41d4-a716-446655440000";
 
     private final PaymentClientConfig config = new PaymentClientConfig();
+    private final PaymentServerErrorHandler errorHandler = new PaymentServerErrorHandler(new ObjectMapper());
 
     @Test
     @DisplayName("결제 승인 계약에 맞는 URL·헤더·Body를 전송한다")
     void confirm_sendsContract() {
-        RestClient configured = config.paymentCommandRestClient(properties());
+        RestClient configured = config.paymentCommandRestClient(properties(), errorHandler);
         RestClient.Builder builder = configured.mutate();
 
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -85,7 +88,7 @@ class PaymentHttpServiceClientTest {
     @Test
     @DisplayName("주문번호를 결제 상태 조회 경로에 전달한다")
     void getByOrderId_sendsContract() {
-        RestClient configured = config.paymentQueryRestClient(properties());
+        RestClient configured = config.paymentQueryRestClient(properties(), errorHandler);
         RestClient.Builder builder = configured.mutate();
 
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -125,9 +128,9 @@ class PaymentHttpServiceClientTest {
     void clients_useSeparateTimeouts() {
         PaymentClientProperties properties = properties();
 
-        JdkClientHttpRequestFactory commandFactory = requestFactory(config.paymentCommandRestClient(properties));
+        JdkClientHttpRequestFactory commandFactory = requestFactory(config.paymentCommandRestClient(properties, errorHandler));
 
-        JdkClientHttpRequestFactory queryFactory = requestFactory(config.paymentQueryRestClient(properties));
+        JdkClientHttpRequestFactory queryFactory = requestFactory(config.paymentQueryRestClient(properties, errorHandler));
 
         assertThat(ReflectionTestUtils.getField(
                 commandFactory,
