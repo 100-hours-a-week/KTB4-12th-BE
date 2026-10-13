@@ -3,6 +3,7 @@ package com.gift.gift.domain.recommendation.profiling.service;
 import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -18,6 +19,7 @@ import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
+import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
@@ -127,7 +129,7 @@ class ProfileRecoveryIntegrationTest {
         assertThat(profile().getPendingSince()).isEqualTo(local(NOW.plusSeconds(6 * 3600)));
         callbacks.saveCallback(recipientId, recipientId, 1, List.of(firstId));
         assertThat(profile().getProfileStatus()).isEqualTo(RecipientProfileStatus.COMPLETED);
-        var response = products.getProducts(request(), ownerId);
+        ProductListResponse response = products.getProducts(request(), ownerId);
         assertThat(response.appliedSort()).isEqualTo(ProductSort.AI_RECOMMENDED);
         assertThat(response.products()).extracting(ProductSummaryResponse::productId).containsExactly(firstId, secondId);
     }
@@ -178,7 +180,7 @@ class ProfileRecoveryIntegrationTest {
         List<AiProfileRequest> sent = dispatchInitialPreference();
         AiProfileRequest original = sent.getFirst();
         setTime(NOW.plusSeconds(6 * 3600));
-        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
         try {
             doAnswer(call -> {
                 AiProfileRequest recovery = call.getArgument(0);
@@ -222,7 +224,7 @@ class ProfileRecoveryIntegrationTest {
     void emptyOrDroppedResultsFallBackToPopular(boolean dropped) {
         persistPending();
         callbacks.saveCallback(recipientId, recipientId, 1, dropped ? List.of(Long.MAX_VALUE) : List.of());
-        var response = products.getProducts(request(), ownerId);
+        ProductListResponse response = products.getProducts(request(), ownerId);
         assertThat(profile().getProfileStatus()).isEqualTo(RecipientProfileStatus.COMPLETED);
         assertThat(response.appliedSort()).isEqualTo(ProductSort.POPULAR);
         assertThat(response.products()).extracting(ProductSummaryResponse::productId).containsExactly(secondId, firstId);

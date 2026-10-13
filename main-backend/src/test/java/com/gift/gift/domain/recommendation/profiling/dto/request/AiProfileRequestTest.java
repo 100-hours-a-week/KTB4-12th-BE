@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,7 +16,7 @@ class AiProfileRequestTest {
     @Test
     @DisplayName("입력이 없어도 다섯 키와 null 취향을 전송한다")
     void serialization_includesEmptyInputs() {
-        var json = mapper.readTree(mapper.writeValueAsString(
+        JsonNode json = mapper.readTree(mapper.writeValueAsString(
                 new AiProfileRequest(1L, 1, List.of(), null, List.of())
         ));
 
@@ -29,7 +30,7 @@ class AiProfileRequestTest {
     @Test
     @DisplayName("공백 리뷰는 null 키를 유지하고 나머지 원문은 보존한다")
     void serialization_normalizesOnlyBlankReviewText() {
-        var blank = mapper.readTree(mapper.writeValueAsString(
+        JsonNode blank = mapper.readTree(mapper.writeValueAsString(
                 new ProfileReviewRequest(1L, 5, " \n\t")
         ));
 

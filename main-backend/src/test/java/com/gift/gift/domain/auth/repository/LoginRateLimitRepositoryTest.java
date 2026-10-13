@@ -171,7 +171,7 @@ class LoginRateLimitRepositoryTest {
         assertEquals(5, permittedCount);
         assertEquals(1, rejectedCount);
 
-        var saved = emailRepository
+        LoginEmailFailureLimit saved = emailRepository
                 .findById(identifierHash)
                 .orElseThrow();
 

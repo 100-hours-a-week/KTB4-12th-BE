@@ -2,6 +2,7 @@ package com.gift.gift.domain.recommendation.chat.exception;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,7 +20,7 @@ class ChatConversationErrorResponseTest {
     @Test
     @DisplayName("대화 오류는 기존 공통 처리기로 HTTP 상태·코드·traceId를 반환한다")
     void handler_returnsCommonErrorEnvelope() throws Exception {
-        var mvc = MockMvcBuilders
+        MockMvc mvc = MockMvcBuilders
                 .standaloneSetup(new ErrorController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -57,7 +58,7 @@ class ChatConversationErrorResponseTest {
     @Test
     @DisplayName("공통 충돌·장애 메시지는 채팅 문구를 포함하지 않는다")
     void commonDefaults_remainIndependentOfChat() throws Exception {
-        var mvc = MockMvcBuilders.standaloneSetup(new ErrorController())
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ErrorController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
 

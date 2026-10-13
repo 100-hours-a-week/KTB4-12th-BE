@@ -16,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.gift.gift.domain.preference.entity.UserGiftPreference;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
 import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
+import com.gift.gift.domain.recommendation.profiling.dto.request.AiProfileRequest;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.recommendation.profiling.support.AiProfilingProperties;
@@ -39,10 +40,10 @@ class ProfileInputTest {
         ReflectionTestUtils.setField(profile, "id", 1L);
         profile.recordPreferenceChange(now.minusHours(2));
 
-        var profiles = mock(RecipientProfileRepository.class);
-        var dislikes = mock(UserDislikeCategoryRepository.class);
-        var preferences = mock(UserGiftPreferenceRepository.class);
-        var reviews = mock(ReviewRepository.class);
+        RecipientProfileRepository profiles = mock(RecipientProfileRepository.class);
+        UserDislikeCategoryRepository dislikes = mock(UserDislikeCategoryRepository.class);
+        UserGiftPreferenceRepository preferences = mock(UserGiftPreferenceRepository.class);
+        ReviewRepository reviews = mock(ReviewRepository.class);
         when(profiles.findByIdForUpdate(1L)).thenReturn(Optional.of(profile));
         when(profiles.findDispatchClaimNow()).thenReturn(now);
         when(preferences.findByUser_IdAndDeletedAtIsNull(10L))
@@ -52,14 +53,14 @@ class ProfileInputTest {
                 new ProfileReviewRow(100L, 1, "오래된 리뷰"),
                 new ProfileReviewRow(200L, 2, " \t")
         ));
-        var properties = new AiProfilingProperties(URI.create("http://ai.example.test"), "test-token",
+        AiProfilingProperties properties = new AiProfilingProperties(URI.create("http://ai.example.test"), "test-token",
                 Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofHours(1), Duration.ofHours(6),
                 100, 50, Duration.ofMinutes(2));
-        var service = new ProfileDispatchTransactionService(
+        ProfileDispatchTransactionService service = new ProfileDispatchTransactionService(
                 profiles, dislikes, preferences, reviews, properties, clock
         );
 
-        var request = service.prepareDispatch(1L).orElseThrow().request();
+        AiProfileRequest request = service.prepareDispatch(1L).orElseThrow().request();
 
         assertThat(request.giftPreference()).isEqualTo("차를 좋아해요.");
         assertThat(request.reviews()).extracting(review -> review.productId()).containsExactly(100L, 200L);

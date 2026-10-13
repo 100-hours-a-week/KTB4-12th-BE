@@ -23,6 +23,7 @@ import com.gift.gift.domain.recommendation.profiling.dto.response.AiProfileAccep
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfileStatus;
 import com.gift.gift.domain.recommendation.profiling.exception.AiProfilingClientException;
 import com.gift.gift.domain.recommendation.profiling.exception.AiProfilingFailureType;
+import com.gift.gift.domain.recommendation.profiling.support.AiProfilingProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -46,7 +47,7 @@ class AiProfilingClientTest {
 
     @BeforeEach
     void setUp() {
-        var properties = properties();
+        AiProfilingProperties properties = properties();
         AiProfilingClientConfig config = new AiProfilingClientConfig();
 
         RestClient configured = config.aiProfilingRestClient(properties);
@@ -174,7 +175,7 @@ class AiProfilingClientTest {
     @Test
     @DisplayName("Client 설정은 전달받은 연결·읽기 타임아웃과 서비스 토큰을 사용한다")
     void config_buildsClientWithConfiguredValues() {
-        var properties = properties();
+        AiProfilingProperties properties = properties();
 
         RestClient configured = new AiProfilingClientConfig()
                 .aiProfilingRestClient(properties);

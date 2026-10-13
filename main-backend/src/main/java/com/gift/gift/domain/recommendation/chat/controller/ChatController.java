@@ -15,6 +15,7 @@ import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.Turn;
 import com.gift.gift.domain.recommendation.chat.service.ChatService;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
+import com.gift.gift.infrastructure.ai.chat.AiChatClient.Result;
 
 @RestController
 @RequestMapping("/recommendations/conversations")
@@ -23,7 +24,7 @@ public class ChatController {
     private final ChatService service;
 
     @PutMapping("/{conversationId}")
-    public ResponseEntity<ApiResponse<CreatedConversation>> create(
+    public ResponseEntity<ApiResponse<CreatedConversation>> createOrRecoverConversation(
             @CurrentUserId Long userId,
             @AuthenticationPrincipal Jwt loginJwt,
             @PathVariable String conversationId,
@@ -32,7 +33,7 @@ public class ChatController {
     ) {
         noExtras(query, null);
 
-        var result = service.create(
+        Result<CreatedConversation> result = service.createOrRecoverConversation(
                 userId,
                 conversationId,
                 body,
@@ -50,7 +51,7 @@ public class ChatController {
     }
 
     @GetMapping("/{conversationId}")
-    public ApiResponse<Conversation> conversation(
+    public ApiResponse<Conversation> getConversation(
             @CurrentUserId Long userId,
             @PathVariable String conversationId,
             @RequestHeader(
@@ -64,12 +65,12 @@ public class ChatController {
 
         return ApiResponse.success(
                 "대화를 조회했습니다.",
-                service.conversation(userId, conversationId, token)
+                service.getConversation(userId, conversationId, token)
         );
     }
 
     @PutMapping("/{conversationId}/turns/{turnId}")
-    public ResponseEntity<ApiResponse<Turn>> submit(
+    public ResponseEntity<ApiResponse<Turn>> submitTurn(
             @CurrentUserId Long userId,
             @PathVariable String conversationId,
             @PathVariable String turnId,
@@ -82,7 +83,7 @@ public class ChatController {
     ) {
         noExtras(query, null);
 
-        var result = service.submit(
+        Result<Turn> result = service.submitTurn(
                 userId,
                 conversationId,
                 token,
@@ -101,7 +102,7 @@ public class ChatController {
     }
 
     @GetMapping("/{conversationId}/turns/{turnId}")
-    public ApiResponse<Turn> turn(
+    public ApiResponse<Turn> getTurn(
             @CurrentUserId Long userId,
             @PathVariable String conversationId,
             @PathVariable String turnId,
@@ -116,12 +117,12 @@ public class ChatController {
 
         return ApiResponse.success(
                 "질문 상태를 조회했습니다.",
-                service.turn(userId, conversationId, token, turnId)
+                service.getTurn(userId, conversationId, token, turnId)
         );
     }
 
     @PutMapping("/{conversationId}/turns/{turnId}/cancellation")
-    public ApiResponse<Turn> cancel(
+    public ApiResponse<Turn> cancelTurn(
             @CurrentUserId Long userId,
             @PathVariable String conversationId,
             @PathVariable String turnId,
@@ -136,7 +137,7 @@ public class ChatController {
 
         return ApiResponse.success(
                 "질문 상태를 조회했습니다.",
-                service.cancel(userId, conversationId, token, turnId)
+                service.cancelTurn(userId, conversationId, token, turnId)
         );
     }
 

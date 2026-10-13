@@ -3,6 +3,7 @@ package com.gift.gift.domain.review.repository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.persistence.EntityManager;
@@ -62,7 +63,9 @@ class ReviewPersistenceTest {
         entityManager.flush();
         entityManager.clear();
 
-        var rows = reviewRepository.findLatestProfileReviews(fixture.recipient().getId(), PageRequest.of(0, 10));
+        List<ProfileReviewRow> rows = reviewRepository.findLatestProfileReviews(
+                fixture.recipient().getId(), PageRequest.of(0, 10)
+        );
 
         assertThat(rows).extracting(ProfileReviewRow::reviewText).containsExactly(
                 "리뷰 11", "리뷰 10", "리뷰 9", "리뷰 8", "리뷰 7",

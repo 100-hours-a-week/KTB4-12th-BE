@@ -6,7 +6,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
@@ -159,11 +161,11 @@ class FriendRequestConcurrencyIntegrationTest {
     }
 
     private List<Object> race(Callable<?> first, Callable<?> second) throws Exception {
-        var executor = Executors.newFixedThreadPool(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            var futures = List.of(first, second).stream().map(action -> executor.submit(() -> {
+            List<Future<Object>> futures = List.of(first, second).stream().map(action -> executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(10, TimeUnit.SECONDS)) {
                     throw new AssertionError("Concurrent start timed out");
@@ -177,7 +179,7 @@ class FriendRequestConcurrencyIntegrationTest {
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
             start.countDown();
             List<Object> results = new ArrayList<>();
-            for (var future : futures) {
+            for (Future<Object> future : futures) {
                 results.add(future.get(30, TimeUnit.SECONDS));
             }
             return results;

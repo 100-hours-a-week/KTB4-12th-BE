@@ -13,18 +13,20 @@ import com.gift.gift.domain.recommendation.chat.dto.response.ChatModels.Turn;
 import com.gift.gift.domain.recommendation.chat.exception.ChatInputException;
 import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
 import com.gift.gift.domain.recommendation.chat.security.ChatConversationTokenProvider;
+import com.gift.gift.domain.recommendation.chat.security.IssuedChatConversationToken;
 import com.gift.gift.global.exception.ValidationErrorReason;
-import com.gift.gift.infrastructure.ai.chat.AiChatClient.Result;
 import com.gift.gift.infrastructure.ai.chat.AiChatClient;
+import com.gift.gift.infrastructure.ai.chat.AiChatClient.Result;
 
 @Service
 @RequiredArgsConstructor
 public class ChatService {
+
     private final ChatConversationAccessService access;
     private final ChatConversationTokenProvider tokens;
     private final AiChatClient ai;
 
-    public Result<CreatedConversation> create(
+    public Result<CreatedConversation> createOrRecoverConversation(
             Long userId,
             String id,
             ChatRequests.Create body,
@@ -34,9 +36,14 @@ public class ChatService {
             throw ChatRequests.invalid();
         }
 
-        var identity = access.prepare(userId, id, body.recipientId());
-        var result = ai.create(identity);
-        var token = tokens.issue(identity, loginExpiresAt);
+        ChatConversationIdentity identity =
+                access.prepare(userId, id, body.recipientId());
+
+        Result<Conversation> result =
+                ai.createOrRecoverConversation(identity);
+
+        IssuedChatConversationToken token =
+                tokens.issue(identity, loginExpiresAt);
 
         return new Result<>(
                 result.status(),
@@ -44,45 +51,65 @@ public class ChatService {
         );
     }
 
-    public Conversation conversation(Long userId, String id, String token) {
-        var identity = access.authorize(userId, id, token);
-        return ai.conversation(identity.conversationId());
+    public Conversation getConversation(
+            Long userId,
+            String id,
+            String token
+    ) {
+        ChatConversationIdentity identity =
+                access.authorize(userId, id, token);
+
+        return ai.getConversation(identity.conversationId());
     }
 
-    public Result<Turn> submit(
+    public Result<Turn> submitTurn(
             Long userId,
             String id,
             String token,
             String turnId,
             ChatRequests.Submit body
     ) {
-        var identity = access.authorize(userId, id, token);
+        ChatConversationIdentity identity =
+                access.authorize(userId, id, token);
+
         UUID turn = ChatConversationIdentity.parseConversationId(turnId);
 
         if (body == null) {
             throw new ChatInputException(ValidationErrorReason.REQUIRED);
         }
 
-        return ai.submit(
+        return ai.submitTurn(
                 identity.conversationId(),
                 turn,
                 body.normalizedMessage()
         );
     }
 
-    public Turn turn(Long userId, String id, String token, String turnId) {
-        var identity = access.authorize(userId, id, token);
+    public Turn getTurn(
+            Long userId,
+            String id,
+            String token,
+            String turnId
+    ) {
+        ChatConversationIdentity identity =
+                access.authorize(userId, id, token);
 
-        return ai.turn(
+        return ai.getTurn(
                 identity.conversationId(),
                 ChatConversationIdentity.parseConversationId(turnId)
         );
     }
 
-    public Turn cancel(Long userId, String id, String token, String turnId) {
-        var identity = access.authorize(userId, id, token);
+    public Turn cancelTurn(
+            Long userId,
+            String id,
+            String token,
+            String turnId
+    ) {
+        ChatConversationIdentity identity =
+                access.authorize(userId, id, token);
 
-        return ai.cancel(
+        return ai.cancelTurn(
                 identity.conversationId(),
                 ChatConversationIdentity.parseConversationId(turnId)
         );
