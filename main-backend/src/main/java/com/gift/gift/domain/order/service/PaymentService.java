@@ -143,10 +143,8 @@ public class PaymentService {
         }
     }
 
-    private void validateCompletedResponse(
-            Order order,
-            PaymentResponse response
-    ) {
+    private void validateCompletedResponse(Order order, PaymentResponse response) {
+
         boolean valid =
                 response != null
                         && Objects.equals(
