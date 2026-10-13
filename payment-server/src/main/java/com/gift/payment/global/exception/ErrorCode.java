@@ -14,7 +14,9 @@ public enum ErrorCode {
 
     PAYMENT_DECLINED(HttpStatus.UNPROCESSABLE_ENTITY, "결제가 거절되었습니다."),
 
-    TEMPORARY_PROCESSING_ERROR(HttpStatus.SERVICE_UNAVAILABLE, "결제를 일시적으로 처리할 수 없습니다.");
+    TEMPORARY_PROCESSING_ERROR(HttpStatus.SERVICE_UNAVAILABLE, "결제를 일시적으로 처리할 수 없습니다."),
+
+    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "결제 처리 중 일시적인 오류가 발생했습니다.");
 
     private final HttpStatus status;
     private final String message;

@@ -9,3 +9,4 @@ import com.gift.payment.global.security.InternalApiKeyProperties;
 @EnableConfigurationProperties(InternalApiKeyProperties.class)
 public class InternalApiSecurityConfig {
 }
+

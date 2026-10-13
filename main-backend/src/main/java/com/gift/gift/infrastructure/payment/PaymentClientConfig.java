@@ -13,9 +13,11 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.support.RestClientAdapter;
 import org.springframework.web.service.invoker.HttpServiceProxyFactory;
+import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.infrastructure.payment.client.PaymentCommandClient;
 import com.gift.gift.infrastructure.payment.client.PaymentQueryClient;
+import com.gift.gift.infrastructure.payment.client.PaymentServerErrorHandler;
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(PaymentClientProperties.class)
@@ -24,13 +26,26 @@ public class PaymentClientConfig {
     public static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
 
     @Bean
-    public RestClient paymentCommandRestClient(PaymentClientProperties properties) {
-        return createClient(properties, properties.commandTimeout());
+    public PaymentServerErrorHandler paymentServerErrorHandler(ObjectMapper objectMapper) {
+        return new PaymentServerErrorHandler(objectMapper);
     }
 
     @Bean
-    public RestClient paymentQueryRestClient(PaymentClientProperties properties) {
-        return createClient(properties, properties.queryTimeout());
+    public RestClient paymentCommandRestClient(PaymentClientProperties properties, PaymentServerErrorHandler errorHandler) {
+        return createClient(
+                properties,
+                properties.commandTimeout(),
+                errorHandler
+        );
+    }
+
+    @Bean
+    public RestClient paymentQueryRestClient(PaymentClientProperties properties, PaymentServerErrorHandler errorHandler) {
+        return createClient(
+                properties,
+                properties.queryTimeout(),
+                errorHandler
+        );
     }
 
     @Bean
@@ -49,8 +64,11 @@ public class PaymentClientConfig {
         return createProxy(restClient, PaymentQueryClient.class);
     }
 
-    private RestClient createClient(PaymentClientProperties properties, Duration readTimeout) {
-
+    private RestClient createClient(
+            PaymentClientProperties properties,
+            Duration readTimeout,
+            PaymentServerErrorHandler errorHandler
+    ) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -71,14 +89,18 @@ public class PaymentClientConfig {
                         HttpHeaders.ACCEPT,
                         MediaType.APPLICATION_JSON_VALUE
                 )
+                .defaultStatusHandler(errorHandler)
                 .build();
     }
 
-    private <T> T createProxy(RestClient restClient, Class<T> clientType
-    ) {
+    private <T> T createProxy(RestClient restClient, Class<T> clientType) {
+
         RestClientAdapter adapter = RestClientAdapter.create(restClient);
 
-        HttpServiceProxyFactory proxyFactory = HttpServiceProxyFactory.builderFor(adapter).build();
+        HttpServiceProxyFactory proxyFactory =
+                HttpServiceProxyFactory
+                        .builderFor(adapter)
+                        .build();
 
         return proxyFactory.createClient(clientType);
     }
