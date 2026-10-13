@@ -1,5 +1,6 @@
 package com.gift.gift.domain.notification.service;
 
+import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -75,6 +76,19 @@ class NotificationSseHubTest {
     }
 
     @Test
+    @DisplayName("이벤트 전송 중 IOException이 발생한 연결을 정리한다")
+    void publish_removesConnectionWhenSendFails() {
+        EmitterProbe emitter = connect(1L, new IOException("disconnected"));
+
+        hub.publish(1L, notification());
+        int attemptedDataCount = emitter.sentData().size();
+        hub.sendHeartbeats();
+
+        assertThat(attemptedDataCount).isPositive();
+        assertThat(emitter.sentData()).hasSize(attemptedDataCount);
+    }
+
+    @Test
     @DisplayName("heartbeat는 연결된 스트림에 keepalive 주석을 전송한다")
     void sendHeartbeats_sendsKeepaliveComment() {
         EmitterProbe emitter = connect(1L);
@@ -87,6 +101,10 @@ class NotificationSseHubTest {
     }
 
     private EmitterProbe connect(Long recipientId) {
+        return connect(recipientId, null);
+    }
+
+    private EmitterProbe connect(Long recipientId, IOException sendFailure) {
         SseEmitter emitter = hub.connect(recipientId);
         List<Object> sentData = new ArrayList<>();
         Map<String, Object> callbacks = new HashMap<>();
@@ -101,6 +119,9 @@ class NotificationSseHubTest {
                             sentData.addAll(items);
                         } else {
                             sentData.add(sent);
+                        }
+                        if (sendFailure != null) {
+                            throw sendFailure;
                         }
                     } else if (method.getName().startsWith("on")) {
                         callbacks.put(method.getName(), arguments[0]);
