@@ -47,6 +47,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
                 updated_at = CURRENT_TIMESTAMP(6)
             WHERE id = :productId
               AND quantity >= :quantity
+              AND deleted_at IN NULL
             """, nativeQuery = true)
     int deductStockIfAvailable(
             @Param("productId") Long productId,
