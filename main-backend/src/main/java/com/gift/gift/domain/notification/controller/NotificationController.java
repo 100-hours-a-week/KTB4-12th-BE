@@ -3,6 +3,8 @@ package com.gift.gift.domain.notification.controller;
 import jakarta.validation.constraints.Positive;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -10,11 +12,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.gift.gift.domain.notification.dto.response.NotificationListItem;
 import com.gift.gift.domain.notification.dto.response.NotificationReadResponse;
 import com.gift.gift.domain.notification.dto.response.NotificationUnreadCountResponse;
 import com.gift.gift.domain.notification.service.NotificationService;
+import com.gift.gift.domain.notification.service.NotificationSseHub;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
@@ -25,6 +29,16 @@ import com.gift.gift.global.security.CurrentUserId;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final NotificationSseHub notificationSseHub;
+
+    @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<SseEmitter> subscribe(@CurrentUserId Long userId) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .cacheControl(CacheControl.noCache())
+                .header("X-Accel-Buffering", "no")
+                .body(notificationSseHub.connect(userId));
+    }
 
     @GetMapping("/unread-count")
     public ResponseEntity<ApiResponse<NotificationUnreadCountResponse>> getUnreadCount(

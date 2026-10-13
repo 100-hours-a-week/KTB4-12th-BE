@@ -14,9 +14,12 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
 
 import com.gift.gift.domain.notification.dto.response.NotificationReadResponse;
 import com.gift.gift.domain.notification.service.NotificationService;
+import com.gift.gift.domain.notification.service.NotificationSseHub;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
@@ -25,8 +28,10 @@ import com.gift.gift.support.TestValidatorFactory;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class NotificationControllerTest {
@@ -34,13 +39,15 @@ class NotificationControllerTest {
     private static final Long USER_ID = 20L;
 
     private NotificationService notificationService;
+    private NotificationSseHub notificationSseHub;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         notificationService = mock(NotificationService.class);
+        notificationSseHub = mock(NotificationSseHub.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new NotificationController(notificationService))
+                .standaloneSetup(new NotificationController(notificationService, notificationSseHub))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(TestValidatorFactory.create())
@@ -57,6 +64,19 @@ class NotificationControllerTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new JwtAuthenticationToken(jwt, List.of(), USER_ID.toString())
         );
+    }
+
+    @Test
+    @DisplayName("인증된 사용자의 알림 SSE 스트림을 연다")
+    void subscribe_returnsEventStream() throws Exception {
+        when(notificationSseHub.connect(USER_ID)).thenReturn(new SseEmitter());
+
+        mockMvc.perform(get("/notifications/events"))
+                .andExpect(status().isOk())
+                .andExpect(MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(request().asyncStarted());
+
+        verify(notificationSseHub).connect(USER_ID);
     }
 
     @AfterEach
