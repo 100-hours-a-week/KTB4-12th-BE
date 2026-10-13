@@ -4,6 +4,8 @@ import java.util.Objects;
 
 import com.gift.payment.payment.entity.Payment;
 
+// orderId + requestHash
+// Main Backend 서버로부터 승인 요청을 받은 후 Payment Server의 payments 레코드를 생성했는지 나타냄.
 public record PaymentStartResult(Payment payment, boolean created) {
 
     public PaymentStartResult {
