@@ -12,7 +12,13 @@ public enum ErrorCode {
 
     ORDER_ID_CONFLICT(HttpStatus.CONFLICT, "같은 주문번호로 다른 결제를 요청할 수 없습니다."),
 
+    IDEMPOTENCY_KEY_CONFLICT(HttpStatus.CONFLICT, "동일한 멱등성 키를 다른 요청에 사용할 수 없습니다."),
+
+    PAYMENT_NOT_CANCELABLE(HttpStatus.CONFLICT, "현재 상태에서는 결제를 취소할 수 없습니다."),
+
     PAYMENT_DECLINED(HttpStatus.UNPROCESSABLE_ENTITY, "결제가 거절되었습니다."),
+
+    CANCELLATION_DECLINED(HttpStatus.UNPROCESSABLE_ENTITY, "결제 취소가 거절되었습니다."),
 
     TEMPORARY_PROCESSING_ERROR(HttpStatus.SERVICE_UNAVAILABLE, "결제를 일시적으로 처리할 수 없습니다."),
 
