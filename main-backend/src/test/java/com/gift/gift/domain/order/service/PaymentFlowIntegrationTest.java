@@ -32,18 +32,23 @@ import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.repository.OrderRepository;
+import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
+import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
+import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -342,6 +347,229 @@ class PaymentFlowIntegrationTest {
         ).isEmpty();
     }
 
+    @Test
+    @DisplayName("승인 응답 유실 후 상태 조회 결과가 완료이면 로컬 결제를 완료한다")
+    void pay_recoversCompletedPayment_whenApprovalResponseIsLost() {
+        String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
+        PaymentCreateRequest request = request();
+
+        when(paymentClient.confirm(
+                any(PaymentConfirmRequest.class),
+                eq("TIMEOUT_AFTER_APPROVAL")
+        )).thenThrow(clientFailure(
+                PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
+        ));
+
+        when(paymentClient.getByOrderId(anyString()))
+                .thenAnswer(invocation -> completedResponse(
+                        invocation.getArgument(0),
+                        AMOUNT
+                ));
+
+        PaymentResult result = paymentService.pay(
+                payerId,
+                idempotencyKey,
+                "TIMEOUT_AFTER_APPROVAL",
+                request
+        );
+
+        Order order = orderRepository
+                .findByOrderId(result.completion().orderId())
+                .orElseThrow();
+
+        assertThat(result.created()).isTrue();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        assertThat(order.getApprovalResult()).isEqualTo(PaymentApprovalResult.APPROVED);
+        assertThat(readProductQuantity()).isEqualTo(8);
+        assertThat(readProductSales()).isEqualTo(2);
+        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE - AMOUNT);
+
+        assertThat(giftHistoryRepository.findByOrderRecordId(order.getId())).isPresent();
+
+        assertThat(
+                creditTransactionRepository.findByDeduplicationKey("PAYMENT_USE:" + order.getId())).
+                isPresent();
+
+        verify(paymentClient, times(1))
+                .confirm(any(PaymentConfirmRequest.class), eq("TIMEOUT_AFTER_APPROVAL"));
+        verify(paymentClient, times(1)).getByOrderId(order.getOrderId());
+    }
+
+    @Test
+    @DisplayName("미확정 주문 재요청은 승인 요청 없이 기존 상태 조회로 복구한다")
+    void pay_queriesFirst_whenUnknownOrderIsRetried() {
+        String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
+        PaymentCreateRequest request = request();
+
+        when(paymentClient.confirm(
+                any(PaymentConfirmRequest.class),
+                eq("TIMEOUT_AFTER_APPROVAL")
+        )).thenThrow(clientFailure(
+                PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
+        ));
+
+        when(paymentClient.getByOrderId(anyString()))
+                .thenThrow(clientFailure(
+                        PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE
+                ))
+                .thenAnswer(invocation -> completedResponse(
+                        invocation.getArgument(0),
+                        AMOUNT
+                ));
+
+        assertThatThrownBy(() -> paymentService.pay(
+                payerId,
+                idempotencyKey,
+                "TIMEOUT_AFTER_APPROVAL",
+                request
+        )).isInstanceOfSatisfying(
+                OrderException.class,
+                exception -> assertThat(
+                        exception.getErrorCode()
+                ).isEqualTo(
+                        ErrorCode.PAYMENT_RESULT_UNCONFIRMED
+                )
+        );
+
+        Order unknownOrder = orderRepository
+                .findByPayerIdAndIdempotencyKey(
+                        payerId,
+                        idempotencyKey
+                )
+                .orElseThrow();
+
+        assertThat(unknownOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(unknownOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.UNKNOWN);
+        assertThat(unknownOrder.getFailureCode()).isEqualTo(OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
+
+        PaymentResult recovered = paymentService.pay(
+                payerId,
+                idempotencyKey,
+                "TIMEOUT_AFTER_APPROVAL",
+                request
+        );
+
+        Order completedOrder = orderRepository.findById(unknownOrder.getId()).orElseThrow();
+
+        assertThat(recovered.created()).isFalse();
+        assertThat(completedOrder.getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        assertThat(completedOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.APPROVED);
+        assertThat(readProductQuantity()).isEqualTo(8);
+        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE - AMOUNT);
+
+        verify(paymentClient, times(1))
+                .confirm(
+                        any(PaymentConfirmRequest.class),
+                        eq("TIMEOUT_AFTER_APPROVAL")
+                );
+        verify(paymentClient, times(2))
+                .getByOrderId(unknownOrder.getOrderId());
+    }
+
+    @Test
+    @DisplayName("상태 조회에 주문이 없으면 같은 주문번호로 승인을 한 번 재요청한다")
+    void pay_retriesApprovalOnce_whenPaymentIsNotFound() {
+        String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
+        PaymentCreateRequest request = request();
+
+        when(paymentClient.confirm(
+                any(PaymentConfirmRequest.class),
+                eq("TIMEOUT_BEFORE_APPROVAL")
+        )).thenThrow(clientFailure(
+                PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
+        )).thenAnswer(invocation -> {
+            PaymentConfirmRequest confirmation =
+                    invocation.getArgument(0);
+
+            return completedResponse(
+                    confirmation.orderId(),
+                    confirmation.amount()
+            );
+        });
+
+        when(paymentClient.getByOrderId(anyString()))
+                .thenThrow(clientFailure(
+                        PaymentClientFailure.PAYMENT_NOT_FOUND
+                ));
+
+        PaymentResult result = paymentService.pay(
+                payerId,
+                idempotencyKey,
+                "TIMEOUT_BEFORE_APPROVAL",
+                request
+        );
+
+        Order order = orderRepository
+                .findByOrderId(result.completion().orderId())
+                .orElseThrow();
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        assertThat(readProductQuantity()).isEqualTo(8);
+        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE - AMOUNT);
+
+        verify(paymentClient, times(2))
+                .confirm(
+                        any(PaymentConfirmRequest.class),
+                        eq("TIMEOUT_BEFORE_APPROVAL")
+                );
+        verify(paymentClient, times(1))
+                .getByOrderId(order.getOrderId());
+    }
+
+    @Test
+    @DisplayName("상태 조회 결과가 처리 중이면 로컬 자원을 변경하지 않고 미확정으로 유지한다")
+    void pay_keepsPending_whenPaymentServerIsPending() {
+        String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
+        PaymentCreateRequest request = request();
+
+        when(paymentClient.confirm(
+                any(PaymentConfirmRequest.class),
+                eq("TIMEOUT_BEFORE_APPROVAL")
+        )).thenThrow(clientFailure(
+                PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
+        ));
+
+        when(paymentClient.getByOrderId(anyString()))
+                .thenAnswer(invocation -> new PaymentResponse(
+                        invocation.getArgument(0),
+                        null,
+                        null,
+                        PaymentServerStatus.PENDING,
+                        AMOUNT,
+                        null
+                ));
+
+        assertThatThrownBy(() -> paymentService.pay(
+                payerId,
+                idempotencyKey,
+                "TIMEOUT_BEFORE_APPROVAL",
+                request
+        )).isInstanceOfSatisfying(
+                OrderException.class,
+                exception -> assertThat(
+                        exception.getErrorCode()
+                ).isEqualTo(
+                        ErrorCode.PAYMENT_RESULT_UNCONFIRMED
+                )
+        );
+
+        Order order = orderRepository
+                .findByPayerIdAndIdempotencyKey(
+                        payerId,
+                        idempotencyKey
+                )
+                .orElseThrow();
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getApprovalResult()).isEqualTo(PaymentApprovalResult.UNKNOWN);
+        assertThat(order.getFailureCode()).isEqualTo(OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
+
+        assertThat(readProductQuantity()).isEqualTo(10);
+        assertThat(readProductSales()).isZero();
+        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE);
+        assertThat(giftHistoryRepository.findByOrderRecordId(order.getId())).isEmpty();
+    }
+
     private void stubApproval() {
         when(paymentClient.confirm(
                 any(PaymentConfirmRequest.class),
@@ -401,6 +629,33 @@ class PaymentFlowIntegrationTest {
                 """,
                 Long.class,
                 payerId
+        );
+    }
+
+    private PaymentResponse completedResponse(String orderId, Long amount) {
+        return new PaymentResponse(
+                orderId,
+                "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a",
+                "98f7a12c-9952-40b6-9142-a07b7c4b13fe",
+                PaymentServerStatus.COMPLETED,
+                amount,
+                LocalDateTime.of(
+                        2026,
+                        10,
+                        14,
+                        14,
+                        30
+                )
+        );
+    }
+
+    private PaymentClientException clientFailure(
+            PaymentClientFailure failure
+    ) {
+        return new PaymentClientException(
+                failure,
+                "Payment Server 테스트 오류",
+                (String) null
         );
     }
 }
