@@ -17,6 +17,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByOrderId(String orderId);
 
+    Optional<Order> findByOrderIdAndPayerId(String orderId, Long payerId);
+
     Optional<Order> findByPayerIdAndIdempotencyKey(Long payerId, String idempotencyKey);
 
     @Modifying(

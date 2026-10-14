@@ -16,6 +16,9 @@ public enum OrderErrorCode {
     INSUFFICIENT_CREDIT(
             ErrorCode.INSUFFICIENT_CREDIT
     ),
+    PAYMENT_NOT_FOUND(
+            ErrorCode.PAYMENT_NOT_FOUND
+    ),
     PAYMENT_DECLINED(
             ErrorCode.PAYMENT_DECLINED
     ),

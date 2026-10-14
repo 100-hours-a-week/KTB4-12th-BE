@@ -726,6 +726,40 @@
       ]
     },
     {
+      "name": "payments (인증 필요)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "결제 상태 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/payments/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments",
+                "{{orderId}}"
+              ]
+            },
+            "description": "인증 사용자가 자신의 결제와 연결된 선물 상태를 조회한다. Environment의 orderId에 조회할 UUID 주문번호를 설정한다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "notifications (인증 필요)",
       "auth": {
         "type": "bearer",
