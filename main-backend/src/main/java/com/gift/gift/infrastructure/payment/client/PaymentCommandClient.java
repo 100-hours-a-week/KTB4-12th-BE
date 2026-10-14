@@ -1,11 +1,13 @@
 package com.gift.gift.infrastructure.payment.client;
 
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.service.annotation.HttpExchange;
 import org.springframework.web.service.annotation.PostExchange;
 
+import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerResponse;
@@ -14,6 +16,7 @@ import com.gift.gift.infrastructure.payment.dto.PaymentServerResponse;
 public interface PaymentCommandClient {
 
     String SCENARIO_HEADER = "X-Payment-Scenario";
+    String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
     @PostExchange(
             url = "/payments/confirm",
@@ -23,5 +26,12 @@ public interface PaymentCommandClient {
             @RequestBody PaymentConfirmRequest request,
             @RequestHeader(value = SCENARIO_HEADER, required = false)
             String scenario
+    );
+
+    @PostExchange("/payments/{paymentKey}/cancel")
+    PaymentServerResponse<PaymentCancelResponse> cancel(
+            @PathVariable String paymentKey,
+            @RequestHeader(IDEMPOTENCY_KEY_HEADER)
+            String idempotencyKey
     );
 }
