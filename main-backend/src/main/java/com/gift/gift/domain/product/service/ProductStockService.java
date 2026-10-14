@@ -23,4 +23,17 @@ public class ProductStockService {
 
         return productRepository.deductStockIfAvailable(productId, quantity) == 1;
     }
+
+    @Transactional
+    public boolean restoreStock(Long productId, int quantity) {
+        if (productId == null || productId <= 0) {
+            throw new IllegalArgumentException("상품 ID는 양수여야 합니다.");
+        }
+
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("복구 수량은 양수여야 합니다.");
+        }
+
+        return productRepository.restoreStock(productId, quantity) == 1;
+    }
 }

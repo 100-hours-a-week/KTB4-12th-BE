@@ -140,4 +140,24 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("failureCode") OrderFailureCode failureCode,
             @Param("updatedAt") LocalDateTime updatedAt
     );
+
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query("""
+        update Order orders
+        set orders.status = :canceledStatus,
+            orders.failureCode = null,
+            orders.canceledAt = :canceledAt,
+            orders.updatedAt = :canceledAt
+        where orders.id = :orderRecordId
+          and orders.status = :completedStatus
+        """)
+    int cancel(
+            @Param("orderRecordId") Long orderRecordId,
+            @Param("completedStatus") OrderStatus completedStatus,
+            @Param("canceledStatus") OrderStatus canceledStatus,
+            @Param("canceledAt") LocalDateTime canceledAt
+    );
 }
