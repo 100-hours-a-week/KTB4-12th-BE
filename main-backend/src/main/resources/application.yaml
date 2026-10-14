@@ -63,6 +63,11 @@ app:
       secret-base64: ${CHAT_CONVERSATION_TOKEN_SECRET_BASE64}
       issuer: ${CHAT_CONVERSATION_TOKEN_ISSUER}
 
+    sse:
+      idle-timeout: ${AI_CHAT_SSE_IDLE_TIMEOUT}
+      total-timeout: ${AI_CHAT_SSE_TOTAL_TIMEOUT}
+      max-connections: ${AI_CHAT_SSE_MAX_CONNECTIONS}
+
   ai-profile:
     scheduling-enabled: ${AI_PROFILE_SCHEDULING_ENABLED:false}
     base-url: ${AI_PROFILE_BASE_URL}

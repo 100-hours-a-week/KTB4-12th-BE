@@ -8,6 +8,14 @@ public enum ChatErrorCode {
             ErrorCode.INVALID_REQUEST,
             "요청 형식이나 값이 올바르지 않습니다."
     ),
+    INVALID_EVENT_CURSOR(
+            ErrorCode.INVALID_CURSOR,
+            "페이지 정보를 확인해 주세요."
+    ),
+    EVENT_CURSOR_CONFLICT(
+            ErrorCode.CONFLICT,
+            "이벤트 번호가 저장된 마지막 번호보다 큽니다."
+    ),
     INVALID_MESSAGE(
             ErrorCode.INVALID_REQUEST,
             "입력값을 확인해 주세요."

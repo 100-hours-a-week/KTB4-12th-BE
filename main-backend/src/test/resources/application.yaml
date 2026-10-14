@@ -59,6 +59,12 @@ app:
   scheduling:
     enabled: false
 
+  ai-chat:
+    sse:
+      idle-timeout: 60s
+      total-timeout: 240s
+      max-connections: 10
+
   ai-profile:
     base-url: http://localhost:18080
     service-token: test-profiling-token
