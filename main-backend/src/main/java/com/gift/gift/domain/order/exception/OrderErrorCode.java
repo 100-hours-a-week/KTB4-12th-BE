@@ -29,6 +29,22 @@ public enum OrderErrorCode {
             ErrorCode.CONFLICT,
             "현재 주문 상태에서는 결제를 완료할 수 없습니다."
     ),
+    IDEMPOTENCY_KEY_CONFLICT(
+            ErrorCode.IDEMPOTENCY_KEY_CONFLICT
+    ),
+    PAYMENT_NOT_CANCELABLE(
+            ErrorCode.PAYMENT_NOT_CANCELABLE
+    ),
+    CANCELLATION_DECLINED(
+            ErrorCode.CANCELLATION_DECLINED
+    ),
+    CANCELLATION_RESULT_UNCONFIRMED(
+            ErrorCode.CANCELLATION_RESULT_UNCONFIRMED
+    ),
+    CANCELLATION_PROCESSING_FAILED(
+            ErrorCode.INTERNAL_SERVER_ERROR,
+            "결제 취소를 처리하지 못했습니다. 다시 시도해 주세요."
+    ),
     PAYMENT_PROCESSING_FAILED(
             ErrorCode.INTERNAL_SERVER_ERROR,
             "결제를 완료하지 못했습니다. 다시 시도해 주세요."
