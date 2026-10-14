@@ -17,6 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 import com.gift.gift.infrastructure.payment.client.PaymentCommandClient;
 import com.gift.gift.infrastructure.payment.client.PaymentQueryClient;
 import com.gift.gift.infrastructure.payment.client.PaymentServerErrorHandler;
+import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerResponse;
@@ -120,6 +121,61 @@ class PaymentHttpServiceClientTest {
         assertThat(response.data().orderId()).isEqualTo(ORDER_ID);
         assertThat(response.data().status()).isEqualTo(PaymentServerStatus.PENDING);
 
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("결제 취소 계약에 맞는 URL과 멱등 키를 전송한다")
+    void cancel_sendsContract() {
+        String paymentKey = "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a";
+        String idempotencyKey = "cancel-request-001";
+        RestClient configured = config.paymentCommandRestClient(
+                properties(),
+                errorHandler
+        );
+        RestClient.Builder builder = configured.mutate();
+
+        MockRestServiceServer server = MockRestServiceServer
+                .bindTo(builder)
+                .build();
+
+        PaymentCommandClient client = config.paymentCommandClient(
+                builder.build()
+        );
+
+        server.expect(requestTo(
+                        BASE_URL + "/payments/" + paymentKey + "/cancel"
+                ))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header(
+                        PaymentClientConfig.INTERNAL_API_KEY_HEADER,
+                        API_KEY
+                ))
+                .andExpect(header(
+                        PaymentCommandClient.IDEMPOTENCY_KEY_HEADER,
+                        idempotencyKey
+                ))
+                .andRespond(withSuccess("""
+                        {
+                          "message": "결제를 취소했습니다.",
+                          "data": {
+                            "orderId": "%s",
+                            "paymentKey": "%s",
+                            "transactionKey": "542f1507-e235-47c2-93c1-a30ed5b31d49",
+                            "status": "CANCELED",
+                            "cancelAmount": 64000,
+                            "canceledAt": "2026-10-15T12:00:00"
+                          }
+                        }
+                        """.formatted(ORDER_ID, paymentKey),
+                        MediaType.APPLICATION_JSON));
+
+        PaymentServerResponse<PaymentCancelResponse> response =
+                client.cancel(paymentKey, idempotencyKey);
+
+        assertThat(response.data().status())
+                .isEqualTo(PaymentServerStatus.CANCELED);
+        assertThat(response.data().cancelAmount()).isEqualTo(64_000L);
         server.verify();
     }
 
