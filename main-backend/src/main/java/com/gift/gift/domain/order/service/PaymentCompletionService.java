@@ -130,8 +130,7 @@ public class PaymentCompletionService {
                 expiresAt
         );
 
-        GiftHistory savedGift =
-                giftHistoryRepository.saveAndFlush(gift);
+        GiftHistory savedGift = giftHistoryRepository.saveAndFlush(gift);
 
         CreditTransaction transaction = new CreditTransaction(
                 order.getPayerId(),

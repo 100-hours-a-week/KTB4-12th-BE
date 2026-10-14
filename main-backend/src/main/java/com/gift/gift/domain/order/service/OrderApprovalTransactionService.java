@@ -36,6 +36,7 @@ public class OrderApprovalTransactionService {
                 paymentKey,
                 transactionKey,
                 PaymentApprovalResult.APPROVED,
+                PaymentApprovalResult.UNKNOWN,
                 approvedAt,
                 updatedAt,
                 OrderStatus.PENDING

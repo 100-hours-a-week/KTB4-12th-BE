@@ -9,6 +9,7 @@ import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
+import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
@@ -49,19 +50,21 @@ public class PaymentService {
             throw new OrderException(OrderErrorCode.PAYMENT_STATE_CONFLICT);
         }
 
-        PaymentResponse response;
-
-        try {
-            response = paymentClient.confirm(
-                    new PaymentConfirmRequest(
-                            order.getOrderId(),
-                            order.getAmount()
-                    ),
-                    scenario
-            );
-        } catch (PaymentClientException exception) {
-            throw convertClientFailure(order, exception);
+        if (order.getApprovalResult() == PaymentApprovalResult.APPROVED) {
+            return complete(order, start.created());
         }
+
+        if (order.getApprovalResult() != null
+                && order.getApprovalResult() != PaymentApprovalResult.UNKNOWN) {
+
+            throw new OrderException(OrderErrorCode.PAYMENT_STATE_CONFLICT
+            );
+        }
+
+        PaymentResponse response =
+                order.getApprovalResult() == PaymentApprovalResult.UNKNOWN
+                        ? recover(order, scenario, true)
+                        : requestApproval(order, scenario);
 
         handleResponseState(order, response);
         validateCompletedResponse(order, response);
@@ -73,17 +76,69 @@ public class PaymentService {
                 response.approvedAt()
         );
 
+        return complete(order, start.created());
+    }
+
+    private PaymentResponse requestApproval(Order order, String scenario) {
+        try {
+            return paymentClient.confirm(confirmRequest(order), scenario);
+        } catch (PaymentClientException exception) {
+            if (exception.failure() == PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED) {
+                return recover(order, scenario, true);
+            }
+
+            throw convertClientFailure(order, exception);
+        }
+    }
+
+    private PaymentResponse retryApproval(Order order, String scenario) {
+        try {
+            return paymentClient.confirm(confirmRequest(order), scenario);
+        } catch (PaymentClientException exception) {
+            if (exception.failure() == PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED) {
+                return recover(order, scenario, false);
+            }
+
+            throw convertClientFailure(order, exception);
+        }
+    }
+
+    private PaymentResponse recover(Order order, String scenario, boolean canRetry) {
+        try {
+            return paymentClient.getByOrderId(order.getOrderId());
+        } catch (PaymentClientException exception) {
+            if (canRetry
+                    && exception.failure() == PaymentClientFailure.PAYMENT_NOT_FOUND) {
+                return retryApproval(order, scenario);
+            }
+
+            approvalService.markUnknown(
+                    order.getId(),
+                    OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED
+            );
+
+            throw new OrderException(
+                    OrderErrorCode.PAYMENT_RESULT_UNCONFIRMED,
+                    exception
+            );
+        }
+    }
+
+    private PaymentResult complete(Order order, boolean created) {
         try {
             PaymentCompletion completion = completionService.complete(order.getId());
-
-            return new PaymentResult(
-                    completion,
-                    start.created()
-            );
+            return new PaymentResult(completion, created);
         } catch (RuntimeException exception) {
             approvalService.markLocalFailure(order.getId());
             throw exception;
         }
+    }
+
+    private PaymentConfirmRequest confirmRequest(Order order) {
+        return new PaymentConfirmRequest(
+                order.getOrderId(),
+                order.getAmount()
+        );
     }
 
     private RuntimeException convertClientFailure(Order order, PaymentClientException exception) {
@@ -93,7 +148,10 @@ public class PaymentService {
         if (failure == PaymentClientFailure.PAYMENT_DECLINED) {
             approvalService.decline(order.getId());
 
-            return new OrderException(OrderErrorCode.PAYMENT_DECLINED, exception);
+            return new OrderException(
+                    OrderErrorCode.PAYMENT_DECLINED,
+                    exception
+            );
         }
 
         if (failure == PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED) {
@@ -109,8 +167,10 @@ public class PaymentService {
         }
 
         if (failure == PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE) {
-
-            approvalService.markUnknown(order.getId(), OrderFailureCode.PAYMENT_SERVER_UNAVAILABLE);
+            approvalService.markUnknown(
+                    order.getId(),
+                    OrderFailureCode.PAYMENT_SERVER_UNAVAILABLE
+            );
 
             return new OrderException(
                     OrderErrorCode.PAYMENT_RESULT_UNCONFIRMED,
@@ -119,10 +179,16 @@ public class PaymentService {
         }
 
         if (failure == PaymentClientFailure.INVALID_REQUEST) {
-            return new OrderException(OrderErrorCode.INVALID_PAYMENT_REQUEST, exception);
+            return new OrderException(
+                    OrderErrorCode.INVALID_PAYMENT_REQUEST,
+                    exception
+            );
         }
 
-        return new OrderException(OrderErrorCode.PAYMENT_PROCESSING_FAILED, exception);
+        return new OrderException(
+                OrderErrorCode.PAYMENT_PROCESSING_FAILED,
+                exception
+        );
     }
 
     private void handleResponseState(Order order, PaymentResponse response) {
@@ -133,30 +199,26 @@ public class PaymentService {
                     OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED
             );
 
-            throw new OrderException(OrderErrorCode.PAYMENT_RESULT_UNCONFIRMED);
+            throw new OrderException(
+                    OrderErrorCode.PAYMENT_RESULT_UNCONFIRMED
+            );
         }
 
         if (response.status() == PaymentServerStatus.DECLINED) {
             approvalService.decline(order.getId());
 
-            throw new OrderException(OrderErrorCode.PAYMENT_DECLINED);
+            throw new OrderException(
+                    OrderErrorCode.PAYMENT_DECLINED
+            );
         }
     }
 
     private void validateCompletedResponse(Order order, PaymentResponse response) {
 
-        boolean valid =
-                response != null
-                        && Objects.equals(
-                        order.getOrderId(),
-                        response.orderId()
-                )
-                        && Objects.equals(
-                        order.getAmount(),
-                        response.amount()
-                )
-                        && response.status()
-                        == PaymentServerStatus.COMPLETED
+        boolean valid = response != null
+                        && Objects.equals(order.getOrderId(), response.orderId())
+                        && Objects.equals(order.getAmount(), response.amount())
+                        && response.status() == PaymentServerStatus.COMPLETED
                         && hasText(response.paymentKey())
                         && hasText(response.transactionKey())
                         && response.approvedAt() != null;
