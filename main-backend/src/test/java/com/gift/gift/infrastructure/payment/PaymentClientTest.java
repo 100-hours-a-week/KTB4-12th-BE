@@ -2,6 +2,7 @@ package com.gift.gift.infrastructure.payment;
 
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
+import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.springframework.web.client.ResourceAccessException;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
 import com.gift.gift.infrastructure.payment.client.PaymentCommandClient;
 import com.gift.gift.infrastructure.payment.client.PaymentQueryClient;
+import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerResponse;
@@ -69,6 +71,53 @@ class PaymentClientTest {
                         PaymentClientException.class,
                         exception -> assertThat(exception.failure())
                                 .isEqualTo(PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED)
+                );
+    }
+
+    @Test
+    @DisplayName("결제 취소 성공 응답의 데이터를 반환한다")
+    void cancel_returnsCancellationData() {
+        String paymentKey = "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a";
+        String idempotencyKey = "cancel-request-001";
+        PaymentCancelResponse cancellation = new PaymentCancelResponse(
+                ORDER_ID,
+                paymentKey,
+                "542f1507-e235-47c2-93c1-a30ed5b31d49",
+                PaymentServerStatus.CANCELED,
+                64_000L,
+                LocalDateTime.of(2026, 10, 15, 12, 0)
+        );
+
+        when(commandClient.cancel(paymentKey, idempotencyKey))
+                .thenReturn(new PaymentServerResponse<>(
+                        "결제를 취소했습니다.",
+                        cancellation
+                ));
+
+        assertThat(client.cancel(paymentKey, idempotencyKey))
+                .isEqualTo(cancellation);
+    }
+
+    @Test
+    @DisplayName("결제 취소 응답 타임아웃은 취소 결과 미확정으로 처리한다")
+    void cancel_mapsTimeoutToUnconfirmed() {
+        String paymentKey = "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a";
+        String idempotencyKey = "cancel-request-001";
+
+        when(commandClient.cancel(paymentKey, idempotencyKey))
+                .thenThrow(new ResourceAccessException(
+                        "응답 타임아웃",
+                        new SocketTimeoutException()
+                ));
+
+        assertThatThrownBy(() -> client.cancel(paymentKey, idempotencyKey))
+                .isInstanceOfSatisfying(
+                        PaymentClientException.class,
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(
+                                        PaymentClientFailure
+                                                .CANCELLATION_RESULT_UNCONFIRMED
+                                )
                 );
     }
 

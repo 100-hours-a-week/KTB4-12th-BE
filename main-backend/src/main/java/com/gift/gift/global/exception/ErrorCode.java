@@ -164,6 +164,18 @@ public enum ErrorCode {
             HttpStatus.NOT_FOUND,
             "결제 정보를 찾을 수 없습니다."
     ),
+    PAYMENT_NOT_CANCELABLE(
+            HttpStatus.CONFLICT,
+            "현재 상태에서는 결제를 취소할 수 없습니다."
+    ),
+    CANCELLATION_DECLINED(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "결제 취소가 거절되었습니다."
+    ),
+    CANCELLATION_RESULT_UNCONFIRMED(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "결제 취소 결과를 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요."
+    ),
     PAYMENT_RESULT_UNCONFIRMED(
             HttpStatus.SERVICE_UNAVAILABLE,
             "결제 결과를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요."

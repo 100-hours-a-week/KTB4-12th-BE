@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 
+import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerResponse;
@@ -22,11 +23,17 @@ public class PaymentClient {
     private final PaymentCommandClient commandClient;
     private final PaymentQueryClient queryClient;
 
-    public PaymentResponse confirm(PaymentConfirmRequest request, String scenario
-    ) {
+    public PaymentResponse confirm(PaymentConfirmRequest request, String scenario) {
         return execute(
                 () -> commandClient.confirm(request, scenario),
                 PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
+        );
+    }
+
+    public PaymentCancelResponse cancel(String paymentKey, String idempotencyKey) {
+        return execute(
+                () -> commandClient.cancel(paymentKey, idempotencyKey),
+                PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
         );
     }
 
