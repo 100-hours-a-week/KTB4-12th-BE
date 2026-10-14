@@ -160,6 +160,10 @@ public enum ErrorCode {
             HttpStatus.UNPROCESSABLE_ENTITY,
             "결제가 거절되었습니다."
     ),
+    PAYMENT_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "결제 정보를 찾을 수 없습니다."
+    ),
     PAYMENT_RESULT_UNCONFIRMED(
             HttpStatus.SERVICE_UNAVAILABLE,
             "결제 결과를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요."
