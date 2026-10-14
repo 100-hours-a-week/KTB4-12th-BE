@@ -13,11 +13,16 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.RequestBodyAdviceAdapter;
 
 import com.gift.gift.domain.recommendation.chat.controller.ChatController;
+import com.gift.gift.domain.recommendation.chat.controller.ChatEventsController;
 import com.gift.gift.domain.recommendation.chat.exception.ChatErrorCode;
 import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 
-@ControllerAdvice(assignableTypes = ChatController.class)
+@ControllerAdvice(assignableTypes = {
+        ChatController.class,
+        ChatEventsController.class
+})
 public class ChatBodyAdvice extends RequestBodyAdviceAdapter {
+
     private static final int MAX_BYTES = 20_000;
 
     @Override
@@ -26,7 +31,8 @@ public class ChatBodyAdvice extends RequestBodyAdviceAdapter {
             Type type,
             Class<? extends HttpMessageConverter<?>> converter
     ) {
-        return parameter.getContainingClass() == ChatController.class;
+        return parameter.getContainingClass() == ChatController.class
+                || parameter.getContainingClass() == ChatEventsController.class;
     }
 
     @Override
@@ -47,6 +53,7 @@ public class ChatBodyAdvice extends RequestBodyAdviceAdapter {
         }
 
         return new HttpInputMessage() {
+
             @Override
             public InputStream getBody() {
                 return new ByteArrayInputStream(bytes);

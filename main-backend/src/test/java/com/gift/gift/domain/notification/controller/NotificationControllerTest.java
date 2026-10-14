@@ -74,7 +74,9 @@ class NotificationControllerTest {
         mockMvc.perform(get("/notifications/events"))
                 .andExpect(status().isOk())
                 .andExpect(MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-                .andExpect(request().asyncStarted());
+                .andExpect(request().asyncStarted())
+                .andExpect(MockMvcResultMatchers.header().string("Cache-Control", "no-cache"))
+                .andExpect(MockMvcResultMatchers.header().string("X-Accel-Buffering", "no"));
 
         verify(notificationSseHub).connect(USER_ID);
     }

@@ -1,0 +1,464 @@
+{
+  "info": {
+    "name": "AI Chat PR3 실제 서버 SSE 연동",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "BE → AI 고정 응답 테스트 서버 연동. BE의 AI_CHAT_BASE_URL을 /v1/chat/test/conversations로 설정한다. 요청은 Send로 개별 실행한다. 실제 SSE 도착 시점과 중단 cursor는 수동 확인한다. 전체 Runner 실행 금지: 11은 명시적 cancellation 요청이다. 서비스 토큰은 BE에만 설정한다."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 대화 생성·복구",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}",
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{{createBody}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.environment.get(\"accessToken\")) throw new Error(\"BE 로그인 accessToken을 설정하세요.\");",
+              "const recipient = Number(pm.environment.get(\"recipientUserId\"));",
+              "if (!Number.isSafeInteger(recipient) || recipient < 1) throw new Error(\"실제 활성 recipientUserId를 설정하세요.\");",
+              "if (!pm.environment.get(\"sseConversationId\")) {",
+              "  pm.environment.set(\"sseConversationId\", pm.variables.replaceIn(\"{{$guid}}\"));",
+              "}",
+              "pm.variables.set(\"createBody\", JSON.stringify({recipientUserId:recipient}));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"대화 생성 또는 복구\", () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
+              "if ([200,201].includes(pm.response.code)) {",
+              "  const data = pm.response.json().data;",
+              "  pm.test(\"대화 ID와 토큰\", () => {",
+              "    pm.expect(data.conversationId).to.equal(pm.environment.get(\"sseConversationId\"));",
+              "    pm.expect(data.conversationToken).to.be.a(\"string\").and.not.empty;",
+              "  });",
+              "  pm.environment.set(\"sseConversationToken\", data.conversationToken);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 질문 접수·같은 질문 복구",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}",
+        "description": "같은 턴을 재전송할 때 최초 message를 유지한다. 새 시나리오는 사용 안내에 따라 sseTurnId를 비운다.",
+        "body": {
+          "mode": "raw",
+          "raw": "{{submitBody}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.environment.get(\"sseConversationToken\")) throw new Error(\"01 요청을 먼저 실행하세요.\");",
+              "if (!pm.environment.get(\"sseTurnId\")) {",
+              "  pm.environment.set(\"sseTurnId\", pm.variables.replaceIn(\"{{$guid}}\"));",
+              "  pm.environment.set(\"reconnectAfterEventId\", \"0\");",
+              "  pm.environment.unset(\"explicitCancellationSent\");",
+              "  pm.environment.unset(\"snapshotLastEventId\");",
+              "  pm.environment.unset(\"snapshotStatus\");",
+              "  pm.environment.set(\"submittedMockMessage\", pm.environment.get(\"mockMessage\") || \"/mock delayed_tokens\");",
+              "}",
+              "pm.variables.set(\"submitBody\", JSON.stringify({message:pm.environment.get(\"submittedMockMessage\")}));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"질문 접수 또는 기존 턴 복구\", () => pm.expect(pm.response.code).to.be.oneOf([200,202]));",
+              "if ([200,202].includes(pm.response.code)) {",
+              "  const data = pm.response.json().data;",
+              "  pm.test(\"턴 ID 일치\", () => pm.expect(data.turnId).to.equal(pm.environment.get(\"sseTurnId\")));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 SSE 처음부터 받기",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "text/event-stream"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}/events?afterEventId=0",
+        "description": "Send로 실행. 이벤트 도착 시각·id·event·data를 화면에서 확인. 단순 EOF를 완료로 판단하지 않는다."
+      },
+      "event": []
+    },
+    {
+      "name": "04 SSE 마지막 확인 ID 이후 재연결",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "text/event-stream"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}/events?afterEventId={{reconnectAfterEventId}}",
+        "description": "03에서 답변 조각을 확인한 뒤 연결을 닫는다. 마지막 확인 id를 환경에 직접 저장하고 Send한다. heartbeat에는 id가 없다."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const cursor = pm.environment.get(\"reconnectAfterEventId\");",
+              "if (!/^(0|[1-9][0-9]*)$/.test(String(cursor))) throw new Error(\"마지막으로 완전히 확인한 SSE id를 reconnectAfterEventId에 입력하세요.\");"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 GET 턴 복구·최종 상태 확인",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"턴 조회 성공\", () => pm.expect(pm.response.code).to.equal(200));",
+              "if (pm.response.code === 200) {",
+              "  const data = pm.response.json().data;",
+              "  pm.test(\"턴 계약\", () => {",
+              "    pm.expect(data.turnId).to.equal(pm.environment.get(\"sseTurnId\"));",
+              "    pm.expect(data.status).to.be.oneOf([\"PROCESSING\",\"COMPLETED\",\"FAILED\",\"CANCELLED\"]);",
+              "    pm.expect(data.blocks).to.be.an(\"array\");",
+              "    pm.expect(Number.isSafeInteger(data.lastEventId) && data.lastEventId >= 0).to.equal(true);",
+              "  });",
+              "  pm.environment.set(\"snapshotLastEventId\", String(data.lastEventId));",
+              "  pm.environment.set(\"snapshotStatus\", data.status);",
+              "  pm.test(\"명시적 취소 없이 CANCELLED로 바뀌지 않음\", () => {",
+              "    if (pm.environment.get(\"explicitCancellationSent\") !== \"true\") pm.expect(data.status).not.to.equal(\"CANCELLED\");",
+              "  });",
+              "  if (data.status === \"FAILED\") pm.test(\"실패 메시지\", () => pm.expect(data.error.message).to.be.a(\"string\"));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 종료된 턴의 마지막 ID로 빈 스트림 확인",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "text/event-stream"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}/events?afterEventId={{snapshotLastEventId}}",
+        "description": "05로 종료를 확인한 뒤 실행. 200과 SSE 헤더를 확인하고 이벤트 없이 연결이 끝나는지 확인한다."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (![\"COMPLETED\",\"FAILED\",\"CANCELLED\"].includes(pm.environment.get(\"snapshotStatus\"))) throw new Error(\"05에서 종료 상태를 확인한 뒤 실행하세요.\");"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 저장된 마지막 ID보다 큰 cursor → 409",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "text/event-stream"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}/events?afterEventId={{futureCursor}}",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (![\"COMPLETED\",\"FAILED\",\"CANCELLED\"].includes(pm.environment.get(\"snapshotStatus\"))) throw new Error(\"05에서 종료 상태를 확인한 뒤 실행하세요.\");",
+              "pm.variables.set(\"futureCursor\", String(Number(pm.environment.get(\"snapshotLastEventId\")) + 1));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"cursor 충돌\", () => pm.expect(pm.response.code).to.equal(409));",
+              "pm.test(\"JSON 오류 응답\", () => {",
+              "  pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.error.traceId).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(body).not.to.have.property(\"data\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 음수 cursor → 400",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "text/event-stream"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}/events?afterEventId=-1",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"음수 cursor 거절\", () => pm.expect(pm.response.code).to.equal(400));",
+              "pm.test(\"JSON 오류 응답\", () => {",
+              "  pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.error.traceId).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(body).not.to.have.property(\"data\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 알 수 없는 Query → 400",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "text/event-stream"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}/events?afterEventId=0&unknown=1",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"알 수 없는 Query 거절\", () => pm.expect(pm.response.code).to.equal(400));",
+              "pm.test(\"JSON 오류 응답\", () => {",
+              "  pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.error.traceId).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(body).not.to.have.property(\"data\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 대화 토큰 위변조 → 404",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "text/event-stream"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}/events?afterEventId=0",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.request.headers.upsert({key:\"X-Conversation-Token\", value:\"invalid-conversation-token\"});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"대화 접근 차단\", () => pm.expect(pm.response.code).to.equal(404));",
+              "pm.test(\"JSON 오류 응답\", () => {",
+              "  pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.error.traceId).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(body).not.to.have.property(\"data\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 명시적 생성 취소 (필요할 때만 Send)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Conversation-Token",
+            "value": "{{sseConversationToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{sseConversationId}}/turns/{{sseTurnId}}/cancellation",
+        "description": "body 없음. 이 요청만 실제 취소를 호출한다. 연결 단절 검증 중에는 실행하지 않는다."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.environment.set(\"explicitCancellationSent\", \"true\");"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"취소 API 응답\", () => pm.expect(pm.response.code).to.equal(200));",
+              "if (pm.response.code === 200) pm.test(\"종료 상태 확인\", () => pm.expect(pm.response.json().data.status).to.be.oneOf([\"COMPLETED\",\"FAILED\",\"CANCELLED\"]));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
