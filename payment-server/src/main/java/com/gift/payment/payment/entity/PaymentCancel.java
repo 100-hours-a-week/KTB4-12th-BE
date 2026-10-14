@@ -145,6 +145,29 @@ public class PaymentCancel extends BaseTimeEntity {
         this.requestHash = requestHash;
     }
 
+    public void complete(String transactionKey, Long cancelAmount, LocalDateTime canceledAt) {
+
+        if (status != PaymentCancelStatus.PENDING) {
+            throw new IllegalStateException("대기 중인 취소만 완료할 수 있습니다.");
+        }
+
+        validateText(transactionKey, 36, "취소 거래 키");
+
+        if (cancelAmount == null || cancelAmount <= 0) {
+            throw new IllegalArgumentException("취소 금액은 양수여야 합니다.");
+        }
+
+        if (canceledAt == null) {
+            throw new IllegalArgumentException("취소 시각은 null일 수 없습니다.");
+        }
+
+        this.transactionKey = transactionKey;
+        this.status = PaymentCancelStatus.COMPLETED;
+        this.cancelAmount = cancelAmount;
+        this.failureCode = null;
+        this.canceledAt = canceledAt;
+    }
+
     private static void validateText(String value, int maxLength, String fieldName) {
 
         if (value == null || value.isBlank() || value.length() > maxLength) {

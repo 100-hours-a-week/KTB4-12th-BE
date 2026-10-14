@@ -12,7 +12,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import com.gift.payment.payment.entity.Payment;
+import com.gift.payment.payment.entity.PaymentCancel;
+import com.gift.payment.payment.entity.PaymentStatus;
 import com.gift.payment.payment.service.PaymentApprovalService;
+import com.gift.payment.payment.service.PaymentCancelService;
 import com.gift.payment.payment.service.PaymentQueryService;
 import com.gift.payment.payment.support.PaymentScenario;
 import com.gift.payment.payment.support.PaymentScenarioResolver;
@@ -35,6 +38,7 @@ class PaymentControllerTest {
 
     private PaymentApprovalService approvalService;
     private PaymentQueryService queryService;
+    private PaymentCancelService cancelService;
     private PaymentScenarioResolver scenarioResolver;
     private LocalValidatorFactoryBean validator;
     private MockMvc mockMvc;
@@ -43,6 +47,7 @@ class PaymentControllerTest {
     void setUp() {
         approvalService = mock(PaymentApprovalService.class);
         queryService = mock(PaymentQueryService.class);
+        cancelService = mock(PaymentCancelService.class);
         scenarioResolver = mock(PaymentScenarioResolver.class);
 
         validator = new LocalValidatorFactoryBean();
@@ -53,6 +58,7 @@ class PaymentControllerTest {
                         new PaymentController(
                                 approvalService,
                                 queryService,
+                                cancelService,
                                 scenarioResolver
                         )
                 )
@@ -136,6 +142,66 @@ class PaymentControllerTest {
 
         verify(queryService).getByOrderId(orderId);
         verifyNoInteractions(approvalService, scenarioResolver);
+    }
+
+    @Test
+    @DisplayName("결제 취소 요청은 완료된 취소 결과를 반환한다")
+    void cancel_returnsCancellation() throws Exception {
+        String orderId = UUID.randomUUID().toString();
+        String paymentKey = UUID.randomUUID().toString();
+        String transactionKey = UUID.randomUUID().toString();
+        String idempotencyKey = "cancel-request-1";
+        LocalDateTime canceledAt = LocalDateTime.of(
+                2026,
+                10,
+                14,
+                12,
+                0
+        );
+
+        Payment payment = mock(Payment.class);
+        PaymentCancel cancellation = mock(PaymentCancel.class);
+
+        when(cancellation.getPayment()).thenReturn(payment);
+        when(cancellation.getTransactionKey()).thenReturn(transactionKey);
+        when(cancellation.getCancelAmount()).thenReturn(AMOUNT);
+        when(cancellation.getCanceledAt()).thenReturn(canceledAt);
+        when(payment.getOrderId()).thenReturn(orderId);
+        when(payment.getPaymentKey()).thenReturn(paymentKey);
+        when(payment.getStatus()).thenReturn(PaymentStatus.CANCELED);
+        when(cancelService.cancel(paymentKey, idempotencyKey)).thenReturn(cancellation);
+
+        mockMvc.perform(post(
+                        "/payments/{paymentKey}/cancel",
+                        paymentKey
+                ).header(
+                        PaymentController.IDEMPOTENCY_KEY_HEADER,
+                        idempotencyKey
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("결제를 취소했습니다."))
+                .andExpect(jsonPath("$.data.orderId").value(orderId))
+                .andExpect(jsonPath("$.data.paymentKey").value(paymentKey))
+                .andExpect(jsonPath("$.data.transactionKey").value(transactionKey))
+                .andExpect(jsonPath("$.data.status").value("CANCELED"))
+                .andExpect(jsonPath("$.data.cancelAmount").value(AMOUNT))
+                .andExpect(jsonPath("$.data.canceledAt").value("2026-10-14T12:00:00"));
+
+        verify(cancelService).cancel(paymentKey, idempotencyKey);
+    }
+
+    @Test
+    @DisplayName("취소 멱등성 키가 없으면 취소 서비스를 호출하지 않는다")
+    void cancel_rejectsMissingIdempotencyKey() throws Exception {
+        String paymentKey = UUID.randomUUID().toString();
+
+        mockMvc.perform(post(
+                        "/payments/{paymentKey}/cancel",
+                        paymentKey
+                ))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(cancelService);
     }
 
     private Payment payment(String orderId) {
