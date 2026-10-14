@@ -33,13 +33,17 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                 orders.updatedAt = :updatedAt
             where orders.id = :orderRecordId
               and orders.status = :pendingStatus
-              and orders.approvalResult is null
+              and (
+                    orders.approvalResult is null
+                    or orders.approvalResult = :unknownResult
+              )
             """)
     int recordApproval(
             @Param("orderRecordId") Long orderRecordId,
             @Param("paymentKey") String paymentKey,
             @Param("transactionKey") String transactionKey,
             @Param("approvalResult") PaymentApprovalResult approvalResult,
+            @Param("unknownResult") PaymentApprovalResult unknownResult,
             @Param("approvedAt") LocalDateTime approvedAt,
             @Param("updatedAt") LocalDateTime updatedAt,
             @Param("pendingStatus") OrderStatus pendingStatus

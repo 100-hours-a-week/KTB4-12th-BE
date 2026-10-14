@@ -51,7 +51,6 @@ public class PaymentClient {
             PaymentClientFailure failure = isTimeout(exception)
                     ? timeoutFailure
                     : PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE;
-
             throw new PaymentClientException(failure, "Payment Server 통신에 실패했습니다.", exception);
         } catch (RestClientException exception) {
             throw new PaymentClientException(
