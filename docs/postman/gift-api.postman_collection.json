@@ -318,6 +318,20 @@
           "response": []
         },
         {
+          "name": "선물 수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/gifts/received/{{giftId}}/accept",
+              "host": ["{{baseUrl}}"],
+              "path": ["gifts", "received", "{{giftId}}", "accept"]
+            },
+            "description": "수신자가 수락 대기 중인 선물을 수락한다. 성공하면 선물을 COMPLETED로 변경하고 발신자에게 100,000 크레딧을 한 번만 지급한다. 별도의 Request Body와 멱등성 헤더는 사용하지 않으며, 같은 수신자가 완료된 선물을 다시 수락하면 기존 완료 결과를 반환한다.\n\n본인의 선물이 아니거나 존재하지 않으면 404 GIFT_NOT_FOUND, 수락할 수 없는 상태이거나 만료된 선물이면 409 GIFT_NOT_ACCEPTABLE, 수락과 취소가 경합하여 다른 상태가 먼저 확정되면 409 GIFT_STATE_CONFLICT를 반환한다."
+          },
+          "response": []
+        },
+        {
           "name": "선물 사전 검증",
           "request": {
             "method": "POST",
