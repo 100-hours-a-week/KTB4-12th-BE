@@ -7,21 +7,17 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
 import com.gift.gift.domain.user.dto.response.SignupResponse;
 import com.gift.gift.domain.user.entity.Term;
-import com.gift.gift.domain.user.entity.TermConsent;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.exception.SignupTermsConfigurationException;
 import com.gift.gift.domain.user.exception.UserErrorCode;
 import com.gift.gift.domain.user.exception.UserException;
-import com.gift.gift.domain.user.repository.TermConsentRepository;
 import com.gift.gift.domain.user.repository.TermRepository;
 import com.gift.gift.domain.user.repository.UserRepository;
 
@@ -31,10 +27,9 @@ public class SignupService {
 
     private final UserRepository userRepository;
     private final TermRepository termRepository;
-    private final TermConsentRepository termConsentRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SignupTransactionService transactionService;
 
-    @Transactional
     public SignupResponse signup(SignupRequest request) {
         LocalDate birth = LocalDate.parse(request.birth());
 
@@ -48,7 +43,10 @@ public class SignupService {
         }
 
         Map<Long, Term> currentTermsById = currentTerms.stream()
-                .collect(Collectors.toMap(Term::getId, Function.identity()));
+                .collect(Collectors.toMap(
+                        Term::getId,
+                        Function.identity()
+                ));
 
         validateTermConsents(
                 currentTermsById,
@@ -62,26 +60,13 @@ public class SignupService {
 
         String passwordHash = passwordEncoder.encode(request.password());
 
-        User user = new User(
-                request.email(),
-                passwordHash,
-                request.name(),
-                birth
+        User user = transactionService.create(
+                request,
+                birth,
+                passwordHash
         );
 
-        User savedUser = saveUser(user);
-
-        List<TermConsent> consents = request.termConsents().stream()
-                .map(consent -> new TermConsent(
-                        savedUser,
-                        currentTermsById.get(consent.termId()),
-                        consent.isAgreed()
-                ))
-                .toList();
-
-        termConsentRepository.saveAllAndFlush(consents);
-
-        return SignupResponse.from(savedUser);
+        return SignupResponse.from(user);
     }
 
     private void validateTermConsents(
@@ -90,11 +75,14 @@ public class SignupService {
             List<SignupTermConsentRequest> requestedConsents
     ) {
         for (SignupTermConsentRequest consent : requestedConsents) {
-            Term currentTerm = currentTermsById.get(consent.termId());
+            Term currentTerm =
+                    currentTermsById.get(consent.termId());
 
             if (currentTerm == null
                     || currentTerm.getVersion() != consent.version()) {
-                throw new UserException(UserErrorCode.INVALID_TERM_VERSION);
+                throw new UserException(
+                        UserErrorCode.INVALID_TERM_VERSION
+                );
             }
         }
 
@@ -106,52 +94,15 @@ public class SignupService {
                         ));
 
         for (Term term : requiredTerms) {
-            SignupTermConsentRequest consent = requestedById.get(term.getId());
+            SignupTermConsentRequest consent =
+                    requestedById.get(term.getId());
 
-            if (consent == null || !Boolean.TRUE.equals(consent.isAgreed())) {
-                throw new UserException(UserErrorCode.REQUIRED_TERMS_NOT_AGREED);
+            if (consent == null
+                    || !Boolean.TRUE.equals(consent.isAgreed())) {
+                throw new UserException(
+                        UserErrorCode.REQUIRED_TERMS_NOT_AGREED
+                );
             }
         }
-    }
-
-    private User saveUser(User user) {
-        try {
-            return userRepository.saveAndFlush(user);
-        } catch (DataIntegrityViolationException exception) {
-            if (isEmailUniqueViolation(exception)) {
-                throw new UserException(UserErrorCode.EMAIL_ALREADY_IN_USE);
-            }
-
-            throw exception;
-        }
-    }
-
-    private boolean isEmailUniqueViolation(Throwable exception) {
-        Throwable current = exception;
-
-        while (current != null) {
-            if (current instanceof
-                    org.hibernate.exception.ConstraintViolationException violation) {
-                String constraintName = violation.getConstraintName();
-
-                if (constraintName == null) {
-                    return false;
-                }
-
-                String normalizedName = constraintName.replace("`", "");
-                int separatorIndex = normalizedName.lastIndexOf('.');
-
-                if (separatorIndex >= 0) {
-                    normalizedName = normalizedName.substring(separatorIndex + 1);
-                }
-
-                return "uk_users_email".equalsIgnoreCase(normalizedName)
-                        && violation.getSQLException().getErrorCode() == 1062;
-            }
-
-            current = current.getCause();
-        }
-
-        return false;
     }
 }
