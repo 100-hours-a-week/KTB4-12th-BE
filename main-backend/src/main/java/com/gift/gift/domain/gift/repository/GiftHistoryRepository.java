@@ -22,6 +22,8 @@ public interface GiftHistoryRepository extends JpaRepository<GiftHistory, Long> 
 
     Optional<GiftHistory> findByOrderRecordId(Long orderRecordId);
 
+    Optional<GiftHistory> findByIdAndRecipient_IdAndDeletedAtIsNull(Long giftId, Long recipientId);
+
     @Modifying(
             flushAutomatically = true,
             clearAutomatically = true

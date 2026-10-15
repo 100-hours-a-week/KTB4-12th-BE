@@ -184,6 +184,14 @@ public enum ErrorCode {
             HttpStatus.NOT_FOUND,
             "선물 내역을 찾을 수 없습니다."
     ),
+    GIFT_NOT_ACCEPTABLE(
+            HttpStatus.CONFLICT,
+            "현재 상태에서는 선물을 받을 수 없습니다."
+    ),
+    GIFT_STATE_CONFLICT(
+            HttpStatus.CONFLICT,
+            "선물 상태가 변경되었습니다. 다시 확인해 주세요."
+    ),
     REVIEW_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "리뷰를 찾을 수 없습니다."
