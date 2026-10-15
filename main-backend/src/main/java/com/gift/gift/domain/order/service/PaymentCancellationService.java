@@ -23,6 +23,8 @@ public class PaymentCancellationService {
 
     private final PaymentCancellationRequestService requestService;
     private final PaymentClient paymentClient;
+    private final PaymentCancellationCompensationService compensationService;
+    private final PaymentCancellationTransactionService transactionService;
 
     public PaymentCancellationApproval request(
             Long requesterId,
@@ -74,6 +76,27 @@ public class PaymentCancellationService {
                 response.canceledAt(),
                 start.created()
         );
+    }
+
+    public PaymentCancellationResult cancel(
+            Long requesterId,
+            String orderId,
+            String idempotencyKey,
+            CancellationSource source
+    ) {
+        PaymentCancellationApproval approval = request(
+                requesterId,
+                orderId,
+                idempotencyKey,
+                source
+        );
+
+        try {
+            return compensationService.compensate(approval);
+        } catch (RuntimeException exception) {
+            transactionService.markLocalFailure(approval.cancellation().getId());
+            throw exception;
+        }
     }
 
     private PaymentCancellationApproval completed(PaymentCancellationStartResult start) {

@@ -39,13 +39,26 @@ class PaymentCancellationServiceTest {
 
     private PaymentCancellationRequestService requestService;
     private PaymentClient paymentClient;
+    private PaymentCancellationCompensationService compensationService;
+    private PaymentCancellationTransactionService transactionService;
     private PaymentCancellationService service;
 
     @BeforeEach
     void setUp() {
         requestService = mock(PaymentCancellationRequestService.class);
         paymentClient = mock(PaymentClient.class);
-        service = new PaymentCancellationService(requestService, paymentClient);
+        compensationService = mock(
+                PaymentCancellationCompensationService.class
+        );
+        transactionService = mock(
+                PaymentCancellationTransactionService.class
+        );
+        service = new PaymentCancellationService(
+                requestService,
+                paymentClient,
+                compensationService,
+                transactionService
+        );
     }
 
     @Test

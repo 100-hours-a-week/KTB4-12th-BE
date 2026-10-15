@@ -15,6 +15,14 @@ public enum OrderSuccessCode {
     PAYMENT_STATUS_RETRIEVED(
             HttpStatus.OK,
             "결제 상태를 조회했습니다."
+    ),
+    PAYMENT_CANCELLATION_CREATED(
+            HttpStatus.CREATED,
+            "결제와 선물을 취소했습니다."
+    ),
+    PAYMENT_CANCELLATION_REUSED(
+            HttpStatus.OK,
+            "결제와 선물을 취소했습니다."
     );
 
     private final HttpStatus status;

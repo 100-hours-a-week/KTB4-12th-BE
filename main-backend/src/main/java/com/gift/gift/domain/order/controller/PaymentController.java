@@ -10,9 +10,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
+import com.gift.gift.domain.order.dto.response.PaymentCancellationResponse;
 import com.gift.gift.domain.order.dto.response.PaymentCreateResponse;
 import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
+import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.response.OrderSuccessCode;
+import com.gift.gift.domain.order.service.PaymentCancellationResult;
+import com.gift.gift.domain.order.service.PaymentCancellationService;
 import com.gift.gift.domain.order.service.PaymentQueryService;
 import com.gift.gift.domain.order.service.PaymentResult;
 import com.gift.gift.domain.order.service.PaymentService;
@@ -29,6 +33,8 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final PaymentQueryService paymentQueryService;
+    private final PaymentCancellationService paymentCancellationService;
+
     private final Clock clock;
 
     @PostMapping
@@ -69,5 +75,35 @@ public class PaymentController {
                         successCode.message(),
                         response
                 ));
+    }
+
+    @PostMapping("/{orderId}/cancellations")
+    public ResponseEntity<
+            ApiResponse<PaymentCancellationResponse>
+            > cancel(
+            @CurrentUserId Long requesterId,
+            @PathVariable UUID orderId,
+            @RequestHeader(value = IDEMPOTENCY_KEY, required = false)
+            String idempotencyKey
+    ) {
+        PaymentCancellationResult result =
+                paymentCancellationService.cancel(
+                        requesterId,
+                        orderId.toString(),
+                        idempotencyKey,
+                        CancellationSource.USER
+                );
+
+        PaymentCancellationResponse response =
+                PaymentCancellationResponse.from(result, clock.getZone()
+                );
+
+        OrderSuccessCode successCode = result.created()
+                ? OrderSuccessCode.PAYMENT_CANCELLATION_CREATED
+                : OrderSuccessCode.PAYMENT_CANCELLATION_REUSED;
+
+        return ResponseEntity
+                .status(successCode.status())
+                .body(ApiResponse.success(successCode.message(), response));
     }
 }

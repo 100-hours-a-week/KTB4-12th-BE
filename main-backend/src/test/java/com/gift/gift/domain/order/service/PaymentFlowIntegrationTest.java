@@ -27,17 +27,22 @@ import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
+import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
+import com.gift.gift.domain.order.entity.PaymentCancellationFailureCode;
+import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.repository.OrderRepository;
+import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
+import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
@@ -69,7 +74,13 @@ class PaymentFlowIntegrationTest {
     private PaymentRequestService paymentRequestService;
 
     @Autowired
+    private PaymentCancellationService paymentCancellationService;
+
+    @Autowired
     private OrderRepository orderRepository;
+
+    @Autowired
+    private PaymentCancellationRepository paymentCancellationRepository;
 
     @Autowired
     private GiftHistoryRepository giftHistoryRepository;
@@ -177,6 +188,10 @@ class PaymentFlowIntegrationTest {
                 """,
                 payerId,
                 recipientId
+        );
+        jdbcTemplate.update(
+                "delete from payment_cancellations where requester_id = ?",
+                payerId
         );
         jdbcTemplate.update(
                 "delete from orders where payer_id = ?",
@@ -570,6 +585,191 @@ class PaymentFlowIntegrationTest {
         assertThat(giftHistoryRepository.findByOrderRecordId(order.getId())).isEmpty();
     }
 
+    @Test
+    @DisplayName("결제 취소는 주문·선물·크레딧·재고·판매량을 한 번만 보상한다")
+    void cancel_compensatesLocalResourcesOnlyOnce() {
+        String paymentIdempotencyKey =
+                "PAYMENT-" + UUID.randomUUID();
+        String cancellationIdempotencyKey =
+                "CANCEL-" + UUID.randomUUID();
+
+        stubApproval();
+
+        PaymentResult payment = paymentService.pay(
+                payerId,
+                paymentIdempotencyKey,
+                "APPROVE",
+                request()
+        );
+
+        Order order = orderRepository
+                .findByOrderId(payment.completion().orderId())
+                .orElseThrow();
+        LocalDateTime canceledAt = LocalDateTime.of(
+                2026,
+                10,
+                15,
+                12,
+                0
+        );
+
+        stubCancellation(
+                order,
+                cancellationIdempotencyKey,
+                canceledAt
+        );
+
+        PaymentCancellationResult first =
+                paymentCancellationService.cancel(
+                        payerId,
+                        order.getOrderId(),
+                        cancellationIdempotencyKey,
+                        CancellationSource.USER
+                );
+        PaymentCancellationResult second =
+                paymentCancellationService.cancel(
+                        payerId,
+                        order.getOrderId(),
+                        cancellationIdempotencyKey,
+                        CancellationSource.USER
+                );
+
+        Order canceledOrder = orderRepository
+                .findById(order.getId())
+                .orElseThrow();
+
+        assertThat(first.created()).isTrue();
+        assertThat(second.created()).isFalse();
+        assertThat(canceledOrder.getStatus())
+                .isEqualTo(OrderStatus.CANCELED);
+        assertThat(readProductQuantity()).isEqualTo(10);
+        assertThat(readProductSales()).isZero();
+        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE);
+
+        assertThat(giftHistoryRepository
+                .findByOrderRecordId(order.getId()))
+                .get()
+                .extracting(gift -> gift.getStatus())
+                .isEqualTo(GiftStatus.CANCELED);
+
+        assertThat(creditTransactionRepository
+                .findByDeduplicationKey(
+                        "PAYMENT_REFUND:" + order.getId()
+                ))
+                .get()
+                .satisfies(refund -> {
+                    assertThat(refund.getType())
+                            .isEqualTo(
+                                    CreditTransactionType.PAYMENT_REFUND
+                            );
+                    assertThat(refund.getAmount())
+                            .isEqualTo(AMOUNT);
+                    assertThat(refund.getBalanceAfter())
+                            .isEqualTo(INITIAL_BALANCE);
+                });
+
+        assertThat(paymentCancellationRepository
+                .findByRequesterIdAndIdempotencyKey(
+                        payerId,
+                        cancellationIdempotencyKey
+                ))
+                .get()
+                .extracting(cancellation -> cancellation.getStatus())
+                .isEqualTo(PaymentCancellationStatus.COMPLETED);
+
+        verify(paymentClient, times(1)).cancel(
+                order.getPaymentKey(),
+                cancellationIdempotencyKey
+        );
+    }
+
+    @Test
+    @DisplayName("취소 원장 저장 실패 시 로컬 보상 전체를 롤백한다")
+    void cancel_rollsBackLocalCompensation_whenLedgerSaveFails() {
+        String paymentIdempotencyKey =
+                "PAYMENT-" + UUID.randomUUID();
+        String cancellationIdempotencyKey =
+                "CANCEL-" + UUID.randomUUID();
+
+        stubApproval();
+
+        PaymentResult payment = paymentService.pay(
+                payerId,
+                paymentIdempotencyKey,
+                "APPROVE",
+                request()
+        );
+
+        Order order = orderRepository
+                .findByOrderId(payment.completion().orderId())
+                .orElseThrow();
+        Long giftId = payment.completion().giftId();
+
+        transaction.executeWithoutResult(status ->
+                creditTransactionRepository.saveAndFlush(
+                        new CreditTransaction(
+                                payerId,
+                                CreditTransactionType.PAYMENT_REFUND,
+                                AMOUNT,
+                                INITIAL_BALANCE - AMOUNT,
+                                order.getId(),
+                                giftId,
+                                null,
+                                "PAYMENT_REFUND:" + order.getId()
+                        )
+                )
+        );
+
+        stubCancellation(
+                order,
+                cancellationIdempotencyKey,
+                LocalDateTime.of(2026, 10, 15, 12, 0)
+        );
+
+        assertThatThrownBy(() ->
+                paymentCancellationService.cancel(
+                        payerId,
+                        order.getOrderId(),
+                        cancellationIdempotencyKey,
+                        CancellationSource.USER
+                )
+        ).isInstanceOf(DataIntegrityViolationException.class);
+
+        Order completedOrder = orderRepository
+                .findById(order.getId())
+                .orElseThrow();
+
+        assertThat(completedOrder.getStatus())
+                .isEqualTo(OrderStatus.COMPLETED);
+        assertThat(readProductQuantity()).isEqualTo(8);
+        assertThat(readProductSales()).isEqualTo(2);
+        assertThat(readBalance())
+                .isEqualTo(INITIAL_BALANCE - AMOUNT);
+        assertThat(giftHistoryRepository
+                .findByOrderRecordId(order.getId()))
+                .get()
+                .extracting(gift -> gift.getStatus())
+                .isEqualTo(GiftStatus.WAITING_FOR_ACCEPTANCE);
+
+        assertThat(paymentCancellationRepository
+                .findByRequesterIdAndIdempotencyKey(
+                        payerId,
+                        cancellationIdempotencyKey
+                ))
+                .get()
+                .satisfies(cancellation -> {
+                    assertThat(cancellation.getStatus())
+                            .isEqualTo(
+                                    PaymentCancellationStatus.PENDING
+                            );
+                    assertThat(cancellation.getFailureCode())
+                            .isEqualTo(
+                                    PaymentCancellationFailureCode
+                                            .LOCAL_COMPENSATION_FAILED
+                            );
+                });
+    }
+
     private void stubApproval() {
         when(paymentClient.confirm(
                 any(PaymentConfirmRequest.class),
@@ -593,6 +793,24 @@ class PaymentFlowIntegrationTest {
                     )
             );
         });
+    }
+
+    private void stubCancellation(
+            Order order,
+            String idempotencyKey,
+            LocalDateTime canceledAt
+    ) {
+        when(paymentClient.cancel(
+                order.getPaymentKey(),
+                idempotencyKey
+        )).thenReturn(new PaymentCancelResponse(
+                order.getOrderId(),
+                order.getPaymentKey(),
+                UUID.randomUUID().toString(),
+                PaymentServerStatus.CANCELED,
+                order.getAmount(),
+                canceledAt
+        ));
     }
 
     private PaymentCreateRequest request() {

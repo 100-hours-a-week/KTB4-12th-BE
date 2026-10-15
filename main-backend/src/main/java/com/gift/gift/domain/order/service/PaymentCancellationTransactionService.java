@@ -1,13 +1,14 @@
 package com.gift.gift.domain.order.service;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.order.entity.CancellationSource;
-import com.gift.gift.domain.order.entity.Order;
-import com.gift.gift.domain.order.entity.PaymentCancellation;
+import com.gift.gift.domain.order.entity.*;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 
 @Service
@@ -15,6 +16,8 @@ import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 public class PaymentCancellationTransactionService {
 
     private final PaymentCancellationRepository cancellationRepository;
+
+    private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PaymentCancellation create(
@@ -33,5 +36,15 @@ public class PaymentCancellationTransactionService {
         );
 
         return cancellationRepository.saveAndFlush(cancellation);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markLocalFailure(Long cancellationId) {
+        cancellationRepository.markFailure(
+                cancellationId,
+                PaymentCancellationStatus.PENDING,
+                PaymentCancellationFailureCode.LOCAL_COMPENSATION_FAILED,
+                LocalDateTime.now(clock)
+        );
     }
 }
