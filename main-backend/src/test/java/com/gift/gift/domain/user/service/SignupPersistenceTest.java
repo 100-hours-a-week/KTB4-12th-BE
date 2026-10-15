@@ -102,16 +102,42 @@ class SignupPersistenceTest {
         reset(consentRepository, passwordEncoder);
 
         jdbcTemplate.update("""
-                DELETE FROM term_consents
-                WHERE user_id IN (
-                    SELECT id FROM users WHERE email = ?
-                )
-                """, email);
+            DELETE FROM credit_transactions
+            WHERE user_id IN (
+                SELECT id
+                FROM users
+                WHERE email = ?
+            )
+            """, email);
 
-        jdbcTemplate.update("DELETE FROM users WHERE email = ?", email);
+        jdbcTemplate.update("""
+            DELETE FROM credit_accounts
+            WHERE user_id IN (
+                SELECT id
+                FROM users
+                WHERE email = ?
+            )
+            """, email);
+
+        jdbcTemplate.update("""
+            DELETE FROM term_consents
+            WHERE user_id IN (
+                SELECT id
+                FROM users
+                WHERE email = ?
+            )
+            """, email);
+
+        jdbcTemplate.update(
+                "DELETE FROM users WHERE email = ?",
+                email
+        );
 
         for (Long termId : createdTermIds) {
-            jdbcTemplate.update("DELETE FROM terms WHERE id = ?", termId);
+            jdbcTemplate.update(
+                    "DELETE FROM terms WHERE id = ?",
+                    termId
+            );
         }
     }
 
