@@ -20,7 +20,7 @@ import com.gift.payment.payment.support.PaymentCancelRequestHasher;
 @RequiredArgsConstructor
 public class PaymentCancelService {
 
-    private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,100}$");
+    private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9:_-]{1,100}$");
 
     private final PaymentRepository paymentRepository;
     private final PaymentCancelRepository paymentCancelRepository;

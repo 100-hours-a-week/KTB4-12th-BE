@@ -38,6 +38,7 @@ public interface GiftHistoryRepository extends JpaRepository<GiftHistory, Long> 
               and gift.recipient.id = :recipientId
               and gift.status =
                     com.gift.gift.domain.gift.entity.GiftStatus.WAITING_FOR_ACCEPTANCE
+              and gift.expiresAt > :completedAt
               and gift.deletedAt is null
             """)
     int complete(
@@ -61,17 +62,55 @@ public interface GiftHistoryRepository extends JpaRepository<GiftHistory, Long> 
                     com.gift.gift.domain.gift.entity.GiftStatus.WAITING_FOR_ACCEPTANCE
               and gift.deletedAt is null
             """)
-    int cancel(@Param("giftId") Long giftId, @Param("canceledAt") LocalDateTime canceledAt);
+    int cancel(
+            @Param("giftId") Long giftId,
+            @Param("canceledAt") LocalDateTime canceledAt
+    );
 
     @Query("""
-            select gift
+            select new com.gift.gift.domain.gift.repository.GiftExpirationCandidate(
+                gift.id,
+                gift.sender.id,
+                gift.orderRecordId,
+                gift.expiresAt
+            )
             from GiftHistory gift
             where gift.status =
                     com.gift.gift.domain.gift.entity.GiftStatus.WAITING_FOR_ACCEPTANCE
-              and gift.expiresAt <= :now
+              and gift.expiresAt <= :cutoff
               and gift.deletedAt is null
             order by gift.expiresAt asc, gift.id asc
             """)
-    List<GiftHistory> findExpired(@Param("now") LocalDateTime now, Pageable pageable);
+    List<GiftExpirationCandidate> findExpired(
+            @Param("cutoff") LocalDateTime cutoff,
+            Pageable pageable
+    );
 
+    @Query("""
+            select new com.gift.gift.domain.gift.repository.GiftExpirationCandidate(
+                gift.id,
+                gift.sender.id,
+                gift.orderRecordId,
+                gift.expiresAt
+            )
+            from GiftHistory gift
+            where gift.status =
+                    com.gift.gift.domain.gift.entity.GiftStatus.WAITING_FOR_ACCEPTANCE
+              and gift.expiresAt <= :cutoff
+              and gift.deletedAt is null
+              and (
+                    gift.expiresAt > :cursorExpiresAt
+                    or (
+                        gift.expiresAt = :cursorExpiresAt
+                        and gift.id > :cursorId
+                    )
+              )
+            order by gift.expiresAt asc, gift.id asc
+            """)
+    List<GiftExpirationCandidate> findExpiredAfter(
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("cursorExpiresAt") LocalDateTime cursorExpiresAt,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable
+    );
 }

@@ -136,6 +136,41 @@ class GiftAcceptancePersistenceTest {
         );
     }
 
+    @Test
+    @DisplayName("수락 시각이 만료 시각과 같으면 선물을 완료할 수 없다")
+    void complete_rejectsExpiredGiftAtBoundary() {
+        TestData data = persistTestData();
+
+        LocalDateTime expiresAt =
+                LocalDateTime.of(2026, 10, 23, 0, 0);
+
+        GiftHistory gift =
+                giftHistoryRepository.saveAndFlush(
+                        createWaitingGift(data, UUID.randomUUID(), expiresAt)
+                );
+
+        int completedCount =
+                giftHistoryRepository.complete(
+                        gift.getId(),
+                        data.recipient().getId(),
+                        expiresAt
+                );
+
+        entityManager.clear();
+
+        GiftHistory found =
+                giftHistoryRepository
+                        .findById(gift.getId())
+                        .orElseThrow();
+
+        assertThat(completedCount).isZero();
+
+        assertThat(found.getStatus())
+                .isEqualTo(GiftStatus.WAITING_FOR_ACCEPTANCE);
+
+        assertThat(found.getCompletedAt()).isNull();
+    }
+
     private TestData persistTestData() {
         String suffix = UUID.randomUUID().toString();
 

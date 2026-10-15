@@ -34,7 +34,9 @@ public class PaymentCancellationRequestService {
     private static final String INTEGRITY_SQL_STATE = "23000";
     private static final int DUPLICATE_ENTRY_CODE = 1062;
 
-    private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,100}$");
+    private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9:_-]{1,100}$");
+
+    private static final String GIFT_EXPIRATION_PREFIX = "GIFT_EXPIRATION:";
 
     private final OrderRepository orderRepository;
     private final GiftHistoryRepository giftHistoryRepository;
@@ -144,12 +146,14 @@ public class PaymentCancellationRequestService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
-        if (idempotencyKey == null
-                || !IDEMPOTENCY_KEY_PATTERN.matcher(idempotencyKey).matches()) {
+        if (source == null) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
-        if (source == null) {
+        if (idempotencyKey == null
+                || !IDEMPOTENCY_KEY_PATTERN.matcher(idempotencyKey).matches()
+                || (source == CancellationSource.USER
+                && idempotencyKey.startsWith(GIFT_EXPIRATION_PREFIX))) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
     }

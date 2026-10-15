@@ -23,7 +23,7 @@ public class PaymentRequestService {
     private static final String IDEMPOTENCY_CONSTRAINT = "uk_orders_payer_idempotency";
     private static final String INTEGRITY_SQL_STATE = "23000";
     private static final int DUPLICATE_ENTRY_CODE = 1062;
-    private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,100}$");
+    private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9:_-]{1,100}$");
 
     private final OrderRepository orderRepository;
     private final PaymentValidator paymentValidator;

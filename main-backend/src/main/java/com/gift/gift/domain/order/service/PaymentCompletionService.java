@@ -16,6 +16,7 @@ import com.gift.gift.domain.credit.repository.CreditAccountRepository;
 import com.gift.gift.domain.credit.repository.CreditTransactionRepository;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
+import com.gift.gift.domain.gift.support.GiftPolicy;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
@@ -32,7 +33,6 @@ import com.gift.gift.domain.user.service.UserQueryService;
 @RequiredArgsConstructor
 public class PaymentCompletionService {
 
-    private static final long GIFT_EXPIRATION_DAYS = 7L;
     private static final String LEDGER_KEY_PREFIX = "PAYMENT_USE:";
 
     private final OrderRepository orderRepository;
@@ -53,8 +53,8 @@ public class PaymentCompletionService {
         }
 
         if (order.getStatus() != OrderStatus.PENDING
-                || order.getApprovalResult()
-                != PaymentApprovalResult.APPROVED) {
+                || order.getApprovalResult() != PaymentApprovalResult.APPROVED) {
+
             throw new OrderException(OrderErrorCode.PAYMENT_STATE_CONFLICT);
         }
 
@@ -100,48 +100,47 @@ public class PaymentCompletionService {
                         OrderErrorCode.PRODUCT_NOT_FOUND
                 ));
 
-        CreditAccount account = creditAccountRepository
-                .findByUserId(order.getPayerId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "결제자의 크레딧 계좌가 존재하지 않습니다."
-                ));
+        CreditAccount account =
+                creditAccountRepository
+                        .findByUserId(order.getPayerId())
+                        .orElseThrow(() ->
+                                new IllegalStateException("결제자의 크레딧 계좌가 존재하지 않습니다."));
 
-        User sender = userQueryService.getReference(
-                order.getPayerId()
-        );
-        User recipient = userQueryService.getReference(
-                order.getRecipientId()
-        );
+        User sender = userQueryService.getReference(order.getPayerId());
 
-        LocalDateTime expiresAt = completedAt.plusDays(
-                GIFT_EXPIRATION_DAYS
-        );
+        User recipient = userQueryService.getReference(order.getRecipientId());
 
-        GiftHistory gift = GiftHistory.waitingForAcceptance(
-                order.getId(),
-                sender,
-                recipient,
-                product,
-                order.getQuantity(),
-                BigDecimal.valueOf(order.getUnitPrice()),
-                product.getName(),
-                UUID.fromString(order.getOrderId()),
-                order.getRequestHash(),
-                expiresAt
-        );
+        LocalDateTime expiresAt = GiftPolicy.expiresAt(completedAt);
+
+        GiftHistory gift =
+                GiftHistory.waitingForAcceptance(
+                        order.getId(),
+                        sender,
+                        recipient,
+                        product,
+                        order.getQuantity(),
+                        BigDecimal.valueOf(
+                                order.getUnitPrice()
+                        ),
+                        product.getName(),
+                        UUID.fromString(order.getOrderId()),
+                        order.getRequestHash(),
+                        expiresAt
+                );
 
         GiftHistory savedGift = giftHistoryRepository.saveAndFlush(gift);
 
-        CreditTransaction transaction = new CreditTransaction(
-                order.getPayerId(),
-                CreditTransactionType.PAYMENT_USE,
-                order.getAmount(),
-                account.getBalance(),
-                order.getId(),
-                savedGift.getId(),
-                null,
-                ledgerKey(order.getId())
-        );
+        CreditTransaction transaction =
+                new CreditTransaction(
+                        order.getPayerId(),
+                        CreditTransactionType.PAYMENT_USE,
+                        order.getAmount(),
+                        account.getBalance(),
+                        order.getId(),
+                        savedGift.getId(),
+                        null,
+                        ledgerKey(order.getId())
+                );
 
         creditTransactionRepository.saveAndFlush(transaction);
 
@@ -156,6 +155,7 @@ public class PaymentCompletionService {
 
     @Transactional(readOnly = true)
     public PaymentCompletion findCompleted(Long orderRecordId) {
+
         Order order = findOrder(orderRecordId);
 
         if (order.getStatus() != OrderStatus.COMPLETED) {
@@ -165,35 +165,30 @@ public class PaymentCompletionService {
         return restore(order);
     }
 
-    private PaymentCompletion resolveConcurrentCompletion(
-            Long orderRecordId
-    ) {
+    private PaymentCompletion resolveConcurrentCompletion(Long orderRecordId) {
+
         Order order = findOrder(orderRecordId);
 
         if (order.getStatus() == OrderStatus.COMPLETED) {
             return restore(order);
         }
 
-        throw new OrderException(
-                OrderErrorCode.PAYMENT_STATE_CONFLICT
-        );
+        throw new OrderException(OrderErrorCode.PAYMENT_STATE_CONFLICT);
     }
 
     private PaymentCompletion restore(Order order) {
         GiftHistory gift = giftHistoryRepository
                 .findByOrderRecordId(order.getId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "완료된 주문의 선물 이력이 존재하지 않습니다."
-                ));
+                .orElseThrow(() ->
+                        new IllegalStateException("완료된 주문의 선물 이력이 존재하지 않습니다."));
 
         CreditTransaction transaction =
                 creditTransactionRepository
                         .findByDeduplicationKey(
                                 ledgerKey(order.getId())
                         )
-                        .orElseThrow(() -> new IllegalStateException(
-                                "완료된 주문의 크레딧 원장이 존재하지 않습니다."
-                        ));
+                        .orElseThrow(() ->
+                                new IllegalStateException("완료된 주문의 크레딧 원장이 존재하지 않습니다."));
 
         return toCompletion(
                 order,
@@ -223,23 +218,19 @@ public class PaymentCompletionService {
 
     private Order findOrder(Long orderRecordId) {
         return orderRepository.findById(orderRecordId)
-                .orElseThrow(() -> new IllegalStateException(
-                        "주문을 찾을 수 없습니다."
-                ));
+                .orElseThrow(() ->
+                        new IllegalStateException("주문을 찾을 수 없습니다."));
     }
 
     private OrderException productFailure(Long productId) {
+
         boolean exists = productQueryService
                 .findAvailableProduct(productId)
                 .isPresent();
 
         return exists
-                ? new OrderException(
-                OrderErrorCode.INSUFFICIENT_STOCK
-        )
-                : new OrderException(
-                OrderErrorCode.PRODUCT_NOT_FOUND
-        );
+                ? new OrderException(OrderErrorCode.INSUFFICIENT_STOCK)
+                : new OrderException(OrderErrorCode.PRODUCT_NOT_FOUND);
     }
 
     private String ledgerKey(Long orderRecordId) {
