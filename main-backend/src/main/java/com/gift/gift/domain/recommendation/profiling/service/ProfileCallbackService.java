@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.product.entity.Product;
@@ -30,7 +31,7 @@ public class ProfileCallbackService {
     private final RecipientRecommendedProductRepository recommendationRepository;
     private final ProductRepository productRepository;
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void saveCallback(
             Long pathRecipientId,
             Long bodyRecipientId,
