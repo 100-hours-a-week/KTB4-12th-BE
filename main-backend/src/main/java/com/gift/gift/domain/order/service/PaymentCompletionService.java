@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,7 @@ import com.gift.gift.domain.gift.support.GiftPolicy;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
+import com.gift.gift.domain.order.event.PaymentCompletedEvent;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
@@ -42,6 +44,7 @@ public class PaymentCompletionService {
     private final CreditTransactionRepository creditTransactionRepository;
     private final GiftHistoryRepository giftHistoryRepository;
     private final UserQueryService userQueryService;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     @Transactional
@@ -89,9 +92,7 @@ public class PaymentCompletionService {
                 );
 
         if (balanceUpdated == 0) {
-            throw new OrderException(
-                    OrderErrorCode.INSUFFICIENT_CREDIT
-            );
+            throw new OrderException(OrderErrorCode.INSUFFICIENT_CREDIT);
         }
 
         Product product = productQueryService
@@ -146,6 +147,15 @@ public class PaymentCompletionService {
 
         Order completedOrder = findOrder(orderRecordId);
 
+        eventPublisher.publishEvent(
+                new PaymentCompletedEvent(
+                        completedOrder.getId(),
+                        completedOrder.getPayerId(),
+                        savedGift.getId(),
+                        savedGift.getProductNameSnapshot()
+                )
+        );
+
         return toCompletion(
                 completedOrder,
                 savedGift,
@@ -155,7 +165,6 @@ public class PaymentCompletionService {
 
     @Transactional(readOnly = true)
     public PaymentCompletion findCompleted(Long orderRecordId) {
-
         Order order = findOrder(orderRecordId);
 
         if (order.getStatus() != OrderStatus.COMPLETED) {
@@ -197,11 +206,7 @@ public class PaymentCompletionService {
         );
     }
 
-    private PaymentCompletion toCompletion(
-            Order order,
-            GiftHistory gift,
-            long balanceAfter
-    ) {
+    private PaymentCompletion toCompletion(Order order, GiftHistory gift, long balanceAfter) {
         return new PaymentCompletion(
                 order.getOrderId(),
                 order.getPaymentKey(),
@@ -223,7 +228,6 @@ public class PaymentCompletionService {
     }
 
     private OrderException productFailure(Long productId) {
-
         boolean exists = productQueryService
                 .findAvailableProduct(productId)
                 .isPresent();

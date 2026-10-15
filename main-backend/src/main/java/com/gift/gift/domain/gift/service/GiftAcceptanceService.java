@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +15,7 @@ import com.gift.gift.domain.credit.repository.CreditAccountRepository;
 import com.gift.gift.domain.credit.repository.CreditTransactionRepository;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.entity.GiftStatus;
+import com.gift.gift.domain.gift.event.GiftCompletedRewardEvent;
 import com.gift.gift.domain.gift.exception.GiftErrorCode;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
@@ -29,7 +31,7 @@ public class GiftAcceptanceService {
     private final GiftHistoryRepository giftHistoryRepository;
     private final CreditAccountRepository creditAccountRepository;
     private final CreditTransactionRepository creditTransactionRepository;
-
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     @Transactional
@@ -77,6 +79,15 @@ public class GiftAcceptanceService {
         creditTransactionRepository.saveAndFlush(reward);
 
         GiftHistory completedGift = findGift(giftId, recipientId);
+
+        eventPublisher.publishEvent(
+                new GiftCompletedRewardEvent(
+                        completedGift.getId(),
+                        senderId,
+                        completedGift
+                                .getProductNameSnapshot()
+                )
+        );
 
         return toResult(completedGift, reward);
     }

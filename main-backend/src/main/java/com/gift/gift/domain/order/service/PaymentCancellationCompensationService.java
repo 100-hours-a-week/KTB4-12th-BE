@@ -1,6 +1,7 @@
 package com.gift.gift.domain.order.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
+import com.gift.gift.domain.order.event.PaymentCanceledEvent;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
@@ -34,6 +36,7 @@ public class PaymentCancellationCompensationService {
     private final CreditAccountRepository creditAccountRepository;
     private final CreditTransactionRepository creditTransactionRepository;
     private final ProductStockService productStockService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public PaymentCancellationResult compensate(PaymentCancellationApproval approval) {
@@ -121,7 +124,22 @@ public class PaymentCancellationCompensationService {
 
         PaymentCancellation completedCancellation = findCancellation(cancellation.getId());
 
-        return restore(completedCancellation, approval.created());
+        PaymentCancellationResult result =
+                restore(
+                        completedCancellation,
+                        approval.created()
+                );
+
+        eventPublisher.publishEvent(
+                new PaymentCanceledEvent(
+                        order.getId(),
+                        order.getPayerId(),
+                        gift.getId(),
+                        gift.getProductNameSnapshot()
+                )
+        );
+
+        return result;
     }
 
     private void validate(Order order, GiftHistory gift, PaymentCancellationApproval approval) {
