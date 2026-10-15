@@ -163,6 +163,14 @@ class GiftAcceptanceFlowIntegrationTest {
     @AfterEach
     void tearDown() {
         jdbcTemplate.update(
+                """
+                delete from notifications
+                where recipient_id in (?, ?)
+                """,
+                senderId,
+                recipientId
+        );
+        jdbcTemplate.update(
                 "delete from credit_transactions where user_id = ?",
                 senderId
         );
