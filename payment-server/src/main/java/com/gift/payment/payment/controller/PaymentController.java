@@ -36,7 +36,7 @@ public class PaymentController {
                     + "[89abAB][0-9a-fA-F]{3}-"
                     + "[0-9a-fA-F]{12}$";
 
-    private static final String IDEMPOTENCY_KEY_PATTERN = "^[A-Za-z0-9_-]{1,100}$";
+    private static final String IDEMPOTENCY_KEY_PATTERN = "^[A-Za-z0-9:_-]{1,100}$";
 
     private final PaymentApprovalService approvalService;
     private final PaymentQueryService queryService;

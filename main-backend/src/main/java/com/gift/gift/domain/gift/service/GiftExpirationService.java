@@ -24,7 +24,7 @@ public class GiftExpirationService {
 
     private static final int BATCH_SIZE = 1_000;
 
-    private static final String IDEMPOTENCY_KEY_PREFIX = "GIFT_EXPIRATION_";
+    private static final String IDEMPOTENCY_KEY_PREFIX = "GIFT_EXPIRATION:";
 
     private final GiftHistoryRepository giftHistoryRepository;
     private final OrderRepository orderRepository;
