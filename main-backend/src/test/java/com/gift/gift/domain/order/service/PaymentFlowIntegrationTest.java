@@ -308,8 +308,20 @@ class PaymentFlowIntegrationTest {
                             );
                 });
 
+        assertThat(notificationCount(recipientId, "GIFT_RECEIVED")).isEqualTo(1);
+        assertThat(notificationCount(payerId, "PAYMENT_COMPLETED")).isEqualTo(1);
+
         verify(paymentClient, times(1))
                 .confirm(any(PaymentConfirmRequest.class), eq("APPROVE"));
+    }
+
+    private int notificationCount(Long recipientId, String type) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE recipient_id = ? AND type = ?",
+                Integer.class,
+                recipientId,
+                type
+        );
     }
 
     @Test
