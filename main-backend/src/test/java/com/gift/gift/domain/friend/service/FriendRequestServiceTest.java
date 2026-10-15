@@ -16,6 +16,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.gift.gift.domain.credit.service.FriendshipCreditService;
 import com.gift.gift.domain.friend.dto.request.FriendRequestCreateRequest;
 import com.gift.gift.domain.friend.dto.response.FriendRequestResponse;
 import com.gift.gift.domain.friend.entity.FriendRequest;
@@ -51,7 +52,14 @@ class FriendRequestServiceTest {
         FriendshipRepository friendships = mock(FriendshipRepository.class);
         UserRepository users = mock(UserRepository.class);
         ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-        FriendRequestCommandService command = new FriendRequestCommandService(requests, friendships, users, events);
+        FriendshipCreditService credits = mock(FriendshipCreditService.class);
+        FriendRequestCommandService command = new FriendRequestCommandService(
+                requests,
+                friendships,
+                users,
+                events,
+                credits
+        );
         FriendRequest existing = request(1L, 2L);
         existing.complete(terminal);
         when(requests.findForUpdate(10L)).thenReturn(Optional.of(existing));
@@ -63,7 +71,7 @@ class FriendRequestServiceTest {
         assertThatThrownBy(() -> invoke(command, 3L, terminal))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.FRIEND_REQUEST_NOT_FOUND));
-        verifyNoInteractions(friendships, users, events);
+        verifyNoInteractions(friendships, users, events, credits);
     }
 
     private FriendRequestResponse invoke(

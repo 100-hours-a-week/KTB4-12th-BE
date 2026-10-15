@@ -25,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import com.gift.gift.domain.credit.service.SignupCreditService;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
@@ -41,6 +42,7 @@ class FriendGiftFlowIntegrationTest {
     @Autowired private ObjectMapper mapper;
     @Autowired private EntityManager entityManager;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private SignupCreditService signupCreditService;
     @Autowired private JdbcTemplate jdbc;
 
     private User requester;
@@ -66,6 +68,8 @@ class FriendGiftFlowIntegrationTest {
             entityManager.persist(category);
             entityManager.persist(product);
             entityManager.flush();
+            signupCreditService.grant(requester.getId());
+            signupCreditService.grant(receiver.getId());
             rootId = root.getId();
             categoryId = category.getId();
             productId = product.getId();
@@ -186,12 +190,14 @@ class FriendGiftFlowIntegrationTest {
     @AfterEach
     void cleanUp() {
         jdbc.update("DELETE FROM notifications WHERE recipient_id IN (?, ?)", requester.getId(), receiver.getId());
+        jdbc.update("DELETE FROM credit_transactions WHERE user_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM gift_histories WHERE product_id = ?", productId);
         jdbc.update("DELETE FROM friend_requests WHERE requester_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM friendships WHERE user_id_1 IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM products WHERE id = ?", productId);
         jdbc.update("DELETE FROM categories WHERE id = ?", categoryId);
         jdbc.update("DELETE FROM categories WHERE id = ?", rootId);
+        jdbc.update("DELETE FROM credit_accounts WHERE user_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM users WHERE id IN (?, ?)", requester.getId(), receiver.getId());
     }
 }
