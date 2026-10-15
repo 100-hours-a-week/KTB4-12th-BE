@@ -1,11 +1,18 @@
 package com.gift.gift.domain.recommendation.profiling.service;
 
 import java.math.BigDecimal;
+import java.sql.Connection;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.persistence.EntityManager;
 
@@ -13,6 +20,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -41,10 +50,16 @@ import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.mockingDetails;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -300,7 +315,8 @@ class ProfileCallbackTransactionIntegrationTest {
 
         doAnswer(invocation -> {
             // 실제 추천 저장을 먼저 실행한다.
-            Object result = invocation.callRealMethod();
+            Object result = mockingDetails(recommendationRepository)
+                    .getMockCreationSettings().getDefaultAnswer().answer(invocation);
 
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {
@@ -309,6 +325,11 @@ class ProfileCallbackTransactionIntegrationTest {
                         public void beforeCommit(boolean readOnly) {
                             // 서비스에서 변경한 프로파일 상태도 DB에 반영한다.
                             entityManager.flush();
+                            Number inserted = (Number) entityManager.createNativeQuery(
+                                            "SELECT COUNT(*) FROM recipient_recommended_products "
+                                                    + "WHERE recipient_id = :id AND source_version = 2")
+                                    .setParameter("id", recipientId).getSingleResult();
+                            assertThat(inserted.intValue()).isEqualTo(2);
 
                             // 실제 커밋 전에 실패시켜 전체 롤백을 검증한다.
                             throw new DataAccessResourceFailureException(
@@ -387,6 +408,130 @@ class ProfileCallbackTransactionIntegrationTest {
                 .andExpect(status().isOk());
 
         assertThat(snapshot()).isEqualTo(beforeCallback);
+    }
+
+    @Test
+    @DisplayName("HTTP 콜백은 실제 MySQL RC로 실행하고 다음 트랜잭션은 기존 RR을 유지한다")
+    void callback_usesReadCommittedWithoutLeakingToOtherTransactions() throws Exception {
+        AtomicReference<String> isolation = new AtomicReference<>();
+        doAnswer(invocation -> {
+            isolation.set((String) entityManager.createNativeQuery(
+                    "SELECT @@transaction_isolation").getSingleResult());
+            assertThat(TransactionSynchronizationManager.getCurrentTransactionIsolationLevel())
+                    .isEqualTo(Connection.TRANSACTION_READ_COMMITTED);
+            return mockingDetails(recommendationRepository)
+                    .getMockCreationSettings().getDefaultAnswer().answer(invocation);
+        }).when(recommendationRepository).deleteAllByRecipientId(anyLong());
+
+        send(2, replacementProductIds()).andExpect(status().isOk());
+
+        assertThat(isolation.get()).isEqualTo("READ-COMMITTED");
+        String nextIsolation = transactions.execute(status -> (String) entityManager
+                .createNativeQuery("SELECT @@transaction_isolation").getSingleResult());
+        assertThat(nextIsolation).isEqualTo("REPEATABLE-READ");
+    }
+
+    @Test
+    @DisplayName("상품 조회 후 동시 삭제로 FK 저장이 실패해도 기존 추천과 프로필은 롤백된다")
+    void callback_rollsBackWhenProductIsDeletedAfterLookup() throws Exception {
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            doAnswer(invocation -> {
+                // 상품 SELECT는 끝났고 새 추천 INSERT는 시작 전인 시점이다.
+                executor.submit(() -> transactions.executeWithoutResult(status -> {
+                    productRepository.deleteById(productIds.get(2));
+                    productRepository.flush();
+                })).get(5, TimeUnit.SECONDS);
+                return mockingDetails(recommendationRepository)
+                        .getMockCreationSettings().getDefaultAnswer().answer(invocation);
+            }).when(recommendationRepository).deleteAllByRecipientId(anyLong());
+
+            expectInternalServerError(send(2, replacementProductIds()));
+
+            assertThat(productRepository.existsById(productIds.get(2))).isFalse();
+            assertThat(snapshot()).isEqualTo(beforeCallback);
+        } finally {
+            executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    @DisplayName("동일 사용자 동일 버전 동시 콜백은 한 번만 저장하고 미커밋 교체는 조회에 보이지 않는다")
+    void concurrentDuplicateCallbacks_preserveIdempotencyAndReadVisibility() throws Exception {
+        clearInvocations(recommendationRepository);
+        overlapCallbacks(2, replacementProductIds(), 2, productIds, 200);
+
+        verify(recommendationRepository, times(1)).saveAllAndFlush(anyList());
+        assertThat(snapshot().recommendations()).extracting(RecommendationRow::productId)
+                .containsExactlyElementsOf(replacementProductIds());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("동일 사용자 버전 경합은 도착 순서와 무관하게 최신 추천과 완료 상태를 보존한다")
+    void concurrentVersions_keepLatestResult(boolean newerFirst) throws Exception {
+        transactions.executeWithoutResult(status -> {
+            RecipientProfile profile = profileRepository.findByRecipientIdForUpdate(recipientId).orElseThrow();
+            profile.createNextSourceVersion();
+            profile.markPending(PENDING_AT.plusHours(1));
+        });
+        List<Long> latestIds = List.of(productIds.get(1), productIds.get(2));
+        if (newerFirst) {
+            overlapCallbacks(3, latestIds, 2, replacementProductIds(), 409);
+        } else {
+            overlapCallbacks(2, replacementProductIds(), 3, latestIds, 200);
+        }
+        Snapshot after = snapshot();
+        assertThat(after.sourceVersion()).isEqualTo(3);
+        assertThat(after.analyzedSourceVersion()).isEqualTo(3);
+        assertThat(after.profileStatus()).isEqualTo(RecipientProfileStatus.COMPLETED);
+        assertThat(after.recommendations()).extracting(RecommendationRow::productId)
+                .containsExactlyElementsOf(latestIds);
+        assertThat(after.recommendations()).extracting(RecommendationRow::sourceVersion)
+                .containsOnly(3L);
+    }
+
+    private void overlapCallbacks(long firstVersion, List<Long> firstIds,
+                                  long secondVersion, List<Long> secondIds,
+                                  int secondStatus) throws Exception {
+        Snapshot committed = snapshot();
+        CountDownLatch inserted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            Object result = mockingDetails(recommendationRepository)
+                    .getMockCreationSettings().getDefaultAnswer().answer(invocation);
+            if (first.compareAndSet(true, false)) {
+                inserted.countDown();
+                if (!release.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("콜백 경합 시험 대기 시간 초과");
+                }
+            }
+            return result;
+        }).when(recommendationRepository).saveAllAndFlush(anyList());
+
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var firstCall = executor.submit(() -> send(firstVersion, firstIds));
+            assertThat(inserted.await(10, TimeUnit.SECONDS)).isTrue();
+            // 새 추천 INSERT가 끝나도 커밋 전에는 다른 연결에 기존 추천만 보인다.
+            assertThat(snapshot()).isEqualTo(committed);
+            var secondCall = executor.submit(() -> {
+                secondStarted.countDown();
+                return send(secondVersion, secondIds);
+            });
+            assertThat(secondStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThrows(TimeoutException.class, () -> secondCall.get(200, TimeUnit.MILLISECONDS));
+            release.countDown();
+            firstCall.get(10, TimeUnit.SECONDS).andExpect(status().isOk());
+            secondCall.get(10, TimeUnit.SECONDS).andExpect(status().is(secondStatus));
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(10, TimeUnit.SECONDS);
+        }
     }
 
     private Product createProduct(
