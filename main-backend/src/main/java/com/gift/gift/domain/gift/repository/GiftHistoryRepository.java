@@ -38,6 +38,7 @@ public interface GiftHistoryRepository extends JpaRepository<GiftHistory, Long> 
               and gift.recipient.id = :recipientId
               and gift.status =
                     com.gift.gift.domain.gift.entity.GiftStatus.WAITING_FOR_ACCEPTANCE
+              and gift.expiresAt > :completedAt
               and gift.deletedAt is null
             """)
     int complete(

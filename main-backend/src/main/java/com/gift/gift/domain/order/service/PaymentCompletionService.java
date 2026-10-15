@@ -16,6 +16,7 @@ import com.gift.gift.domain.credit.repository.CreditAccountRepository;
 import com.gift.gift.domain.credit.repository.CreditTransactionRepository;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
+import com.gift.gift.domain.gift.support.GiftPolicy;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
@@ -102,20 +103,12 @@ public class PaymentCompletionService {
 
         CreditAccount account = creditAccountRepository
                 .findByUserId(order.getPayerId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "결제자의 크레딧 계좌가 존재하지 않습니다."
-                ));
+                .orElseThrow(() -> new IllegalStateException("결제자의 크레딧 계좌가 존재하지 않습니다."));
 
-        User sender = userQueryService.getReference(
-                order.getPayerId()
-        );
-        User recipient = userQueryService.getReference(
-                order.getRecipientId()
-        );
+        User sender = userQueryService.getReference(order.getPayerId());
+        User recipient = userQueryService.getReference(order.getRecipientId());
 
-        LocalDateTime expiresAt = completedAt.plusDays(
-                GIFT_EXPIRATION_DAYS
-        );
+         LocalDateTime expiresAt = GiftPolicy.expiresAt(completedAt);
 
         GiftHistory gift = GiftHistory.waitingForAcceptance(
                 order.getId(),
@@ -165,9 +158,8 @@ public class PaymentCompletionService {
         return restore(order);
     }
 
-    private PaymentCompletion resolveConcurrentCompletion(
-            Long orderRecordId
-    ) {
+    private PaymentCompletion resolveConcurrentCompletion(Long orderRecordId) {
+
         Order order = findOrder(orderRecordId);
 
         if (order.getStatus() == OrderStatus.COMPLETED) {
@@ -234,12 +226,8 @@ public class PaymentCompletionService {
                 .isPresent();
 
         return exists
-                ? new OrderException(
-                OrderErrorCode.INSUFFICIENT_STOCK
-        )
-                : new OrderException(
-                OrderErrorCode.PRODUCT_NOT_FOUND
-        );
+                ? new OrderException(OrderErrorCode.INSUFFICIENT_STOCK)
+                    : new OrderException(OrderErrorCode.PRODUCT_NOT_FOUND);
     }
 
     private String ledgerKey(Long orderRecordId) {
