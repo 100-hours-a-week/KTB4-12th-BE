@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import com.gift.gift.domain.auth.dto.request.LoginRequest;
 import com.gift.gift.domain.auth.exception.AuthErrorCode;
 import com.gift.gift.domain.auth.exception.AuthException;
+import com.gift.gift.domain.credit.service.DailyAttendanceCreditService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;
@@ -32,12 +33,11 @@ public class LoginService {
     private final AccessTokenProvider accessTokenProvider;
     private final RefreshTokenProvider refreshTokenProvider;
     private final LoginSessionService loginSessionService;
+    private final DailyAttendanceCreditService dailyAttendanceCreditService;
     private final Clock clock;
 
-    public LoginResult login(
-            LoginRequest request,
-            String existingRefreshToken
-    ) {
+    public LoginResult login(LoginRequest request, String existingRefreshToken) {
+
         String email = request.email();
 
         loginRateLimiter.checkEmailAttempt(email);
@@ -49,39 +49,24 @@ public class LoginService {
                 )
                 .orElse(null);
 
-        if (!matchesCredentials(
-                user,
-                request.password()
-        )) {
+        if (!matchesCredentials(user, request.password())) {
+
             loginRateLimiter.recordFailure(email);
 
-            throw new AuthException(
-                    AuthErrorCode.INVALID_CREDENTIALS
-            );
+            throw new AuthException(AuthErrorCode.INVALID_CREDENTIALS);
         }
 
         loginRateLimiter.resetAfterSuccess(email);
 
-        IssuedAccessToken accessToken =
-                accessTokenProvider.issue(
-                        user.getId()
-                );
+        IssuedAccessToken accessToken = accessTokenProvider.issue(user.getId());
 
-        String refreshToken =
-                refreshTokenProvider.generate();
+        String refreshToken = refreshTokenProvider.generate();
 
-        String refreshTokenHash =
-                refreshTokenProvider.hash(
-                        refreshToken
-                );
+        String refreshTokenHash = refreshTokenProvider.hash(refreshToken);
 
-        LocalDateTime authenticatedAt =
-                LocalDateTime.now(clock);
+        LocalDateTime authenticatedAt = LocalDateTime.now(clock);
 
-        LocalDateTime expiresAt =
-                authenticatedAt.plus(
-                        REFRESH_TOKEN_TTL
-                );
+        LocalDateTime expiresAt = authenticatedAt.plus(REFRESH_TOKEN_TTL);
 
         loginSessionService.saveLoginSession(
                 user,
@@ -91,10 +76,9 @@ public class LoginService {
                 expiresAt
         );
 
-        long expiresIn = Duration.between(
-                accessToken.issuedAt(),
-                accessToken.expiresAt()
-        ).toSeconds();
+        dailyAttendanceCreditService.grant(user.getId());
+
+        long expiresIn = Duration.between(accessToken.issuedAt(), accessToken.expiresAt()).toSeconds();
 
         return new LoginResult(
                 accessToken.value(),
@@ -107,14 +91,9 @@ public class LoginService {
         );
     }
 
-    private boolean matchesCredentials(
-            User user,
-            String rawPassword
-    ) {
+    private boolean matchesCredentials(User user, String rawPassword) {
         return user != null
-                && passwordEncoder.matches(
-                rawPassword,
-                user.getPasswordHash()
+                && passwordEncoder.matches(rawPassword, user.getPasswordHash()
         );
     }
 }
