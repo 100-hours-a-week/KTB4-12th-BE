@@ -1,8 +1,12 @@
 package com.gift.gift.domain.gift.query;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Objects;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import com.gift.gift.domain.gift.dto.response.GiftReceivedDetailResponse;
@@ -12,17 +16,22 @@ import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
 import com.gift.gift.domain.gift.repository.GiftQueryRow;
 
 @Component
+@RequiredArgsConstructor
 public class GiftResponseMapper {
 
     private static final String DELETED_USER_NAME = "탈퇴한 사용자";
     private static final String UNKNOWN_USER_NAME = "알 수 없음";
+    private final Clock clock;
 
-    public SentGiftListItem toSentListItem(GiftQueryRow row, String thumbnailUrl) {
+    public SentGiftListItem toSentListItem(GiftQueryRow row, String orderId, String thumbnailUrl) {
         Objects.requireNonNull(row, "선물 조회 결과는 필수입니다.");
 
         return SentGiftListItem.from(
                 row.giftId(),
-                row.completedAt(),
+                orderId,
+                row.giftStatus(),
+                toOffsetDateTime(row.expiresAt()),
+                row.createdAt(),
                 new SentGiftListItem.Recipient(row.counterpartUserId(), counterpartName(row)),
                 new SentGiftListItem.Product(
                         row.productId(),
@@ -36,12 +45,15 @@ public class GiftResponseMapper {
         );
     }
 
-    public ReceivedGiftListItem toReceivedListItem(GiftQueryRow row, String thumbnailUrl) {
+    public ReceivedGiftListItem toReceivedListItem(GiftQueryRow row, String orderId, String thumbnailUrl) {
         Objects.requireNonNull(row, "선물 조회 결과는 필수입니다.");
 
         return ReceivedGiftListItem.from(
                 row.giftId(),
-                row.completedAt(),
+                orderId,
+                row.giftStatus(),
+                toOffsetDateTime(row.expiresAt()),
+                row.createdAt(),
                 new ReceivedGiftListItem.Sender(row.counterpartUserId(), counterpartName(row)),
                 new ReceivedGiftListItem.Product(
                         row.productId(),
@@ -55,12 +67,15 @@ public class GiftResponseMapper {
         );
     }
 
-    public GiftSentDetailResponse toSentDetail(GiftQueryRow row, String imageUrl) {
+    public GiftSentDetailResponse toSentDetail(GiftQueryRow row, String orderId, String imageUrl) {
         Objects.requireNonNull(row, "선물 조회 결과는 필수입니다.");
 
         return GiftSentDetailResponse.from(
                 row.giftId(),
-                row.completedAt(),
+                orderId,
+                row.giftStatus(),
+                toOffsetDateTime(row.expiresAt()),
+                row.createdAt(),
                 new GiftSentDetailResponse.Recipient(row.counterpartUserId(), counterpartName(row)),
                 new GiftSentDetailResponse.Product(
                         row.productId(),
@@ -74,12 +89,15 @@ public class GiftResponseMapper {
         );
     }
 
-    public GiftReceivedDetailResponse toReceivedDetail(GiftQueryRow row, String imageUrl) {
+    public GiftReceivedDetailResponse toReceivedDetail(GiftQueryRow row, String orderId, String imageUrl) {
         Objects.requireNonNull(row, "선물 조회 결과는 필수입니다.");
 
         return GiftReceivedDetailResponse.from(
                 row.giftId(),
-                row.completedAt(),
+                orderId,
+                row.giftStatus(),
+                toOffsetDateTime(row.expiresAt()),
+                row.createdAt(),
                 new GiftReceivedDetailResponse.Sender(row.counterpartUserId(), counterpartName(row)),
                 new GiftReceivedDetailResponse.Product(
                         row.productId(),
@@ -103,5 +121,9 @@ public class GiftResponseMapper {
 
     private BigDecimal totalPrice(GiftQueryRow row) {
         return row.productPriceSnapshot().multiply(BigDecimal.valueOf(row.quantity()));
+    }
+
+    private OffsetDateTime toOffsetDateTime(LocalDateTime dateTime) {
+        return dateTime == null ? null : dateTime.atZone(clock.getZone()).toOffsetDateTime();
     }
 }

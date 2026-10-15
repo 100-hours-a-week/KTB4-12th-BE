@@ -17,6 +17,7 @@ import com.gift.gift.domain.gift.dto.response.GiftSentDetailResponse;
 import com.gift.gift.domain.gift.dto.response.ReceivedGiftListItem;
 import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
 import com.gift.gift.domain.gift.exception.GiftException;
+import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.gift.query.GiftPage;
 import com.gift.gift.domain.gift.query.GiftPageAssembler;
 import com.gift.gift.domain.gift.query.GiftResponseMapper;
@@ -25,6 +26,8 @@ import com.gift.gift.domain.gift.repository.GiftQueryRepository;
 import com.gift.gift.domain.gift.repository.GiftQueryRow;
 import com.gift.gift.domain.gift.support.GiftCursor;
 import com.gift.gift.domain.product.service.ProductQueryService;
+import com.gift.gift.domain.order.entity.Order;
+import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
@@ -42,6 +45,7 @@ class GiftQueryServiceTest {
     private GiftPageAssembler pageAssembler;
     private GiftResponseMapper responseMapper;
     private ProductQueryService productQueryService;
+    private OrderRepository orderRepository;
     private GiftQueryService giftQueryService;
 
     @BeforeEach
@@ -51,12 +55,14 @@ class GiftQueryServiceTest {
         pageAssembler = mock(GiftPageAssembler.class);
         responseMapper = mock(GiftResponseMapper.class);
         productQueryService = mock(ProductQueryService.class);
+        orderRepository = mock(OrderRepository.class);
         giftQueryService = new GiftQueryService(
                 giftQueryRepository,
                 cursorCodec,
                 pageAssembler,
                 responseMapper,
-                productQueryService
+                productQueryService,
+                orderRepository
         );
     }
 
@@ -72,7 +78,8 @@ class GiftQueryServiceTest {
         when(pageAssembler.assemble(List.of(row))).thenReturn(new GiftPage(List.of(row), true, "next"));
         when(productQueryService.findThumbnailUrls(List.of(3L)))
                 .thenReturn(Map.of(3L, "https://image.example/main.jpg"));
-        when(responseMapper.toSentListItem(row, "https://image.example/main.jpg")).thenReturn(item);
+        mockOrder();
+        when(responseMapper.toSentListItem(row, "order-id", "https://image.example/main.jpg")).thenReturn(item);
 
         CursorPageResponse<SentGiftListItem> result = giftQueryService.getSentGifts(1L, rawCursor);
 
@@ -91,7 +98,8 @@ class GiftQueryServiceTest {
         when(pageAssembler.assemble(List.of(row))).thenReturn(new GiftPage(List.of(row), false, null));
         when(productQueryService.findThumbnailUrls(List.of(3L)))
                 .thenReturn(Map.of(3L, "https://image.example/main.jpg"));
-        when(responseMapper.toReceivedListItem(row, "https://image.example/main.jpg")).thenReturn(item);
+        mockOrder();
+        when(responseMapper.toReceivedListItem(row, "order-id", "https://image.example/main.jpg")).thenReturn(item);
 
         CursorPageResponse<ReceivedGiftListItem> result = giftQueryService.getReceivedGifts(1L, null);
 
@@ -106,7 +114,8 @@ class GiftQueryServiceTest {
         when(giftQueryRepository.findSentGiftDetail(10L, 1L)).thenReturn(Optional.of(row));
         when(productQueryService.findThumbnailUrls(List.of(3L)))
                 .thenReturn(Map.of(3L, "https://image.example/main.jpg"));
-        when(responseMapper.toSentDetail(row, "https://image.example/main.jpg")).thenReturn(response);
+        mockOrder();
+        when(responseMapper.toSentDetail(row, "order-id", "https://image.example/main.jpg")).thenReturn(response);
 
         assertThat(giftQueryService.getSentGiftDetail(1L, 10L)).isSameAs(response);
     }
@@ -119,7 +128,8 @@ class GiftQueryServiceTest {
         when(giftQueryRepository.findReceivedGiftDetail(10L, 1L)).thenReturn(Optional.of(row));
         when(productQueryService.findThumbnailUrls(List.of(3L)))
                 .thenReturn(Collections.singletonMap(3L, null));
-        when(responseMapper.toReceivedDetail(row, null)).thenReturn(response);
+        mockOrder();
+        when(responseMapper.toReceivedDetail(row, "order-id", null)).thenReturn(response);
 
         assertThat(giftQueryService.getReceivedGiftDetail(1L, 10L)).isSameAs(response);
     }
@@ -172,7 +182,10 @@ class GiftQueryServiceTest {
     private GiftQueryRow row() {
         return new GiftQueryRow(
                 10L,
+                20L,
                 LocalDateTime.of(2026, 9, 17, 20, 0),
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                LocalDateTime.of(2026, 9, 24, 20, 0),
                 2L,
                 "상대 사용자",
                 null,
@@ -182,5 +195,12 @@ class GiftQueryServiceTest {
                 2,
                 "브랜드"
         );
+    }
+
+    private void mockOrder() {
+        Order order = mock(Order.class);
+        when(order.getId()).thenReturn(20L);
+        when(order.getOrderId()).thenReturn("order-id");
+        when(orderRepository.findAllById(List.of(20L))).thenReturn(List.of(order));
     }
 }

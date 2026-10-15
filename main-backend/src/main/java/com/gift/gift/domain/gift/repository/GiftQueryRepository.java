@@ -18,7 +18,10 @@ public class GiftQueryRepository {
     private static final String SELECT_FROM = """
             SELECT new com.gift.gift.domain.gift.repository.GiftQueryRow(
                 g.id,
-                g.completedAt,
+                g.orderRecordId,
+                g.createdAt,
+                g.status,
+                g.expiresAt,
                 counterpart.id,
                 counterpart.name,
                 counterpart.deletedAt,
@@ -32,19 +35,24 @@ public class GiftQueryRepository {
             JOIN g.%s counterpart
             JOIN g.product product
             WHERE g.%s.id = :userId
-                AND g.status = com.gift.gift.domain.gift.entity.GiftStatus.COMPLETED
+                AND g.orderRecordId IS NOT NULL
+                AND g.status IN (
+                    com.gift.gift.domain.gift.entity.GiftStatus.WAITING_FOR_ACCEPTANCE,
+                    com.gift.gift.domain.gift.entity.GiftStatus.COMPLETED,
+                    com.gift.gift.domain.gift.entity.GiftStatus.CANCELED
+                )
                 AND g.deletedAt IS NULL
             """;
 
     private static final String CURSOR_CONDITION = """
             AND (
-                g.completedAt < :cursorCompletedAt
-                OR (g.completedAt = :cursorCompletedAt AND g.id < :cursorId)
+                g.createdAt < :cursorCreatedAt
+                OR (g.createdAt = :cursorCreatedAt AND g.id < :cursorId)
             )
             """;
 
     private static final String ORDER_BY = """
-            ORDER BY g.completedAt DESC, g.id DESC
+            ORDER BY g.createdAt DESC, g.id DESC
             """;
 
     private static final String COUNT_SENT_AND_RECEIVED = """
@@ -104,7 +112,7 @@ public class GiftQueryRepository {
                 .setMaxResults(PaginationPolicy.CURSOR_FETCH_SIZE);
 
         if (cursor != null) {
-            query.setParameter("cursorCompletedAt", cursor.lastCompletedAt());
+            query.setParameter("cursorCreatedAt", cursor.lastCreatedAt());
             query.setParameter("cursorId", cursor.lastId());
         }
 

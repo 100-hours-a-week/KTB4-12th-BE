@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -59,6 +60,8 @@ class GiftControllerTest {
 
     private static final Long USER_ID = 1L;
     private static final LocalDateTime COMPLETED_AT = LocalDateTime.of(2026, 8, 29, 14, 20);
+    private static final OffsetDateTime EXPIRES_AT = OffsetDateTime.parse("2026-09-05T14:20:00+09:00");
+    private static final String ORDER_ID = "550e8400-e29b-41d4-a716-446655440000";
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final UUID IDEMPOTENCY_KEY = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
@@ -126,6 +129,9 @@ class GiftControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("보낸 선물 목록을 조회했습니다."))
                 .andExpect(jsonPath("$.data.items[0].giftId").value(301))
+                .andExpect(jsonPath("$.data.items[0].orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.items[0].giftStatus").value("WAITING_FOR_ACCEPTANCE"))
+                .andExpect(jsonPath("$.data.items[0].expiresAt").value("2026-09-05T14:20:00+09:00"))
                 .andExpect(jsonPath("$.data.items[0].recipient.name").value("김민정"))
                 .andExpect(jsonPath("$.data.items[0].product.thumbnailUrl").value("https://cdn.example.com/51.jpg"))
                 .andExpect(jsonPath("$.data.items[0].totalPrice").value(70000))
@@ -176,6 +182,9 @@ class GiftControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("받은 선물 목록을 조회했습니다."))
                 .andExpect(jsonPath("$.data.items[0].giftId").value(410))
+                .andExpect(jsonPath("$.data.items[0].orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.items[0].giftStatus").value("WAITING_FOR_ACCEPTANCE"))
+                .andExpect(jsonPath("$.data.items[0].expiresAt").value("2026-09-05T14:20:00+09:00"))
                 .andExpect(jsonPath("$.data.items[0].sender.name").value("박선물"))
                 .andExpect(jsonPath("$.data.items[0].product.thumbnailUrl").value("https://cdn.example.com/51.jpg"))
                 .andExpect(jsonPath("$.data.pagination.nextCursor").value("next-cursor"))
@@ -225,6 +234,8 @@ class GiftControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("보낸 선물 상세 정보를 조회했습니다."))
                 .andExpect(jsonPath("$.data.giftId").value(301))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.giftStatus").value("WAITING_FOR_ACCEPTANCE"))
                 .andExpect(jsonPath("$.data.recipient.name").value("김민정"))
                 .andExpect(jsonPath("$.data.product.imageUrl").value("https://cdn.example.com/51.jpg"))
                 .andExpect(jsonPath("$.error").doesNotExist());
@@ -242,6 +253,8 @@ class GiftControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("받은 선물 상세 정보를 조회했습니다."))
                 .andExpect(jsonPath("$.data.giftId").value(410))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.giftStatus").value("WAITING_FOR_ACCEPTANCE"))
                 .andExpect(jsonPath("$.data.sender.name").value("박선물"))
                 .andExpect(jsonPath("$.data.product.imageUrl").value("https://cdn.example.com/51.jpg"))
                 .andExpect(jsonPath("$.error").doesNotExist());
@@ -584,6 +597,9 @@ class GiftControllerTest {
     private SentGiftListItem sentListItem() {
         return SentGiftListItem.from(
                 301L,
+                ORDER_ID,
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                EXPIRES_AT,
                 COMPLETED_AT,
                 new SentGiftListItem.Recipient(27L, "김민정"),
                 new SentGiftListItem.Product(51L, "오 드 퍼퓸 50ml", "Example Brand", "https://cdn.example.com/51.jpg"),
@@ -596,6 +612,9 @@ class GiftControllerTest {
     private ReceivedGiftListItem receivedListItem() {
         return ReceivedGiftListItem.from(
                 410L,
+                ORDER_ID,
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                EXPIRES_AT,
                 COMPLETED_AT,
                 new ReceivedGiftListItem.Sender(12L, "박선물"),
                 new ReceivedGiftListItem.Product(51L, "오 드 퍼퓸 50ml", "Example Brand", "https://cdn.example.com/51.jpg"),
@@ -608,6 +627,9 @@ class GiftControllerTest {
     private GiftSentDetailResponse sentDetail() {
         return GiftSentDetailResponse.from(
                 301L,
+                ORDER_ID,
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                EXPIRES_AT,
                 COMPLETED_AT,
                 new GiftSentDetailResponse.Recipient(27L, "김민정"),
                 new GiftSentDetailResponse.Product(
@@ -622,6 +644,9 @@ class GiftControllerTest {
     private GiftReceivedDetailResponse receivedDetail() {
         return GiftReceivedDetailResponse.from(
                 410L,
+                ORDER_ID,
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                EXPIRES_AT,
                 COMPLETED_AT,
                 new GiftReceivedDetailResponse.Sender(12L, "박선물"),
                 new GiftReceivedDetailResponse.Product(

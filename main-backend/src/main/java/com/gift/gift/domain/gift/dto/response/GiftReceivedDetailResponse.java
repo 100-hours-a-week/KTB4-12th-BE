@@ -2,9 +2,15 @@ package com.gift.gift.domain.gift.dto.response;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+
+import com.gift.gift.domain.gift.entity.GiftStatus;
 
 public record GiftReceivedDetailResponse(
         Long giftId,
+        String orderId,
+        GiftStatus giftStatus,
+        OffsetDateTime expiresAt,
         LocalDateTime receivedAt,
         Sender sender,
         Product product,
@@ -15,6 +21,9 @@ public record GiftReceivedDetailResponse(
 
     public static GiftReceivedDetailResponse from(
             Long giftId,
+            String orderId,
+            GiftStatus giftStatus,
+            OffsetDateTime expiresAt,
             LocalDateTime receivedAt,
             Sender sender,
             Product product,
@@ -24,6 +33,9 @@ public record GiftReceivedDetailResponse(
     ) {
         return new GiftReceivedDetailResponse(
                 giftId,
+                orderId,
+                giftStatus,
+                expiresAt,
                 receivedAt,
                 sender,
                 product,
