@@ -28,7 +28,7 @@ public class AuthenticationDataCleanupScheduler {
     private final Clock clock;
 
     @Scheduled(
-            cron = "0 0 3 * * *",
+            cron = "0 0 4 * * *",
             zone = "Asia/Seoul"
     )
     public void cleanupAuthenticationData() {

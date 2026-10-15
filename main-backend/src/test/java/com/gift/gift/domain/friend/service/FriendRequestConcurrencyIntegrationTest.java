@@ -19,6 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import com.gift.gift.domain.credit.service.FriendshipCreditService;
+import com.gift.gift.domain.credit.service.SignupCreditService;
 import com.gift.gift.domain.friend.dto.request.FriendRequestCreateRequest;
 import com.gift.gift.domain.friend.dto.response.FriendRequestResponse;
 import com.gift.gift.domain.friend.entity.FriendRequest;
@@ -40,6 +42,8 @@ class FriendRequestConcurrencyIntegrationTest {
     @Autowired private FriendRequestRepository requests;
     @Autowired private FriendshipRepository friendships;
     @Autowired private UserRepository users;
+    @Autowired private SignupCreditService signupCreditService;
+    @Autowired private FriendshipCreditService friendshipCreditService;
     @Autowired private JdbcTemplate jdbc;
 
     private final List<Long> userIds = new ArrayList<>();
@@ -78,6 +82,7 @@ class FriendRequestConcurrencyIntegrationTest {
         if (restore) {
             old = friendships.saveAndFlush(new Friendship(first, second));
             old = friendships.findById(old.getId()).orElseThrow();
+            friendshipCreditService.grant(old);
             friendService.remove(first.getId(), old.getId());
         }
         Long id = requests.saveAndFlush(new FriendRequest(first, second)).getId();
@@ -97,6 +102,8 @@ class FriendRequestConcurrencyIntegrationTest {
             assertThat(relation.getId()).isEqualTo(old.getId());
             assertThat(relation.getCreatedAt()).isEqualTo(old.getCreatedAt());
         }
+        assertRewardedOnce(first);
+        assertRewardedOnce(second);
     }
 
     @ParameterizedTest
@@ -208,16 +215,32 @@ class FriendRequestConcurrencyIntegrationTest {
     private User user() {
         User saved = users.saveAndFlush(new User(UUID.randomUUID() + "@example.com",
                 "$2a$10$" + "a".repeat(53), "동시성 친구", LocalDate.of(2000, 1, 1)));
+        signupCreditService.grant(saved.getId());
         userIds.add(saved.getId());
         return saved;
+    }
+
+    private void assertRewardedOnce(User user) {
+        assertThat(jdbc.queryForObject(
+                "SELECT balance FROM credit_accounts WHERE user_id = ?",
+                Long.class,
+                user.getId()
+        )).isEqualTo(600_000L);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM credit_transactions WHERE user_id = ? AND type = 'FRIENDSHIP_REWARD'",
+                Long.class,
+                user.getId()
+        )).isEqualTo(1L);
     }
 
     @AfterEach
     void cleanUp() {
         for (Long id : userIds) {
             jdbc.update("DELETE FROM notifications WHERE recipient_id = ?", id);
+            jdbc.update("DELETE FROM credit_transactions WHERE user_id = ?", id);
             jdbc.update("DELETE FROM friend_requests WHERE requester_id = ? OR receiver_id = ?", id, id);
             jdbc.update("DELETE FROM friendships WHERE user_id_1 = ? OR user_id_2 = ?", id, id);
+            jdbc.update("DELETE FROM credit_accounts WHERE user_id = ?", id);
         }
         for (Long id : userIds) {
             jdbc.update("DELETE FROM users WHERE id = ?", id);

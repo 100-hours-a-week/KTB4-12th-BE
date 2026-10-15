@@ -24,6 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import tools.jackson.databind.ObjectMapper;
 
+import com.gift.gift.domain.credit.service.SignupCreditService;
 import com.gift.gift.domain.friend.dto.request.FriendRequestCreateRequest;
 import com.gift.gift.domain.friend.dto.response.FriendRequestResponse;
 import com.gift.gift.domain.friend.entity.FriendRequest;
@@ -49,6 +50,7 @@ class FriendRequestApiIntegrationTest {
 
     @Autowired private MockMvc mvc;
     @Autowired private UserRepository users;
+    @Autowired private SignupCreditService signupCreditService;
     @Autowired private FriendRequestRepository requests;
     @Autowired private FriendshipRepository friendships;
     @Autowired private FriendRequestService service;
@@ -211,8 +213,10 @@ class FriendRequestApiIntegrationTest {
     void cleanUp() {
         for (Long id : userIds) {
             jdbc.update("DELETE FROM notifications WHERE recipient_id = ?", id);
+            jdbc.update("DELETE FROM credit_transactions WHERE user_id = ?", id);
             jdbc.update("DELETE FROM friend_requests WHERE requester_id = ? OR receiver_id = ?", id, id);
             jdbc.update("DELETE FROM friendships WHERE user_id_1 = ? OR user_id_2 = ?", id, id);
+            jdbc.update("DELETE FROM credit_accounts WHERE user_id = ?", id);
         }
         for (Long id : userIds) {
             jdbc.update("DELETE FROM users WHERE id = ?", id);
@@ -450,6 +454,7 @@ class FriendRequestApiIntegrationTest {
     private User user() {
         User saved = users.saveAndFlush(new User(UUID.randomUUID() + "@example.com", PASSWORD_HASH,
                 "김친구", LocalDate.of(2000, 1, 1)));
+        signupCreditService.grant(saved.getId());
         userIds.add(saved.getId());
         return saved;
     }
