@@ -1,8 +1,10 @@
 package com.gift.gift.domain.gift.controller;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,7 +29,11 @@ import com.gift.gift.domain.gift.dto.response.GiftReceivedDetailResponse;
 import com.gift.gift.domain.gift.dto.response.GiftSentDetailResponse;
 import com.gift.gift.domain.gift.dto.response.ReceivedGiftListItem;
 import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
+import com.gift.gift.domain.gift.entity.GiftStatus;
+import com.gift.gift.domain.gift.exception.GiftErrorCode;
 import com.gift.gift.domain.gift.exception.GiftException;
+import com.gift.gift.domain.gift.service.GiftAcceptanceResult;
+import com.gift.gift.domain.gift.service.GiftAcceptanceService;
 import com.gift.gift.domain.gift.service.GiftQueryService;
 import com.gift.gift.domain.gift.service.GiftService;
 import com.gift.gift.global.exception.ErrorCode;
@@ -53,10 +59,12 @@ class GiftControllerTest {
 
     private static final Long USER_ID = 1L;
     private static final LocalDateTime COMPLETED_AT = LocalDateTime.of(2026, 8, 29, 14, 20);
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final UUID IDEMPOTENCY_KEY = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
     private GiftQueryService giftQueryService;
     private GiftService giftService;
+    private GiftAcceptanceService giftAcceptanceService;
     private MockMvc mockMvc;
     private LocalValidatorFactoryBean validator;
 
@@ -64,11 +72,22 @@ class GiftControllerTest {
     void setUp() {
         giftQueryService = mock(GiftQueryService.class);
         giftService = mock(GiftService.class);
+        giftAcceptanceService = mock(GiftAcceptanceService.class);
         validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
 
+        Clock clock = Clock.fixed(
+                COMPLETED_AT.atZone(SEOUL).toInstant(),
+                SEOUL
+        );
+
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new GiftController(giftQueryService, giftService))
+                .standaloneSetup(new GiftController(
+                        giftQueryService,
+                        giftService,
+                        giftAcceptanceService,
+                        clock
+                ))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
@@ -276,6 +295,69 @@ class GiftControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("받은 선물 내역을 찾을 수 없습니다."))
                 .andExpect(jsonPath("$.error.code").value("GIFT_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("선물 수락은 완료 상태와 발신자 보상 결과를 반환한다")
+    void accept_returnsCompletedGiftAndReward() throws Exception {
+        when(giftAcceptanceService.accept(USER_ID, 410L))
+                .thenReturn(new GiftAcceptanceResult(
+                        410L,
+                        GiftStatus.COMPLETED,
+                        100_000L,
+                        COMPLETED_AT
+                ));
+
+        mockMvc.perform(post("/gifts/received/410/accept"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("선물을 받았습니다."))
+                .andExpect(jsonPath("$.data.giftId").value(410))
+                .andExpect(jsonPath("$.data.giftStatus").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.rewardAmount").value(100000))
+                .andExpect(jsonPath("$.data.completedAt").value("2026-08-29T14:20:00+09:00"))
+                .andExpect(jsonPath("$.error").doesNotExist());
+
+        verify(giftAcceptanceService).accept(USER_ID, 410L);
+        verifyNoMoreInteractions(giftAcceptanceService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "-1", "abc"})
+    @DisplayName("선물 수락의 giftId가 양수가 아니면 400 INVALID_REQUEST를 반환한다")
+    void accept_returnsInvalidRequest_whenGiftIdIsInvalid(String giftId) throws Exception {
+        mockMvc.perform(post("/gifts/received/{giftId}/accept", giftId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(giftAcceptanceService);
+    }
+
+    @Test
+    @DisplayName("본인의 받은 선물이 아니면 404 GIFT_NOT_FOUND를 반환한다")
+    void accept_returnsNotFound_whenGiftDoesNotBelongToRecipient() throws Exception {
+        when(giftAcceptanceService.accept(USER_ID, 410L))
+                .thenThrow(new GiftException(
+                        GiftErrorCode.RECEIVED_GIFT_NOT_FOUND
+                ));
+
+        mockMvc.perform(post("/gifts/received/410/accept"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("GIFT_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("수락할 수 없는 선물 상태이면 409 GIFT_NOT_ACCEPTABLE을 반환한다")
+    void accept_returnsConflict_whenGiftIsNotAcceptable() throws Exception {
+        when(giftAcceptanceService.accept(USER_ID, 410L))
+                .thenThrow(new GiftException(
+                        GiftErrorCode.GIFT_NOT_ACCEPTABLE
+                ));
+
+        mockMvc.perform(post("/gifts/received/410/accept"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("GIFT_NOT_ACCEPTABLE"))
                 .andExpect(jsonPath("$.data").doesNotExist());
     }
 
