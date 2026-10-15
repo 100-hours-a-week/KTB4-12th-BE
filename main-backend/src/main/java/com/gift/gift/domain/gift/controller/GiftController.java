@@ -1,6 +1,7 @@
 package com.gift.gift.domain.gift.controller;
 
 import java.util.UUID;
+import java.time.Clock;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -14,8 +15,11 @@ import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.dto.request.GiftPreflightRequest;
 import com.gift.gift.domain.gift.dto.response.*;
 import com.gift.gift.domain.gift.exception.GiftException;
+import com.gift.gift.domain.gift.response.GiftSuccessCode;
 import com.gift.gift.domain.gift.service.GiftQueryService;
 import com.gift.gift.domain.gift.service.GiftService;
+import com.gift.gift.domain.gift.service.GiftAcceptanceResult;
+import com.gift.gift.domain.gift.service.GiftAcceptanceService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.response.ApiResponse;
@@ -28,6 +32,8 @@ public class GiftController {
 
     private final GiftQueryService giftQueryService;
     private final GiftService giftService;
+    private final GiftAcceptanceService giftAcceptanceService;
+    private final Clock clock;
 
     @GetMapping("/sent")
     public ResponseEntity<ApiResponse<CursorPageResponse<SentGiftListItem>>> getSentGifts(
@@ -73,6 +79,22 @@ public class GiftController {
         GiftReceivedDetailResponse response = giftQueryService.getReceivedGiftDetail(userId, giftId);
 
         return ResponseEntity.ok(ApiResponse.success("받은 선물 상세 정보를 조회했습니다.", response));
+    }
+
+    @PostMapping("/received/{giftId}/accept")
+    public ResponseEntity<ApiResponse<GiftAcceptanceResponse>> accept(
+            @CurrentUserId Long recipientId,
+            @PathVariable @Positive Long giftId
+    ) {
+        GiftAcceptanceResult result = giftAcceptanceService.accept(recipientId, giftId);
+
+        GiftAcceptanceResponse response = GiftAcceptanceResponse.from(result, clock.getZone());
+
+        GiftSuccessCode successCode = GiftSuccessCode.GIFT_ACCEPTED;
+
+        return ResponseEntity
+                .status(successCode.status())
+                .body(ApiResponse.success(successCode.message(), response));
     }
 
     @PostMapping("/preflight")
