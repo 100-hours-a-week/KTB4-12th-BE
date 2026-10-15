@@ -7,7 +7,6 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,7 +23,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
-import com.gift.gift.domain.gift.dto.response.GiftCreateResponse;
 import com.gift.gift.domain.gift.dto.response.GiftPreflightResponse;
 import com.gift.gift.domain.gift.dto.response.GiftReceivedDetailResponse;
 import com.gift.gift.domain.gift.dto.response.GiftSentDetailResponse;
@@ -63,7 +61,6 @@ class GiftControllerTest {
     private static final OffsetDateTime EXPIRES_AT = OffsetDateTime.parse("2026-09-05T14:20:00+09:00");
     private static final String ORDER_ID = "550e8400-e29b-41d4-a716-446655440000";
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
-    private static final UUID IDEMPOTENCY_KEY = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
     private GiftQueryService giftQueryService;
     private GiftService giftService;
@@ -487,101 +484,14 @@ class GiftControllerTest {
     }
 
     @Test
-    @DisplayName("선물 생성은 인증 사용자·멱등 키·요청 본문으로 생성하고 201과 결과를 반환한다")
-    void createGift_returnsCreated_forValidRequest() throws Exception {
-        GiftCreateResponse response = GiftCreateResponse.from(new GiftCreateResponse.Gift(
-                501L,
-                COMPLETED_AT,
-                "김민지",
-                new GiftCreateResponse.Product(
-                        "이니스프리 그린티 수분 크림",
-                        2,
-                        BigDecimal.valueOf(32_000),
-                        BigDecimal.valueOf(64_000),
-                        "https://cdn.example.com/501.jpg"
-                )
-        ));
-        when(giftService.createGiftResponse(eq(USER_ID), eq(IDEMPOTENCY_KEY), any())).thenReturn(response);
-
+    @DisplayName("구형 선물 생성 API는 더 이상 제공하지 않는다")
+    void createGift_returnsNotFound() throws Exception {
         mockMvc.perform(post("/gifts")
                         .contentType(APPLICATION_JSON)
-                        .header("Idempotency-Key", IDEMPOTENCY_KEY.toString())
-                        .content(createGiftBody()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.message").value("선물을 보냈습니다."))
-                .andExpect(jsonPath("$.data.gift.giftId").value(501))
-                .andExpect(jsonPath("$.data.gift.recipientName").value("김민지"))
-                .andExpect(jsonPath("$.data.gift.product.totalPrice").value(64000))
-                .andExpect(jsonPath("$.data.gift.product.imageUrl").value("https://cdn.example.com/501.jpg"))
-                .andExpect(jsonPath("$.error").doesNotExist());
-
-        verify(giftService).createGiftResponse(eq(USER_ID), eq(IDEMPOTENCY_KEY), any());
-        verifyNoMoreInteractions(giftService);
-    }
-
-    @Test
-    @DisplayName("Idempotency-Key 헤더가 없으면 400 INVALID_REQUEST를 반환한다")
-    void createGift_returnsInvalidRequest_whenIdempotencyKeyHeaderIsMissing() throws Exception {
-        mockMvc.perform(post("/gifts")
-                        .contentType(APPLICATION_JSON)
-                        .content(createGiftBody()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
-
-        verifyNoInteractions(giftService);
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"not-a-uuid", "550e8400-e29b-41d4-a716", ""})
-    @DisplayName("Idempotency-Key 헤더가 UUID 형식이 아니면 400 INVALID_REQUEST를 반환한다")
-    void createGift_returnsInvalidRequest_whenIdempotencyKeyHeaderIsNotUuid(String idempotencyKeyHeader) throws Exception {
-        mockMvc.perform(post("/gifts")
-                        .contentType(APPLICATION_JSON)
-                        .header("Idempotency-Key", idempotencyKeyHeader)
-                        .content(createGiftBody()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
-
-        verifyNoInteractions(giftService);
-    }
-
-    @Test
-    @DisplayName("선물 생성 요청 본문 값이 없으면 400 INVALID_REQUEST를 반환한다")
-    void createGift_returnsInvalidRequest_whenBodyFieldsAreMissing() throws Exception {
-        mockMvc.perform(post("/gifts")
-                        .contentType(APPLICATION_JSON)
-                        .header("Idempotency-Key", IDEMPOTENCY_KEY.toString())
                         .content("{}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+                .andExpect(status().isNotFound());
 
         verifyNoInteractions(giftService);
-    }
-
-    @Test
-    @DisplayName("자기 자신에게 선물하면 422 GIFT_CANNOT_SEND_TO_SELF를 반환한다")
-    void createGift_returnsGiftCannotSendToSelf_whenServiceThrows() throws Exception {
-        when(giftService.createGiftResponse(eq(USER_ID), eq(IDEMPOTENCY_KEY), any()))
-                .thenThrow(new GiftException(ErrorCode.GIFT_CANNOT_SEND_TO_SELF));
-
-        mockMvc.perform(post("/gifts")
-                        .contentType(APPLICATION_JSON)
-                        .header("Idempotency-Key", IDEMPOTENCY_KEY.toString())
-                        .content(createGiftBody()))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.error.code").value("GIFT_CANNOT_SEND_TO_SELF"))
-                .andExpect(jsonPath("$.data").doesNotExist());
-    }
-
-    private String createGiftBody() {
-        return """
-                {
-                  "productId": 51,
-                  "recipientUserId": 27,
-                  "quantity": 2,
-                  "expectedUnitPrice": 32000
-                }
-                """;
     }
 
     private String preflightBody() {
