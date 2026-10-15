@@ -756,6 +756,32 @@
             "description": "인증 사용자가 자신의 결제와 연결된 선물 상태를 조회한다. Environment의 orderId에 조회할 UUID 주문번호를 설정한다."
           },
           "response": []
+        },
+        {
+          "name": "결제 취소",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{cancellationIdempotencyKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/{{orderId}}/cancellations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments",
+                "{{orderId}}",
+                "cancellations"
+              ]
+            },
+            "description": "인증 사용자가 수락 대기 상태의 선물을 취소하고 결제 크레딧·재고·판매량을 복구한다. 최초 완료는 201, 같은 orderId와 Idempotency-Key 재요청은 기존 결과와 200을 반환한다. 새 취소 요청을 확인하려면 cancellationIdempotencyKey를 새 값으로 변경한다. Request Body는 사용하지 않는다."
+          },
+          "response": []
         }
       ]
     },
@@ -800,6 +826,7 @@
     }
   ],
   "variable": [
-    { "key": "termConsents", "value": "[]" }
+    { "key": "termConsents", "value": "[]" },
+    { "key": "cancellationIdempotencyKey", "value": "cancel-request-001" }
   ]
 }
