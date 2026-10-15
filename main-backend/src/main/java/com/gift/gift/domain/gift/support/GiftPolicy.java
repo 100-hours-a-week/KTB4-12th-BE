@@ -15,6 +15,8 @@ public final class GiftPolicy {
             throw new IllegalArgumentException("선물 발송 시각은 필수입니다.");
         }
 
-        return sentAt.toLocalDate().plusDays(ACCEPTANCE_DAYS + 1L).atStartOfDay();
+        return sentAt.toLocalDate()
+                .plusDays(ACCEPTANCE_DAYS + 1L)
+                .atStartOfDay();
     }
 }

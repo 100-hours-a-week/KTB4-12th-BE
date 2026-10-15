@@ -73,6 +73,29 @@ public interface GiftHistoryRepository extends JpaRepository<GiftHistory, Long> 
               and gift.deletedAt is null
             order by gift.expiresAt asc, gift.id asc
             """)
-    List<GiftHistory> findExpired(@Param("now") LocalDateTime now, Pageable pageable);
+    List<GiftHistory> findExpired(@Param("cutoff") LocalDateTime cutoff, Pageable pageable);
+
+    @Query("""
+        select gift
+        from GiftHistory gift
+        where gift.status =
+                com.gift.gift.domain.gift.entity.GiftStatus.WAITING_FOR_ACCEPTANCE
+          and gift.expiresAt <= :cutoff
+          and gift.deletedAt is null
+          and (
+                gift.expiresAt > :cursorExpiresAt
+                or (
+                    gift.expiresAt = :cursorExpiresAt
+                    and gift.id > :cursorId
+                )
+          )
+        order by gift.expiresAt asc, gift.id asc
+        """)
+    List<GiftHistory> findExpiredAfter(
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("cursorExpiresAt") LocalDateTime cursorExpiresAt,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable
+    );
 
 }
