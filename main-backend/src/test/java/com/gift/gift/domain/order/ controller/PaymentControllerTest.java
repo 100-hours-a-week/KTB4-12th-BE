@@ -2,6 +2,7 @@ package com.gift.gift.domain.order.controller;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -23,12 +24,15 @@ import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
+import com.gift.gift.domain.order.service.PaymentCancellationResult;
+import com.gift.gift.domain.order.service.PaymentCancellationService;
 import com.gift.gift.domain.order.service.PaymentQueryService;
 import com.gift.gift.domain.order.service.PaymentService;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class PaymentControllerTest {
@@ -38,12 +42,16 @@ class PaymentControllerTest {
 
     private PaymentService paymentService;
     private PaymentQueryService paymentQueryService;
+    private PaymentCancellationService paymentCancellationService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         paymentService = mock(PaymentService.class);
         paymentQueryService = mock(PaymentQueryService.class);
+        paymentCancellationService = mock(
+                PaymentCancellationService.class
+        );
 
         Clock clock = Clock.fixed(
                          Instant.parse("2026-10-14T05:30:00Z"),
@@ -53,6 +61,7 @@ class PaymentControllerTest {
         PaymentController controller = new PaymentController(
                 paymentService,
                 paymentQueryService,
+                paymentCancellationService,
                 clock
         );
 
@@ -162,5 +171,91 @@ class PaymentControllerTest {
 
         verify(paymentQueryService).getStatus(USER_ID, ORDER_ID);
         verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    @DisplayName("최초 결제 취소 완료는 201 응답을 반환한다")
+    void cancel_returnsCreated_whenCancellationIsNew() throws Exception {
+        when(paymentCancellationService.cancel(
+                eq(USER_ID),
+                eq(ORDER_ID),
+                eq("cancel-request-001"),
+                any()
+        )).thenReturn(cancellationResult(true));
+
+        mockMvc.perform(post(
+                        "/payments/{orderId}/cancellations",
+                        ORDER_ID
+                ).header(
+                        "Idempotency-Key",
+                        "cancel-request-001"
+                ))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.message")
+                        .value("결제와 선물을 취소했습니다."))
+                .andExpect(jsonPath("$.data.orderId")
+                        .value(ORDER_ID))
+                .andExpect(jsonPath("$.data.paymentStatus")
+                        .value("CANCELED"))
+                .andExpect(jsonPath("$.data.giftStatus")
+                        .value("CANCELED"))
+                .andExpect(jsonPath("$.data.cancelAmount")
+                        .value(64_000))
+                .andExpect(jsonPath("$.data.balanceAfter")
+                        .value(500_000))
+                .andExpect(jsonPath("$.data.canceledAt")
+                        .value("2026-10-15T12:00:00+09:00"))
+                .andExpect(jsonPath("$.error").doesNotExist());
+
+        verify(paymentCancellationService).cancel(
+                eq(USER_ID),
+                eq(ORDER_ID),
+                eq("cancel-request-001"),
+                any()
+        );
+    }
+
+    @Test
+    @DisplayName("완료된 동일 결제 취소 요청은 200 응답을 반환한다")
+    void cancel_returnsOk_whenCancellationIsReused() throws Exception {
+        when(paymentCancellationService.cancel(
+                eq(USER_ID),
+                eq(ORDER_ID),
+                eq("cancel-request-001"),
+                any()
+        )).thenReturn(cancellationResult(false));
+
+        mockMvc.perform(post(
+                        "/payments/{orderId}/cancellations",
+                        ORDER_ID
+                ).header(
+                        "Idempotency-Key",
+                        "cancel-request-001"
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("결제와 선물을 취소했습니다."))
+                .andExpect(jsonPath("$.data.orderId")
+                        .value(ORDER_ID))
+                .andExpect(jsonPath("$.data.paymentStatus")
+                        .value("CANCELED"))
+                .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    private PaymentCancellationResult cancellationResult(
+            boolean created
+    ) {
+        return new PaymentCancellationResult(
+                ORDER_ID,
+                "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a",
+                "542f1507-e235-47c2-93c1-a30ed5b31d49",
+                OrderStatus.CANCELED,
+                501L,
+                GiftStatus.CANCELED,
+                64_000L,
+                500_000L,
+                LocalDateTime.of(2026, 10, 15, 12, 0),
+                created
+        );
     }
 }
