@@ -27,6 +27,8 @@ import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.service.PaymentCancellationResult;
 import com.gift.gift.domain.order.service.PaymentCancellationService;
 import com.gift.gift.domain.order.service.PaymentQueryService;
+import com.gift.gift.domain.order.service.PaymentProcessingResult;
+import com.gift.gift.domain.order.service.PaymentResult;
 import com.gift.gift.domain.order.service.PaymentService;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 
@@ -97,6 +99,53 @@ class PaymentControllerTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("승인 결과가 처리 중이면 재조회 간격과 함께 202를 반환한다")
+    void create_returnsAcceptedWhenPaymentIsProcessing() throws Exception {
+        when(paymentService.pay(
+                eq(USER_ID),
+                eq("payment-request-001"),
+                isNull(),
+                any()
+        )).thenReturn(PaymentResult.processing(
+                new PaymentProcessingResult(
+                        ORDER_ID,
+                        PaymentApprovalResult.UNKNOWN
+                ),
+                true
+        ));
+
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", "payment-request-001")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "productId": 101,
+                                  "recipientUserId": 27,
+                                  "quantity": 2,
+                                  "expectedUnitPrice": 32000
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.message").value(
+                        "결제를 처리하고 있습니다. 잠시 후 다시 확인해 주세요."
+                ))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.paymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.approvalResult").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.retryAfterSeconds").value(5))
+                .andExpect(jsonPath("$.data.paymentKey").doesNotExist())
+                .andExpect(jsonPath("$.error").doesNotExist());
+
+        verify(paymentService).pay(
+                eq(USER_ID),
+                eq("payment-request-001"),
+                isNull(),
+                any()
+        );
     }
 
     @Test

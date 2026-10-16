@@ -6,12 +6,14 @@ import java.util.UUID;
 import jakarta.validation.Valid;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
 import com.gift.gift.domain.order.dto.response.PaymentCancellationResponse;
 import com.gift.gift.domain.order.dto.response.PaymentCreateResponse;
+import com.gift.gift.domain.order.dto.response.PaymentProcessingResponse;
 import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
 import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.response.OrderSuccessCode;
@@ -30,6 +32,7 @@ public class PaymentController {
 
     private static final String IDEMPOTENCY_KEY = "Idempotency-Key";
     private static final String PAYMENT_SCENARIO = "X-Payment-Scenario";
+    private static final int RETRY_AFTER_SECONDS = 5;
 
     private final PaymentService paymentService;
     private final PaymentQueryService paymentQueryService;
@@ -38,13 +41,26 @@ public class PaymentController {
     private final Clock clock;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<PaymentCreateResponse>> create(
+    public ResponseEntity<ApiResponse<?>> create(
             @CurrentUserId Long payerId,
             @RequestHeader(value = IDEMPOTENCY_KEY, required = false) String idempotencyKey,
             @RequestHeader(value = PAYMENT_SCENARIO, required = false) String scenario,
             @Valid @RequestBody PaymentCreateRequest request
     ) {
         PaymentResult result = paymentService.pay(payerId, idempotencyKey, scenario, request);
+
+        if (result.isProcessing()) {
+            OrderSuccessCode successCode = OrderSuccessCode.PAYMENT_PROCESSING;
+            PaymentProcessingResponse response = PaymentProcessingResponse.from(
+                    result.processing(),
+                    RETRY_AFTER_SECONDS
+            );
+
+            return ResponseEntity
+                    .status(successCode.status())
+                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(RETRY_AFTER_SECONDS))
+                    .body(ApiResponse.success(successCode.message(), response));
+        }
 
         PaymentCreateResponse response = PaymentCreateResponse.from(result.completion(), clock.getZone());
 

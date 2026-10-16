@@ -12,6 +12,10 @@ public enum OrderSuccessCode {
             HttpStatus.OK,
             "결제가 완료되었습니다."
     ),
+    PAYMENT_PROCESSING(
+            HttpStatus.ACCEPTED,
+            "결제를 처리하고 있습니다. 잠시 후 다시 확인해 주세요."
+    ),
     PAYMENT_STATUS_RETRIEVED(
             HttpStatus.OK,
             "결제 상태를 조회했습니다."

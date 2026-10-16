@@ -444,8 +444,8 @@ class PaymentFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("미확정 주문 재요청은 승인 요청 없이 기존 상태 조회로 복구한다")
-    void pay_queriesFirst_whenUnknownOrderIsRetried() {
+    @DisplayName("미확정 주문 재요청은 같은 주문번호로 승인을 다시 요청한다")
+    void pay_retriesSameApprovalWhenUnknownOrderIsRetried() {
         String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
         PaymentCreateRequest request = request();
 
@@ -454,15 +454,18 @@ class PaymentFlowIntegrationTest {
                 eq("TIMEOUT_AFTER_APPROVAL")
         )).thenThrow(clientFailure(
                 PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
-        ));
+        )).thenAnswer(invocation -> {
+            PaymentConfirmRequest confirmation = invocation.getArgument(0);
+
+            return completedResponse(
+                    confirmation.orderId(),
+                    confirmation.amount()
+            );
+        });
 
         when(paymentClient.getByOrderId(anyString()))
                 .thenThrow(clientFailure(
                         PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE
-                ))
-                .thenAnswer(invocation -> completedResponse(
-                        invocation.getArgument(0),
-                        AMOUNT
                 ));
 
         assertThatThrownBy(() -> paymentService.pay(
@@ -505,18 +508,18 @@ class PaymentFlowIntegrationTest {
         assertThat(readProductQuantity()).isEqualTo(8);
         assertThat(readBalance()).isEqualTo(INITIAL_BALANCE - AMOUNT);
 
-        verify(paymentClient, times(1))
+        verify(paymentClient, times(2))
                 .confirm(
                         any(PaymentConfirmRequest.class),
                         eq("TIMEOUT_AFTER_APPROVAL")
                 );
-        verify(paymentClient, times(2))
+        verify(paymentClient, times(1))
                 .getByOrderId(unknownOrder.getOrderId());
     }
 
     @Test
-    @DisplayName("상태 조회에 주문이 없으면 같은 주문번호로 승인을 한 번 재요청한다")
-    void pay_retriesApprovalOnce_whenPaymentIsNotFound() {
+    @DisplayName("승인 재시도 소진 후 조회에 주문이 없으면 추가 승인 없이 미확정으로 유지한다")
+    void pay_doesNotConfirmAgainWhenFinalQueryIsNotFound() {
         String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
         PaymentCreateRequest request = request();
 
@@ -525,37 +528,36 @@ class PaymentFlowIntegrationTest {
                 eq("TIMEOUT_BEFORE_APPROVAL")
         )).thenThrow(clientFailure(
                 PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
-        )).thenAnswer(invocation -> {
-            PaymentConfirmRequest confirmation =
-                    invocation.getArgument(0);
-
-            return completedResponse(
-                    confirmation.orderId(),
-                    confirmation.amount()
-            );
-        });
+        ));
 
         when(paymentClient.getByOrderId(anyString()))
                 .thenThrow(clientFailure(
                         PaymentClientFailure.PAYMENT_NOT_FOUND
                 ));
 
-        PaymentResult result = paymentService.pay(
+        assertThatThrownBy(() -> paymentService.pay(
                 payerId,
                 idempotencyKey,
                 "TIMEOUT_BEFORE_APPROVAL",
                 request
+        )).isInstanceOfSatisfying(
+                OrderException.class,
+                exception -> assertThat(exception.getErrorCode())
+                        .isEqualTo(ErrorCode.PAYMENT_RESULT_UNCONFIRMED)
         );
 
         Order order = orderRepository
-                .findByOrderId(result.completion().orderId())
+                .findByPayerIdAndIdempotencyKey(payerId, idempotencyKey)
                 .orElseThrow();
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.COMPLETED);
-        assertThat(readProductQuantity()).isEqualTo(8);
-        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE - AMOUNT);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getApprovalResult()).isEqualTo(PaymentApprovalResult.UNKNOWN);
+        assertThat(order.getFailureCode()).isEqualTo(OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
+        assertThat(readProductQuantity()).isEqualTo(10);
+        assertThat(readProductSales()).isZero();
+        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE);
 
-        verify(paymentClient, times(2))
+        verify(paymentClient, times(1))
                 .confirm(
                         any(PaymentConfirmRequest.class),
                         eq("TIMEOUT_BEFORE_APPROVAL")
@@ -565,8 +567,8 @@ class PaymentFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("상태 조회 결과가 처리 중이면 로컬 자원을 변경하지 않고 미확정으로 유지한다")
-    void pay_keepsPending_whenPaymentServerIsPending() {
+    @DisplayName("최종 조회가 처리 중이면 로컬 자원을 변경하지 않고 처리 중 결과를 반환한다")
+    void pay_returnsProcessingWhenFinalQueryIsPending() {
         String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
         PaymentCreateRequest request = request();
 
@@ -587,19 +589,18 @@ class PaymentFlowIntegrationTest {
                         null
                 ));
 
-        assertThatThrownBy(() -> paymentService.pay(
+        PaymentResult result = paymentService.pay(
                 payerId,
                 idempotencyKey,
                 "TIMEOUT_BEFORE_APPROVAL",
                 request
-        )).isInstanceOfSatisfying(
-                OrderException.class,
-                exception -> assertThat(
-                        exception.getErrorCode()
-                ).isEqualTo(
-                        ErrorCode.PAYMENT_RESULT_UNCONFIRMED
-                )
         );
+
+        assertThat(result.isProcessing()).isTrue();
+        assertThat(result.completion()).isNull();
+        assertThat(result.processing().orderId()).isNotBlank();
+        assertThat(result.processing().approvalResult())
+                .isEqualTo(PaymentApprovalResult.UNKNOWN);
 
         Order order = orderRepository
                 .findByPayerIdAndIdempotencyKey(
