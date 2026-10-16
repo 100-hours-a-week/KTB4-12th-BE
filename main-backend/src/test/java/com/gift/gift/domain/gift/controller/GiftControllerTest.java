@@ -489,7 +489,8 @@ class GiftControllerTest {
         mockMvc.perform(post("/gifts")
                         .contentType(APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
 
         verifyNoInteractions(giftService);
     }

@@ -183,12 +183,20 @@ class GiftQueryRepositoryTest {
                 BigDecimal.valueOf(10_000),
                 10
         );
+
+        entityManager.persist(rootCategory);
+        entityManager.persist(leafCategory);
+        entityManager.persist(sender);
+        entityManager.persist(recipient);
+        entityManager.persist(product);
+        entityManager.flush();
+
         String orderId = UUID.randomUUID().toString();
         Order order = new Order(
                 orderId,
-                1L,
-                2L,
-                3L,
+                sender.getId(),
+                recipient.getId(),
+                product.getId(),
                 2,
                 10_000L,
                 20_000L,
@@ -213,11 +221,6 @@ class GiftQueryRepositoryTest {
                 expiresAt
         );
 
-        entityManager.persist(rootCategory);
-        entityManager.persist(leafCategory);
-        entityManager.persist(sender);
-        entityManager.persist(recipient);
-        entityManager.persist(product);
         entityManager.persist(giftHistory);
         entityManager.flush();
         LocalDateTime completedAt = LocalDateTime.of(2026, 9, 18, 20, 0);
