@@ -21,6 +21,7 @@ import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.gift.support.GiftPolicy;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
+import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.event.PaymentCompletedEvent;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
@@ -69,6 +70,7 @@ public class PaymentCompletionService {
                 OrderStatus.PENDING,
                 OrderStatus.COMPLETED,
                 PaymentApprovalResult.APPROVED,
+                OrderFailureCode.AUTO_CANCELLATION_PROCESSING,
                 completedAt
         );
 

@@ -16,6 +16,7 @@ import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
+import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
@@ -91,6 +92,44 @@ class PaymentCancellationRequestServiceTest {
         assertThat(result.cancellation()).isSameAs(cancellation);
         assertThat(result.order()).isSameAs(order);
         assertThat(result.created()).isTrue();
+    }
+
+    @Test
+    @DisplayName("승인된 PENDING 주문은 선물 이력 없이 자동 보상 취소를 생성한다")
+    void start_createsAutomaticCancellationForApprovedOrder() {
+        Order order = approvedPendingOrder();
+        String idempotencyKey = "LOCAL_PROCESSING_FAILURE:" + ORDER_ID;
+        PaymentCancellation cancellation = new PaymentCancellation(
+                ORDER_RECORD_ID,
+                REQUESTER_ID,
+                CancellationSource.LOCAL_PROCESSING_FAILURE,
+                idempotencyKey,
+                requestHasher.hash(ORDER_ID)
+        );
+
+        when(cancellationRepository.findByRequesterIdAndIdempotencyKey(
+                REQUESTER_ID,
+                idempotencyKey
+        )).thenReturn(Optional.empty());
+        when(orderRepository.findByOrderIdAndPayerId(ORDER_ID, REQUESTER_ID))
+                .thenReturn(Optional.of(order));
+        when(transactionService.create(
+                order,
+                REQUESTER_ID,
+                CancellationSource.LOCAL_PROCESSING_FAILURE,
+                idempotencyKey,
+                requestHasher.hash(ORDER_ID)
+        )).thenReturn(cancellation);
+
+        PaymentCancellationStartResult result = service.start(
+                REQUESTER_ID,
+                ORDER_ID,
+                idempotencyKey,
+                CancellationSource.LOCAL_PROCESSING_FAILURE
+        );
+
+        assertThat(result.cancellation()).isSameAs(cancellation);
+        verifyNoInteractions(giftHistoryRepository);
     }
 
     @Test
@@ -256,6 +295,17 @@ class PaymentCancellationRequestServiceTest {
                 "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a"
         );
 
+        return order;
+    }
+
+    private Order approvedPendingOrder() {
+        Order order = completedOrder();
+        ReflectionTestUtils.setField(order, "status", OrderStatus.PENDING);
+        ReflectionTestUtils.setField(
+                order,
+                "approvalResult",
+                PaymentApprovalResult.APPROVED
+        );
         return order;
     }
 

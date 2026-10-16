@@ -44,7 +44,7 @@ import com.gift.gift.global.common.BaseTimeEntity;
         check = {
                 @CheckConstraint(
                         name = "chk_payment_cancellations_source",
-                        constraint = "cancellation_source IN ('USER', 'GIFT_EXPIRATION')"
+                        constraint = "cancellation_source IN ('USER', 'GIFT_EXPIRATION', 'LOCAL_PROCESSING_FAILURE')"
                 ),
                 @CheckConstraint(
                         name = "chk_payment_cancellations_status",
@@ -62,7 +62,8 @@ import com.gift.gift.global.common.BaseTimeEntity;
                                     'CANCELLATION_DECLINED',
                                     'CANCELLATION_RESULT_UNCONFIRMED',
                                     'PAYMENT_SERVER_UNAVAILABLE',
-                                    'LOCAL_COMPENSATION_FAILED'
+                                    'LOCAL_COMPENSATION_FAILED',
+                                    'CANCELLATION_RECONCILIATION_REQUIRED'
                                 )
                                 """
                 )

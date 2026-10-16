@@ -32,6 +32,7 @@ public class PaymentService {
     private final OrderApprovalTransactionService approvalService;
     private final PaymentCompletionService completionService;
     private final PaymentLocalCompletionRetry localCompletionRetry;
+    private final PaymentAutoCancellationService autoCancellationService;
 
     public PaymentResult pay(
             Long payerId,
@@ -59,6 +60,10 @@ public class PaymentService {
         }
 
         if (order.getApprovalResult() == PaymentApprovalResult.APPROVED) {
+            if (isAutoCancellation(order.getFailureCode())) {
+                return processing(order, start.created());
+            }
+
             return complete(order, start.created());
         }
 
@@ -156,23 +161,45 @@ public class PaymentService {
             );
 
             if (!isRecoverableLocalFailure(failureType)) {
+                try {
+                    autoCancellationService.cancel(order);
+                } catch (RuntimeException cancellationException) {
+                    log.error(
+                            "승인 후 로컬 처리 실패의 자동 보상 취소 결과를 확정하지 못했습니다. orderId={}",
+                            order.getOrderId(),
+                            cancellationException
+                    );
+
+                    return processing(order, created);
+                }
+
                 throw exception;
             }
 
-            return PaymentResult.processing(
-                    new PaymentProcessingResult(
-                            order.getOrderId(),
-                            PaymentApprovalResult.APPROVED
-                    ),
-                    created
-            );
+            return processing(order, created);
         }
+    }
+
+    private PaymentResult processing(Order order, boolean created) {
+        return PaymentResult.processing(
+                new PaymentProcessingResult(
+                        order.getOrderId(),
+                        PaymentApprovalResult.APPROVED
+                ),
+                created
+        );
     }
 
     private boolean isRecoverableLocalFailure(LocalPaymentFailureType failureType) {
         return failureType == LocalPaymentFailureType.DEADLOCK
                 || failureType == LocalPaymentFailureType.TRANSIENT_INFRASTRUCTURE
                 || failureType == LocalPaymentFailureType.UNKNOWN;
+    }
+
+    private boolean isAutoCancellation(OrderFailureCode failureCode) {
+        return failureCode == OrderFailureCode.AUTO_CANCELLATION_PROCESSING
+                || failureCode
+                == OrderFailureCode.AUTO_CANCELLATION_RECONCILIATION_REQUIRED;
     }
 
     private PaymentConfirmRequest confirmRequest(Order order) {

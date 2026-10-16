@@ -31,6 +31,7 @@ public class PaymentReconciliationService {
     private final OrderApprovalTransactionService approvalService;
     private final PaymentCompletionService completionService;
     private final PaymentLocalCompletionRetry localCompletionRetry;
+    private final PaymentAutoCancellationService autoCancellationService;
     private final PaymentReconciliationTransactionService transactionService;
     private final Clock clock;
     private final int batchSize;
@@ -43,6 +44,7 @@ public class PaymentReconciliationService {
             OrderApprovalTransactionService approvalService,
             PaymentCompletionService completionService,
             PaymentLocalCompletionRetry localCompletionRetry,
+            PaymentAutoCancellationService autoCancellationService,
             PaymentReconciliationTransactionService transactionService,
             Clock clock,
             @Value("${app.payment.reconciliation.batch-size:100}") int batchSize,
@@ -54,6 +56,7 @@ public class PaymentReconciliationService {
         this.approvalService = approvalService;
         this.completionService = completionService;
         this.localCompletionRetry = localCompletionRetry;
+        this.autoCancellationService = autoCancellationService;
         this.transactionService = transactionService;
         this.clock = clock;
         this.batchSize = batchSize;
@@ -68,6 +71,7 @@ public class PaymentReconciliationService {
                 PaymentApprovalResult.UNKNOWN,
                 PaymentApprovalResult.APPROVED,
                 OrderFailureCode.PAYMENT_RECONCILIATION_REQUIRED,
+                OrderFailureCode.AUTO_CANCELLATION_RECONCILIATION_REQUIRED,
                 now.minus(staleAge),
                 PageRequest.of(0, batchSize)
         );
@@ -156,12 +160,19 @@ public class PaymentReconciliationService {
     }
 
     private void reconcileApproved(Order order, LocalDateTime now) {
+        if (order.getFailureCode()
+                == OrderFailureCode.AUTO_CANCELLATION_PROCESSING) {
+            autoCancellationService.cancel(order);
+            return;
+        }
+
         if (order.getApprovedAt() != null
                 && !order.getApprovedAt().plus(timeout).isAfter(now)) {
             log.warn(
-                    "로컬 결제 복구 기한이 만료되어 자동 보상 취소를 기다립니다. orderId={}",
+                    "로컬 결제 복구 기한이 만료되어 자동 보상 취소를 시작합니다. orderId={}",
                     order.getOrderId()
             );
+            autoCancellationService.cancel(order);
             return;
         }
 
@@ -175,14 +186,29 @@ public class PaymentReconciliationService {
                     () -> completionService.complete(order.getId())
             );
         } catch (RuntimeException exception) {
+            LocalPaymentFailureType failureType =
+                    LocalPaymentFailureClassifier.classify(exception);
             approvalService.markLocalFailure(order.getId());
             log.error(
                     "결제 재조정 중 로컬 완료 처리에 실패했습니다. orderId={}, failureType={}",
                     order.getOrderId(),
-                    LocalPaymentFailureClassifier.classify(exception),
+                    failureType,
                     exception
             );
+
+            if (requiresAutoCancellation(failureType)) {
+                autoCancellationService.cancel(order);
+            }
         }
+    }
+
+    private boolean requiresAutoCancellation(
+            LocalPaymentFailureType failureType
+    ) {
+        return failureType == LocalPaymentFailureType.PERMANENT_BUSINESS
+                || failureType
+                == LocalPaymentFailureType.DATA_INTEGRITY_OR_PROGRAMMING
+                || failureType == LocalPaymentFailureType.UNKNOWN;
     }
 
     private void validateCompletedResponse(Order order, PaymentResponse response) {

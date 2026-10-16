@@ -39,6 +39,7 @@ class PaymentReconciliationServiceTest {
     private OrderApprovalTransactionService approvalService;
     private PaymentCompletionService completionService;
     private PaymentLocalCompletionRetry localCompletionRetry;
+    private PaymentAutoCancellationService autoCancellationService;
     private PaymentReconciliationTransactionService transactionService;
     private PaymentReconciliationService service;
 
@@ -49,6 +50,7 @@ class PaymentReconciliationServiceTest {
         approvalService = mock(OrderApprovalTransactionService.class);
         completionService = mock(PaymentCompletionService.class);
         localCompletionRetry = mock(PaymentLocalCompletionRetry.class);
+        autoCancellationService = mock(PaymentAutoCancellationService.class);
         transactionService = mock(PaymentReconciliationTransactionService.class);
 
         Clock clock = Clock.fixed(
@@ -61,6 +63,7 @@ class PaymentReconciliationServiceTest {
                 approvalService,
                 completionService,
                 localCompletionRetry,
+                autoCancellationService,
                 transactionService,
                 clock,
                 100,
@@ -74,7 +77,7 @@ class PaymentReconciliationServiceTest {
     void reconcile_marksExpiredUnknownOrderAsRequired() {
         Order order = order(PaymentApprovalResult.UNKNOWN, NOW.minusMinutes(10));
         when(orderRepository.findReconciliationCandidates(
-                any(), any(), any(), any(), any(), any(Pageable.class)
+                any(), any(), any(), any(), any(), any(), any(Pageable.class)
         )).thenReturn(List.of(order));
         when(paymentClient.getByOrderId(ORDER_ID)).thenReturn(pendingResponse());
 
@@ -90,7 +93,7 @@ class PaymentReconciliationServiceTest {
         Order order = order(PaymentApprovalResult.UNKNOWN, NOW.minusMinutes(2));
         PaymentResponse response = completedResponse();
         when(orderRepository.findReconciliationCandidates(
-                any(), any(), any(), any(), any(), any(Pageable.class)
+                any(), any(), any(), any(), any(), any(), any(Pageable.class)
         )).thenReturn(List.of(order));
         when(paymentClient.getByOrderId(ORDER_ID)).thenReturn(response);
 
@@ -111,13 +114,44 @@ class PaymentReconciliationServiceTest {
         Order order = order(PaymentApprovalResult.APPROVED, NOW.minusMinutes(2));
         when(order.getApprovedAt()).thenReturn(NOW.minusMinutes(2));
         when(orderRepository.findReconciliationCandidates(
-                any(), any(), any(), any(), any(), any(Pageable.class)
+                any(), any(), any(), any(), any(), any(), any(Pageable.class)
         )).thenReturn(List.of(order));
 
         service.reconcilePendingPayments();
 
         verify(localCompletionRetry).execute(eq(ORDER_ID), any());
         verifyNoInteractions(paymentClient);
+    }
+
+    @Test
+    @DisplayName("승인 후 10분이 지난 주문은 로컬 처리를 반복하지 않고 자동 취소한다")
+    void reconcile_autoCancelsExpiredApprovedOrder() {
+        Order order = order(PaymentApprovalResult.APPROVED, NOW.minusMinutes(11));
+        when(order.getApprovedAt()).thenReturn(NOW.minusMinutes(10));
+        when(orderRepository.findReconciliationCandidates(
+                any(), any(), any(), any(), any(), any(), any(Pageable.class)
+        )).thenReturn(List.of(order));
+
+        service.reconcilePendingPayments();
+
+        verify(autoCancellationService).cancel(order);
+        verifyNoInteractions(localCompletionRetry, paymentClient);
+    }
+
+    @Test
+    @DisplayName("이미 자동 취소 중인 주문은 로컬 완료 대신 취소를 재조정한다")
+    void reconcile_resumesAutomaticCancellation() {
+        Order order = order(PaymentApprovalResult.APPROVED, NOW.minusMinutes(2));
+        when(order.getFailureCode())
+                .thenReturn(OrderFailureCode.AUTO_CANCELLATION_PROCESSING);
+        when(orderRepository.findReconciliationCandidates(
+                any(), any(), any(), any(), any(), any(), any(Pageable.class)
+        )).thenReturn(List.of(order));
+
+        service.reconcilePendingPayments();
+
+        verify(autoCancellationService).cancel(order);
+        verifyNoInteractions(localCompletionRetry, paymentClient);
     }
 
     private Order order(PaymentApprovalResult result, LocalDateTime createdAt) {

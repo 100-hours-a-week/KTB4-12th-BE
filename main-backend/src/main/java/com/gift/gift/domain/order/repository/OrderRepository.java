@@ -35,7 +35,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
               )
               and (
                     orders.failureCode is null
-                    or orders.failureCode <> :reconciliationRequired
+                    or (
+                        orders.failureCode <> :reconciliationRequired
+                        and orders.failureCode <> :autoCancellationRequired
+                    )
               )
             order by orders.updatedAt asc, orders.id asc
             """)
@@ -44,6 +47,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("unknownResult") PaymentApprovalResult unknownResult,
             @Param("approvedResult") PaymentApprovalResult approvedResult,
             @Param("reconciliationRequired") OrderFailureCode reconciliationRequired,
+            @Param("autoCancellationRequired") OrderFailureCode autoCancellationRequired,
             @Param("staleBefore") LocalDateTime staleBefore,
             Pageable pageable
     );
@@ -90,12 +94,17 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             where orders.id = :orderRecordId
               and orders.status = :pendingStatus
               and orders.approvalResult = :approvedResult
+              and (
+                    orders.failureCode is null
+                    or orders.failureCode <> :blockedFailureCode
+              )
             """)
     int complete(
             @Param("orderRecordId") Long orderRecordId,
             @Param("pendingStatus") OrderStatus pendingStatus,
             @Param("completedStatus") OrderStatus completedStatus,
             @Param("approvedResult") PaymentApprovalResult approvedResult,
+            @Param("blockedFailureCode") OrderFailureCode blockedFailureCode,
             @Param("completedAt") LocalDateTime completedAt
     );
 
@@ -211,5 +220,63 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("completedStatus") OrderStatus completedStatus,
             @Param("canceledStatus") OrderStatus canceledStatus,
             @Param("canceledAt") LocalDateTime canceledAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update Order orders
+            set orders.status = :canceledStatus,
+                orders.failureCode = :failureCode,
+                orders.canceledAt = :canceledAt,
+                orders.updatedAt = :canceledAt
+            where orders.id = :orderRecordId
+              and orders.status = :pendingStatus
+              and orders.approvalResult = :approvedResult
+            """)
+    int cancelApproved(
+            @Param("orderRecordId") Long orderRecordId,
+            @Param("pendingStatus") OrderStatus pendingStatus,
+            @Param("canceledStatus") OrderStatus canceledStatus,
+            @Param("approvedResult") PaymentApprovalResult approvedResult,
+            @Param("failureCode") OrderFailureCode failureCode,
+            @Param("canceledAt") LocalDateTime canceledAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update Order orders
+            set orders.failureCode = :processingCode,
+                orders.updatedAt = :updatedAt
+            where orders.id = :orderRecordId
+              and orders.status = :pendingStatus
+              and orders.approvalResult = :approvedResult
+              and (
+                    orders.failureCode is null
+                    or orders.failureCode <> :processingCode
+              )
+            """)
+    int markAutoCancellationProcessing(
+            @Param("orderRecordId") Long orderRecordId,
+            @Param("pendingStatus") OrderStatus pendingStatus,
+            @Param("approvedResult") PaymentApprovalResult approvedResult,
+            @Param("processingCode") OrderFailureCode processingCode,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update Order orders
+            set orders.failureCode = :failureCode,
+                orders.updatedAt = :updatedAt
+            where orders.id = :orderRecordId
+              and orders.status = :pendingStatus
+              and orders.approvalResult = :approvedResult
+            """)
+    int markAutoCancellationRequired(
+            @Param("orderRecordId") Long orderRecordId,
+            @Param("pendingStatus") OrderStatus pendingStatus,
+            @Param("approvedResult") PaymentApprovalResult approvedResult,
+            @Param("failureCode") OrderFailureCode failureCode,
+            @Param("updatedAt") LocalDateTime updatedAt
     );
 }

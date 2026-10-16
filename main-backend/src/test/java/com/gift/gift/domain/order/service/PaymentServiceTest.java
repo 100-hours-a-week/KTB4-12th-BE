@@ -32,6 +32,7 @@ class PaymentServiceTest {
     private OrderApprovalTransactionService approvalService;
     private PaymentCompletionService completionService;
     private PaymentLocalCompletionRetry localCompletionRetry;
+    private PaymentAutoCancellationService autoCancellationService;
     private PaymentService paymentService;
     private Order order;
     private PaymentCreateRequest request;
@@ -43,12 +44,14 @@ class PaymentServiceTest {
         approvalService = mock(OrderApprovalTransactionService.class);
         completionService = mock(PaymentCompletionService.class);
         localCompletionRetry = mock(PaymentLocalCompletionRetry.class);
+        autoCancellationService = mock(PaymentAutoCancellationService.class);
         paymentService = new PaymentService(
                 paymentRequestService,
                 paymentClient,
                 approvalService,
                 completionService,
-                localCompletionRetry
+                localCompletionRetry,
+                autoCancellationService
         );
 
         order = mock(Order.class);
@@ -85,8 +88,8 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("영구 업무 오류는 실패 상태를 기록하고 자동 보상 취소 연결 전까지 예외를 유지한다")
-    void pay_keepsPermanentBusinessFailure() {
+    @DisplayName("영구 업무 오류는 자동 보상 취소 후 원래 예외를 반환한다")
+    void pay_autoCancelsPermanentBusinessFailure() {
         OrderException failure = new OrderException(OrderErrorCode.INSUFFICIENT_STOCK);
         when(localCompletionRetry.execute(eq(ORDER_ID), any()))
                 .thenThrow(failure);
@@ -99,6 +102,7 @@ class PaymentServiceTest {
         )).isSameAs(failure);
 
         verify(approvalService).markLocalFailure(ORDER_RECORD_ID);
+        verify(autoCancellationService).cancel(order);
         verifyNoInteractions(paymentClient);
     }
 }
