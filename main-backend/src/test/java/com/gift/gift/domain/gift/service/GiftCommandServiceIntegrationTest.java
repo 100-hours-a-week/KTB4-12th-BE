@@ -20,18 +20,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.gift.dto.request.GiftCreateRequest;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.exception.GiftException;
-import com.gift.gift.domain.notification.service.NotificationService;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
+import com.gift.gift.domain.notification.repository.NotificationOutboxRepository;
+import com.gift.gift.domain.notification.service.NotificationOutboxDispatcher;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
@@ -65,8 +67,11 @@ class GiftCommandServiceIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
-    @MockitoBean
-    private NotificationService notificationService;
+    @MockitoSpyBean
+    private NotificationOutboxRepository outboxRepository;
+
+    @Autowired
+    private NotificationOutboxDispatcher dispatcher;
 
     private TransactionTemplate transaction;
     private Long rootCategoryId;
@@ -110,6 +115,8 @@ class GiftCommandServiceIntegrationTest {
     void tearDown() {
         // 커밋 후 생성된 알림을 먼저 삭제해 사용자 FK와 다음 테스트의 격리를 보장한다.
         jdbcTemplate.update(
+                "DELETE FROM notification_outbox WHERE recipient_id IN (?, ?)", senderId, recipientId);
+        jdbcTemplate.update(
                 "DELETE FROM notifications WHERE recipient_id IN (?, ?)", senderId, recipientId);
         jdbcTemplate.update("DELETE FROM gift_histories WHERE sender_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM friendships WHERE user_id_1 = ? OR user_id_2 = ?", senderId, senderId);
@@ -136,6 +143,7 @@ class GiftCommandServiceIntegrationTest {
         assertThat(saved).isPresent();
         assertThat(saved.get().getQuantity()).isEqualTo(3);
     }
+
 
     @Test
     @DisplayName("멱등 키 UNIQUE 위반으로 저장이 실패하면 같은 트랜잭션의 재고 차감도 함께 롤백된다")
@@ -165,25 +173,24 @@ class GiftCommandServiceIntegrationTest {
     @Test
     @DisplayName("Gift COMMIT 후 Notification 저장이 실패해도 Gift는 유지된다")
     void createNewGift_keepsGift_whenNotificationCreationFailsAfterCommit() {
-        doThrow(new IllegalStateException("notification storage failed"))
-                .when(notificationService).create(any());
+        doThrow(new CannotAcquireLockException("notification completion failed"))
+                .when(outboxRepository).complete(any());
 
         UUID idempotencyKey = UUID.randomUUID();
         GiftCreateRequest request = new GiftCreateRequest(productId, recipientId, 1, BigDecimal.valueOf(32_000));
+        giftCommandService.createNewGift(senderId, idempotencyKey, "n".repeat(64), request);
+        dispatcher.dispatch();
 
-        try {
-            giftCommandService.createNewGift(senderId, idempotencyKey, "n".repeat(64), request);
-        } catch (RuntimeException ignored) {
-            // AFTER_COMMIT 리스너의 실패가 호출자에게 전달되더라도 Gift COMMIT은 유지되어야 한다.
-        }
-
-        assertThat(giftHistoryRepository.findBySender_IdAndIdempotencyKey(senderId, idempotencyKey))
-                .isPresent();
-        verify(notificationService).create(any());
+        assertThat(giftHistoryRepository.findBySender_IdAndIdempotencyKey(senderId, idempotencyKey)).isPresent();
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM notification_outbox WHERE recipient_id = ?",
+                String.class, recipientId)).isEqualTo("PENDING");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM notifications WHERE recipient_id = ?",
+                Long.class, recipientId)).isZero();
     }
 
+
     @Test
-    @DisplayName("Gift 트랜잭션이 롤백되면 AFTER_COMMIT Notification은 생성되지 않는다")
+    @DisplayName("Gift 트랜잭션이 롤백되면 Outbox와 알림은 생성되지 않는다")
     void createNewGift_doesNotCreateNotification_whenGiftTransactionRollsBack() {
         UUID idempotencyKey = UUID.randomUUID();
         GiftCreateRequest request = new GiftCreateRequest(productId, recipientId, 1, BigDecimal.valueOf(32_000));
@@ -195,7 +202,7 @@ class GiftCommandServiceIntegrationTest {
 
         assertThat(giftHistoryRepository.findBySender_IdAndIdempotencyKey(senderId, idempotencyKey))
                 .isEmpty();
-        verify(notificationService, never()).create(any());
+        verify(outboxRepository, never()).insert(any());
     }
 
     @Test

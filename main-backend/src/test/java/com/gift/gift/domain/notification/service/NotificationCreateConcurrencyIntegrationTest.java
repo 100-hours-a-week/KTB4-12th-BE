@@ -9,18 +9,20 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.gift.gift.domain.gift.event.GiftCreatedEvent;
 import com.gift.gift.domain.notification.dto.NotificationCreateCommand;
+import com.gift.gift.domain.notification.entity.Notification;
 import com.gift.gift.domain.notification.entity.NotificationReferenceType;
 import com.gift.gift.domain.notification.entity.NotificationType;
-import com.gift.gift.domain.notification.entity.Notification;
 import com.gift.gift.domain.notification.event.handler.GiftNotificationEventHandler;
 import com.gift.gift.domain.notification.repository.NotificationRepository;
 import com.gift.gift.domain.user.entity.User;
@@ -30,6 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 class NotificationCreateConcurrencyIntegrationTest {
+
+    @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private NotificationOutboxDispatcher dispatcher;
 
     private static final int REQUEST_COUNT = 3;
 
@@ -53,6 +58,7 @@ class NotificationCreateConcurrencyIntegrationTest {
     @AfterEach
     void tearDown() {
         for (Long recipientId : createdRecipientIds) {
+            jdbcTemplate.update("DELETE FROM notification_outbox WHERE recipient_id = ?", recipientId);
             jdbcTemplate.update("DELETE FROM notifications WHERE recipient_id = ?", recipientId);
             jdbcTemplate.update("DELETE FROM users WHERE id = ?", recipientId);
         }
@@ -110,8 +116,14 @@ class NotificationCreateConcurrencyIntegrationTest {
         Long giftId = 502L;
         GiftCreatedEvent event = new GiftCreatedEvent(giftId, recipientId, "선물 상품");
 
-        giftNotificationEventHandler.handle(event);
-        giftNotificationEventHandler.handle(event);
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+            giftNotificationEventHandler.handle(event);
+            giftNotificationEventHandler.handle(event);
+        });
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_outbox WHERE recipient_id = ?", Long.class, recipientId))
+                .isEqualTo(1);
+        dispatcher.dispatch();
 
         String deduplicationKey = "GIFT_RECEIVED:" + giftId + ":" + recipientId;
         List<Notification> saved = notificationRepository.findAll().stream()

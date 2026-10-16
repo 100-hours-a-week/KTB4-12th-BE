@@ -28,6 +28,7 @@ import com.gift.gift.domain.friend.entity.FriendRequestStatus;
 import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.friend.repository.FriendRequestRepository;
 import com.gift.gift.domain.friend.repository.FriendshipRepository;
+import com.gift.gift.domain.notification.service.NotificationOutboxDispatcher;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.exception.BusinessException;
@@ -37,6 +38,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 class FriendRequestConcurrencyIntegrationTest {
+    @Autowired private NotificationOutboxDispatcher dispatcher;
+
     @Autowired private FriendRequestService service;
     @Autowired private FriendService friendService;
     @Autowired private FriendRequestRepository requests;
@@ -68,6 +71,7 @@ class FriendRequestConcurrencyIntegrationTest {
         assertThat(saved.getStatus()).isEqualTo(FriendRequestStatus.PENDING);
         assertThat(requestCount(first, second)).isEqualTo(1);
         assertThat(relationCount(first, second)).isZero();
+        dispatcher.dispatch();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notifications WHERE recipient_id IN (?, ?)",
                 Long.class, first.getId(), second.getId())).isEqualTo(1);
     }
@@ -236,6 +240,7 @@ class FriendRequestConcurrencyIntegrationTest {
     @AfterEach
     void cleanUp() {
         for (Long id : userIds) {
+            jdbc.update("DELETE FROM notification_outbox WHERE recipient_id = ?", id);
             jdbc.update("DELETE FROM notifications WHERE recipient_id = ?", id);
             jdbc.update("DELETE FROM credit_transactions WHERE user_id = ?", id);
             jdbc.update("DELETE FROM friend_requests WHERE requester_id = ? OR receiver_id = ?", id, id);

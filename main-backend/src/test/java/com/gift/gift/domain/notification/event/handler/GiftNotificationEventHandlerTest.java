@@ -5,7 +5,7 @@ import org.mockito.ArgumentCaptor;
 
 import com.gift.gift.domain.gift.event.GiftCreatedEvent;
 import com.gift.gift.domain.notification.dto.NotificationCreateCommand;
-import com.gift.gift.domain.notification.service.NotificationService;
+import com.gift.gift.domain.notification.service.NotificationOutboxWriter;
 import com.gift.gift.domain.notification.support.NotificationDeduplicationKeyGenerator;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,9 +17,9 @@ class GiftNotificationEventHandlerTest {
 
     @Test
     void handle_convertsGiftEventToNotificationCommand() {
-        NotificationService notificationService = mock(NotificationService.class);
+        NotificationOutboxWriter outboxWriter = mock(NotificationOutboxWriter.class);
         NotificationDeduplicationKeyGenerator keyGenerator = mock(NotificationDeduplicationKeyGenerator.class);
-        GiftNotificationEventHandler handler = new GiftNotificationEventHandler(notificationService, keyGenerator);
+        GiftNotificationEventHandler handler = new GiftNotificationEventHandler(outboxWriter, keyGenerator);
         GiftCreatedEvent event = new GiftCreatedEvent(501L, 20L, "선물 상품");
         when(keyGenerator.generate(
                 com.gift.gift.domain.notification.entity.NotificationType.GIFT_RECEIVED,
@@ -30,7 +30,7 @@ class GiftNotificationEventHandlerTest {
         handler.handle(event);
 
         ArgumentCaptor<NotificationCreateCommand> captor = ArgumentCaptor.forClass(NotificationCreateCommand.class);
-        verify(notificationService).create(captor.capture());
+        verify(outboxWriter).enqueue(captor.capture());
         NotificationCreateCommand command = captor.getValue();
         assertThat(command.recipientId()).isEqualTo(20L);
         assertThat(command.referenceId()).isEqualTo(501L);
