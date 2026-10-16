@@ -337,7 +337,7 @@ class PaymentFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("크레딧 원장 저장 실패 시 주문·재고·크레딧·선물을 모두 롤백한다")
+    @DisplayName("크레딧 원장 저장 실패 시 로컬 변경을 롤백하고 승인 결제를 자동 취소한다")
     void pay_rollsBackLocalChanges_whenLedgerSaveFails() {
 
         String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
@@ -369,6 +369,19 @@ class PaymentFlowIntegrationTest {
         );
 
         stubApproval();
+        String cancellationKey = "LOCAL_PROCESSING_FAILURE:"
+                + pendingOrder.getOrderId();
+        when(paymentClient.cancel(
+                anyString(),
+                eq(cancellationKey)
+        )).thenAnswer(invocation -> new PaymentCancelResponse(
+                pendingOrder.getOrderId(),
+                invocation.getArgument(0),
+                UUID.randomUUID().toString(),
+                PaymentServerStatus.CANCELED,
+                AMOUNT,
+                LocalDateTime.of(2026, 10, 15, 12, 0)
+        ));
 
         assertThatThrownBy(() -> paymentService.pay(
                 payerId,
@@ -381,7 +394,7 @@ class PaymentFlowIntegrationTest {
 
         Order found = orderRepository.findById(pendingOrder.getId()).orElseThrow();
 
-        assertThat(found.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(found.getStatus()).isEqualTo(OrderStatus.CANCELED);
         assertThat(found.getApprovalResult()).isEqualTo(PaymentApprovalResult.APPROVED);
         assertThat(found.getFailureCode()).isEqualTo(OrderFailureCode.LOCAL_PROCESSING_FAILED);
 
@@ -393,6 +406,19 @@ class PaymentFlowIntegrationTest {
                         pendingOrder.getId()
                 )
         ).isEmpty();
+
+        assertThat(paymentCancellationRepository
+                .findByRequesterIdAndIdempotencyKey(
+                        payerId,
+                        cancellationKey
+                ))
+                .get()
+                .satisfies(cancellation -> {
+                    assertThat(cancellation.getStatus())
+                            .isEqualTo(PaymentCancellationStatus.COMPLETED);
+                    assertThat(cancellation.getCancellationSource())
+                            .isEqualTo(CancellationSource.LOCAL_PROCESSING_FAILURE);
+                });
     }
 
     @Test
@@ -491,7 +517,7 @@ class PaymentFlowIntegrationTest {
 
         assertThat(unknownOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(unknownOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.UNKNOWN);
-        assertThat(unknownOrder.getFailureCode()).isEqualTo(OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
+        assertThat(unknownOrder.getFailureCode()).isEqualTo(OrderFailureCode.PAYMENT_SERVER_UNAVAILABLE);
 
         PaymentResult recovered = paymentService.pay(
                 payerId,
