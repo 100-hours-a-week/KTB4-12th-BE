@@ -37,10 +37,8 @@ public class PaymentClient {
         this.commandRetry = commandRetry;
     }
 
-    public PaymentResponse confirm(
-            PaymentConfirmRequest request,
-            String scenario
-    ) {
+    public PaymentResponse confirm(PaymentConfirmRequest request, String scenario) {
+
         return commandRetry.execute(
                 CONFIRM_COMMAND,
                 request.orderId(),
@@ -52,10 +50,8 @@ public class PaymentClient {
         );
     }
 
-    public PaymentCancelResponse cancel(
-            String paymentKey,
-            String idempotencyKey
-    ) {
+    public PaymentCancelResponse cancel(String paymentKey, String idempotencyKey) {
+
         return commandRetry.execute(
                 CANCEL_COMMAND,
                 paymentKey,
@@ -77,10 +73,16 @@ public class PaymentClient {
         );
     }
 
-    private <T> T execute(
-            Supplier<PaymentServerResponse<T>> request,
-            PaymentClientFailure timeoutFailure
-    ) {
+    public PaymentCancelResponse getCancellation(String paymentKey, String idempotencyKey) {
+
+        return execute(
+                () -> queryClient.getCancellation(paymentKey, idempotencyKey),
+                PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
+        );
+    }
+
+    private <T> T execute(Supplier<PaymentServerResponse<T>> request, PaymentClientFailure timeoutFailure) {
+
         PaymentServerResponse<T> response;
 
         try {

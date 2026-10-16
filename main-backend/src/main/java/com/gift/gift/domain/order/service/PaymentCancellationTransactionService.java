@@ -39,6 +39,28 @@ public class PaymentCancellationTransactionService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markResultUnconfirmed(
+            Long cancellationId,
+            PaymentCancellationFailureCode failureCode
+    ) {
+        if (failureCode
+                != PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+                && failureCode
+                != PaymentCancellationFailureCode.PAYMENT_SERVER_UNAVAILABLE) {
+            throw new IllegalArgumentException(
+                    "취소 결과 미확정 상태에 사용할 수 없는 실패 코드입니다."
+            );
+        }
+
+        cancellationRepository.markFailure(
+                cancellationId,
+                PaymentCancellationStatus.PENDING,
+                failureCode,
+                LocalDateTime.now(clock)
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markLocalFailure(Long cancellationId) {
         cancellationRepository.markFailure(
                 cancellationId,

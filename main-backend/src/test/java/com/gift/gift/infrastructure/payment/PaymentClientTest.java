@@ -127,6 +127,53 @@ class PaymentClientTest {
     }
 
     @Test
+    @DisplayName("멱등 취소 결과 조회 데이터를 반환한다")
+    void getCancellation_returnsCancellationData() {
+        String paymentKey = "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a";
+        String idempotencyKey = "cancel-request-001";
+        PaymentCancelResponse cancellation = new PaymentCancelResponse(
+                ORDER_ID,
+                paymentKey,
+                "542f1507-e235-47c2-93c1-a30ed5b31d49",
+                PaymentServerStatus.CANCELED,
+                64_000L,
+                LocalDateTime.of(2026, 10, 15, 12, 0)
+        );
+
+        when(queryClient.getCancellation(paymentKey, idempotencyKey))
+                .thenReturn(new PaymentServerResponse<>(
+                        "결제 취소 상태를 조회했습니다.",
+                        cancellation
+                ));
+
+        assertThat(client.getCancellation(paymentKey, idempotencyKey))
+                .isEqualTo(cancellation);
+    }
+
+    @Test
+    @DisplayName("취소 결과 조회 타임아웃은 결과 미확정으로 처리한다")
+    void getCancellation_mapsTimeoutToUnconfirmed() {
+        String paymentKey = "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a";
+        String idempotencyKey = "cancel-request-001";
+
+        when(queryClient.getCancellation(paymentKey, idempotencyKey))
+                .thenThrow(new ResourceAccessException(
+                        "응답 타임아웃",
+                        new SocketTimeoutException()
+                ));
+
+        assertThatThrownBy(
+                () -> client.getCancellation(paymentKey, idempotencyKey)
+        ).isInstanceOfSatisfying(
+                PaymentClientException.class,
+                exception -> assertThat(exception.failure())
+                        .isEqualTo(
+                                PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
+                        )
+        );
+    }
+
+    @Test
     @DisplayName("결제 상태 조회 타임아웃은 서버 사용 불가로 처리한다")
     void getByOrderId_mapsTimeoutToUnavailable() {
         when(queryClient.getByOrderId(ORDER_ID))
