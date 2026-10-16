@@ -94,4 +94,19 @@ public class PaymentController {
                 ApiSuccessResponse.of("결제를 취소했습니다.", PaymentCancelResponse.from(cancellation))
         );
     }
+
+    @GetMapping("/{paymentKey}/cancellations")
+    public ResponseEntity<
+            ApiSuccessResponse<PaymentCancelResponse>> getCancellation(
+            @PathVariable
+            @Pattern(regexp = UUID_PATTERN) String paymentKey,
+            @RequestHeader(value = IDEMPOTENCY_KEY_HEADER, required = false)
+
+            @NotBlank @Pattern(regexp = IDEMPOTENCY_KEY_PATTERN) String idempotencyKey
+    ) {
+        PaymentCancel cancellation = queryService.getCancellation(paymentKey, idempotencyKey);
+
+        return ResponseEntity.ok(ApiSuccessResponse.of("결제 취소 상태를 조회했습니다.", PaymentCancelResponse.from(cancellation))
+        );
+    }
 }
