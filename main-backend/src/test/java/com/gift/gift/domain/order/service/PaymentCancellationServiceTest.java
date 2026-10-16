@@ -1,18 +1,17 @@
 package com.gift.gift.domain.order.service;
 
-import java.net.SocketTimeoutException;
 import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.ResourceAccessException;
 
 import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
+import com.gift.gift.domain.order.entity.PaymentCancellationFailureCode;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.support.PaymentCancellationRequestHasher;
@@ -94,10 +93,11 @@ class PaymentCancellationServiceTest {
     }
 
     @Test
-    @DisplayName("취소 응답 타임아웃은 취소 결과 미확정으로 처리한다")
-    void request_mapsTimeoutToUnconfirmed() {
+    @DisplayName("취소 응답 유실 후 조회 결과가 완료이면 취소를 재개한다")
+    void request_recoversCancellationAfterLostResponse() {
         Order order = completedOrder();
         PaymentCancellation cancellation = pendingCancellation();
+        LocalDateTime canceledAt = LocalDateTime.of(2026, 10, 15, 12, 0);
 
         when(requestService.start(
                 REQUESTER_ID,
@@ -109,10 +109,50 @@ class PaymentCancellationServiceTest {
                 .thenThrow(new PaymentClientException(
                         PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED,
                         "취소 응답 타임아웃",
-                        new ResourceAccessException(
-                                "응답 타임아웃",
-                                new SocketTimeoutException()
-                        )
+                        (String) null
+                ));
+        when(paymentClient.getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenReturn(cancelResponse(ORDER_ID, AMOUNT, canceledAt));
+
+        PaymentCancellationApproval result = service.request(
+                REQUESTER_ID,
+                ORDER_ID,
+                IDEMPOTENCY_KEY,
+                CancellationSource.USER
+        );
+
+        assertThat(result.transactionKey()).isEqualTo(TRANSACTION_KEY);
+        assertThat(result.cancelAmount()).isEqualTo(AMOUNT);
+        assertThat(result.canceledAt()).isEqualTo(canceledAt);
+
+        verify(paymentClient).getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY);
+        verifyNoInteractions(transactionService);
+    }
+
+    @Test
+    @DisplayName("취소 명령과 최종 조회가 모두 미확정이면 원장에 기록한다")
+    void request_marksUnconfirmedWhenFinalQueryFails() {
+        Order order = completedOrder();
+        PaymentCancellation cancellation = pendingCancellation();
+        ReflectionTestUtils.setField(cancellation, "id", 20L);
+
+        when(requestService.start(
+                REQUESTER_ID,
+                ORDER_ID,
+                IDEMPOTENCY_KEY,
+                CancellationSource.USER
+        )).thenReturn(PaymentCancellationStartResult.created(cancellation, order));
+        when(paymentClient.cancel(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenThrow(new PaymentClientException(
+                        PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED,
+                        "취소 응답 타임아웃",
+                        (String) null
+                ));
+        when(paymentClient.getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenThrow(new PaymentClientException(
+                        PaymentClientFailure.PAYMENT_NOT_FOUND,
+                        "취소 결과 없음",
+                        (String) null
                 ));
 
         assertThatThrownBy(() -> service.request(
@@ -124,6 +164,11 @@ class PaymentCancellationServiceTest {
                 OrderException.class,
                 exception -> assertThat(exception.getErrorCode())
                         .isEqualTo(ErrorCode.CANCELLATION_RESULT_UNCONFIRMED)
+        );
+
+        verify(transactionService).markResultUnconfirmed(
+                20L,
+                PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
         );
     }
 

@@ -10,4 +10,6 @@ import com.gift.payment.payment.entity.PaymentCancel;
 public interface PaymentCancelRepository extends JpaRepository<PaymentCancel, Long> {
 
     Optional<PaymentCancel> findByPayment_IdAndIdempotencyKey(Long paymentId, String idempotencyKey);
+
+    Optional<PaymentCancel> findByPayment_PaymentKeyAndIdempotencyKey(String paymentKey, String idempotencyKey);
 }

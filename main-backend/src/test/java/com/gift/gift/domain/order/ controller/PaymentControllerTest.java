@@ -21,12 +21,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
 import com.gift.gift.domain.order.entity.OrderStatus;
+import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.service.PaymentCancellationResult;
 import com.gift.gift.domain.order.service.PaymentCancellationService;
 import com.gift.gift.domain.order.service.PaymentQueryService;
+import com.gift.gift.domain.order.service.PaymentProcessingResult;
+import com.gift.gift.domain.order.service.PaymentResult;
 import com.gift.gift.domain.order.service.PaymentService;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 
@@ -100,6 +103,91 @@ class PaymentControllerTest {
     }
 
     @Test
+    @DisplayName("승인 결과가 처리 중이면 재조회 간격과 함께 202를 반환한다")
+    void create_returnsAcceptedWhenPaymentIsProcessing() throws Exception {
+        when(paymentService.pay(
+                eq(USER_ID),
+                eq("payment-request-001"),
+                isNull(),
+                any()
+        )).thenReturn(PaymentResult.processing(
+                new PaymentProcessingResult(
+                        ORDER_ID,
+                        PaymentApprovalResult.UNKNOWN
+                ),
+                true
+        ));
+
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", "payment-request-001")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "productId": 101,
+                                  "recipientUserId": 27,
+                                  "quantity": 2,
+                                  "expectedUnitPrice": 32000
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.message").value(
+                        "결제를 처리하고 있습니다. 잠시 후 다시 확인해 주세요."
+                ))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.paymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.approvalResult").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.retryAfterSeconds").value(5))
+                .andExpect(jsonPath("$.data.paymentKey").doesNotExist())
+                .andExpect(jsonPath("$.error").doesNotExist());
+
+        verify(paymentService).pay(
+                eq(USER_ID),
+                eq("payment-request-001"),
+                isNull(),
+                any()
+        );
+    }
+
+    @Test
+    @DisplayName("승인은 완료되고 로컬 처리가 진행 중이면 확정 메시지와 함께 202를 반환한다")
+    void create_returnsAcceptedWhenLocalPaymentIsProcessing() throws Exception {
+        when(paymentService.pay(
+                eq(USER_ID),
+                eq("payment-request-001"),
+                isNull(),
+                any()
+        )).thenReturn(PaymentResult.processing(
+                new PaymentProcessingResult(
+                        ORDER_ID,
+                        PaymentApprovalResult.APPROVED
+                ),
+                true
+        ));
+
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", "payment-request-001")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "productId": 101,
+                                  "recipientUserId": 27,
+                                  "quantity": 2,
+                                  "expectedUnitPrice": 32000
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.message").value(
+                        "결제는 승인되었으며 주문 처리를 완료하고 있습니다. 완료되면 알려드리겠습니다."
+                ))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.paymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.approvalResult").value("APPROVED"))
+                .andExpect(jsonPath("$.data.retryAfterSeconds").value(5));
+    }
+
+    @Test
     @DisplayName("인증 사용자의 결제 상태를 200 응답으로 반환한다")
     void getStatus_returnsPaymentStatus() throws Exception {
         PaymentStatusResponse response =
@@ -107,6 +195,7 @@ class PaymentControllerTest {
                         ORDER_ID,
                         OrderStatus.COMPLETED,
                         PaymentApprovalResult.APPROVED,
+                        null,
                         501L,
                         GiftStatus.WAITING_FOR_ACCEPTANCE,
                         64_000L,
@@ -140,6 +229,30 @@ class PaymentControllerTest {
         verify(paymentQueryService).getStatus(USER_ID, ORDER_ID);
         verifyNoInteractions(paymentService);
         verifyNoMoreInteractions(paymentQueryService);
+    }
+
+    @Test
+    @DisplayName("운영 확인이 필요한 결제는 새로고침 상태 응답에 실패 코드를 반환한다")
+    void getStatus_returnsReconciliationRequiredFailureCode() throws Exception {
+        PaymentStatusResponse response = new PaymentStatusResponse(
+                ORDER_ID,
+                OrderStatus.PENDING,
+                PaymentApprovalResult.UNKNOWN,
+                OrderFailureCode.PAYMENT_RECONCILIATION_REQUIRED,
+                null,
+                null,
+                64_000L,
+                null,
+                null
+        );
+        when(paymentQueryService.getStatus(USER_ID, ORDER_ID)).thenReturn(response);
+
+        mockMvc.perform(get("/payments/{orderId}", ORDER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.paymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.approvalResult").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.failureCode")
+                        .value("PAYMENT_RECONCILIATION_REQUIRED"));
     }
 
     @Test

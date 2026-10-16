@@ -7,6 +7,7 @@ import java.time.ZoneId;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.order.entity.Order;
+import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 
@@ -14,6 +15,7 @@ public record PaymentStatusResponse(
         String orderId,
         OrderStatus paymentStatus,
         PaymentApprovalResult approvalResult,
+        OrderFailureCode failureCode,
         Long giftId,
         GiftStatus giftStatus,
         long amount,
@@ -26,6 +28,7 @@ public record PaymentStatusResponse(
                 order.getOrderId(),
                 order.getStatus(),
                 order.getApprovalResult(),
+                order.getFailureCode(),
                 gift == null ? null : gift.getId(),
                 gift == null ? null : gift.getStatus(),
                 order.getAmount(),
