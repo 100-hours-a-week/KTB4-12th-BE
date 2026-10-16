@@ -19,7 +19,11 @@ public class NotificationSseHub {
 
     public SseEmitter connect(Long recipientId) {
         SseEmitter emitter = new SseEmitter(CONNECTION_TIMEOUT_MILLIS);
-        connections.computeIfAbsent(recipientId, ignored -> ConcurrentHashMap.newKeySet()).add(emitter);
+        connections.compute(recipientId, (ignored, emitters) -> {
+            Set<SseEmitter> activeEmitters = emitters == null ? ConcurrentHashMap.newKeySet() : emitters;
+            activeEmitters.add(emitter);
+            return activeEmitters;
+        });
 
         Runnable remove = () -> remove(recipientId, emitter);
         emitter.onCompletion(remove);

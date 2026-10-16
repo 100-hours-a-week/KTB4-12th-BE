@@ -20,6 +20,15 @@ public class NotificationCreateTransactionService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void save(NotificationCreateCommand command) {
+        persist(command);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void saveInCurrentTransaction(NotificationCreateCommand command) {
+        persist(command);
+    }
+
+    private void persist(NotificationCreateCommand command) {
         Notification notification = notificationRepository.save(new Notification(
                 command.recipientId(),
                 command.type(),

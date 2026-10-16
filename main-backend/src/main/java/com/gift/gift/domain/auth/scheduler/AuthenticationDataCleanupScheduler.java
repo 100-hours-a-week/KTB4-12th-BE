@@ -6,6 +6,7 @@ import java.util.function.IntSupplier;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +31,11 @@ public class AuthenticationDataCleanupScheduler {
     @Scheduled(
             cron = "0 0 4 * * *",
             zone = "Asia/Seoul"
+    )
+    @SchedulerLock(
+            name = "cleanupAuthenticationData",
+            lockAtMostFor = "${app.auth-cleanup.lock-at-most-for:PT1M}",
+            lockAtLeastFor = "${app.auth-cleanup.lock-at-least-for:PT20S}"
     )
     public void cleanupAuthenticationData() {
         LocalDateTime now = LocalDateTime.now(clock);

@@ -21,7 +21,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-
 import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.domain.credit.service.SignupCreditService;
@@ -32,6 +31,7 @@ import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.friend.repository.FriendRequestRepository;
 import com.gift.gift.domain.friend.repository.FriendshipRepository;
 import com.gift.gift.domain.friend.service.FriendRequestService;
+import com.gift.gift.domain.notification.service.NotificationOutboxDispatcher;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.pagination.CursorPageResponse;
@@ -47,6 +47,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class FriendRequestApiIntegrationTest {
     private static final String PASSWORD_HASH = new BCryptPasswordEncoder(4).encode("Password1!");
     private final List<Long> userIds = new ArrayList<>();
+
+    @Autowired private NotificationOutboxDispatcher dispatcher;
 
     @Autowired private MockMvc mvc;
     @Autowired private UserRepository users;
@@ -212,6 +214,7 @@ class FriendRequestApiIntegrationTest {
     @AfterEach
     void cleanUp() {
         for (Long id : userIds) {
+            jdbc.update("DELETE FROM notification_outbox WHERE recipient_id = ?", id);
             jdbc.update("DELETE FROM notifications WHERE recipient_id = ?", id);
             jdbc.update("DELETE FROM credit_transactions WHERE user_id = ?", id);
             jdbc.update("DELETE FROM friend_requests WHERE requester_id = ? OR receiver_id = ?", id, id);
@@ -238,6 +241,9 @@ class FriendRequestApiIntegrationTest {
         Long requestId = requests.findPendingPair(first.getId(), second.getId()).orElseThrow().getId();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notifications WHERE recipient_id = ?",
                 Long.class, first.getId())).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notifications WHERE recipient_id = ?",
+                Long.class, second.getId())).isZero();
+        dispatcher.dispatch();
         assertThat(jdbc.queryForMap("SELECT type, reference_type, reference_id, title, message, deduplication_key "
                         + "FROM notifications WHERE recipient_id = ?", second.getId()))
                 .containsEntry("type", "FRIEND_REQUEST_RECEIVED")
@@ -304,6 +310,7 @@ class FriendRequestApiIntegrationTest {
                 .andExpect(jsonPath("$.error.requestId").doesNotExist());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM friend_requests WHERE requester_id = ? OR receiver_id = ?",
                 Long.class, first.getId(), first.getId())).isEqualTo(1);
+        dispatcher.dispatch();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notifications WHERE recipient_id IN (?, ?)",
                 Long.class, first.getId(), second.getId())).isEqualTo(1);
     }
@@ -321,6 +328,9 @@ class FriendRequestApiIntegrationTest {
             if (rollback) transaction.setRollbackOnly();
         });
         assertThat(requests.findPendingPair(first.getId(), second.getId()).isPresent()).isEqualTo(!rollback);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notification_outbox WHERE recipient_id = ?",
+                Long.class, second.getId())).isEqualTo(rollback ? 0L : 1L);
+        dispatcher.dispatch();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notifications WHERE recipient_id = ?",
                 Long.class, second.getId())).isEqualTo(rollback ? 0L : 1L);
     }

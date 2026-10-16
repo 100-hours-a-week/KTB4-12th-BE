@@ -26,6 +26,7 @@ import com.gift.gift.domain.credit.repository.CreditTransactionRepository;
 import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
+import com.gift.gift.domain.notification.service.NotificationOutboxDispatcher;
 import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
 import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.entity.Order;
@@ -97,6 +98,9 @@ class PaymentFlowIntegrationTest {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private NotificationOutboxDispatcher notificationOutboxDispatcher;
 
     @MockitoBean
     private PaymentClient paymentClient;
@@ -173,6 +177,12 @@ class PaymentFlowIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update(
+                "delete from notification_outbox where recipient_id in (?, ?)",
+                payerId,
+                recipientId
+        );
+
         jdbcTemplate.update(
                 """
                 delete from notifications
@@ -307,6 +317,8 @@ class PaymentFlowIntegrationTest {
                                     INITIAL_BALANCE - AMOUNT
                             );
                 });
+
+        notificationOutboxDispatcher.dispatch();
 
         assertThat(notificationCount(recipientId, "GIFT_RECEIVED")).isEqualTo(1);
         assertThat(notificationCount(payerId, "PAYMENT_COMPLETED")).isEqualTo(1);
