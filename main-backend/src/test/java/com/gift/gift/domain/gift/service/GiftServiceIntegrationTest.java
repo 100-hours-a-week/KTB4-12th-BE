@@ -92,6 +92,8 @@ class GiftServiceIntegrationTest {
     void tearDown() {
         // 커밋 후 생성된 알림을 먼저 삭제해 사용자 FK와 다음 테스트의 격리를 보장한다.
         jdbcTemplate.update(
+                "DELETE FROM notification_outbox WHERE recipient_id IN (?, ?)", senderId, recipientId);
+        jdbcTemplate.update(
                 "DELETE FROM notifications WHERE recipient_id IN (?, ?)", senderId, recipientId);
         jdbcTemplate.update("DELETE FROM gift_histories WHERE sender_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM friendships WHERE user_id_1 = ? OR user_id_2 = ?", senderId, senderId);

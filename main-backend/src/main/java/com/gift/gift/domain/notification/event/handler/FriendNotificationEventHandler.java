@@ -9,20 +9,20 @@ import com.gift.gift.domain.friend.event.FriendRequestCreatedEvent;
 import com.gift.gift.domain.notification.dto.NotificationCreateCommand;
 import com.gift.gift.domain.notification.entity.NotificationReferenceType;
 import com.gift.gift.domain.notification.entity.NotificationType;
-import com.gift.gift.domain.notification.service.NotificationService;
+import com.gift.gift.domain.notification.service.NotificationOutboxWriter;
 import com.gift.gift.domain.notification.support.NotificationDeduplicationKeyGenerator;
 
 @Component
 @RequiredArgsConstructor
 public class FriendNotificationEventHandler {
 
-    private final NotificationService notificationService;
+    private final NotificationOutboxWriter outboxWriter;
     private final NotificationDeduplicationKeyGenerator keyGenerator;
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(FriendRequestCreatedEvent event) {
         NotificationType type = NotificationType.FRIEND_REQUEST_RECEIVED;
-        notificationService.create(new NotificationCreateCommand(
+        outboxWriter.enqueue(new NotificationCreateCommand(
                 event.recipientId(),
                 event.requestId().toString(),
                 type,
