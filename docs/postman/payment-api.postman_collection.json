@@ -1,0 +1,883 @@
+{
+  "info": {
+    "name": "Payment API",
+    "description": "결제 API 명세와 현재 구현을 기준으로 한 로컬 통합 테스트 컬렉션이다. `Payment Local` Environment를 선택하고 발신자·수신자 계정, 상품 ID, 내부 API 키를 설정한다. 두 사용자는 친구 관계여야 하며 발신자는 결제할 크레딧을 보유해야 한다. 폴더 순서대로 실행하면 로그인, 취소 흐름, 수락 흐름, 오류 응답을 검증한다.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00. 인증 준비",
+      "description": "발신자와 수신자 계정으로 로그인하고 토큰을 Environment에 저장한다. 수신자 로그인 응답의 사용자 ID는 `recipientUserId`로 자동 저장한다.",
+      "item": [
+        {
+          "name": "발신자 로그인",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.data.accessToken).to.be.a('string').and.not.empty;",
+                  "pm.environment.set('senderAccessToken', body.data.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{senderEmail}}\",\n  \"password\": \"{{senderPassword}}\"\n}"
+            },
+            "url": "{{mainBaseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "수신자 로그인",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.data.accessToken).to.be.a('string').and.not.empty;",
+                  "pm.expect(body.data.user.userId).to.be.a('number');",
+                  "pm.environment.set('recipientAccessToken', body.data.accessToken);",
+                  "pm.environment.set('recipientUserId', String(body.data.user.userId));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{recipientEmail}}\",\n  \"password\": \"{{recipientPassword}}\"\n}"
+            },
+            "url": "{{mainBaseUrl}}/auth/login"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01. 결제 후 취소",
+      "description": "사전 검증부터 승인, 동일 요청 재전송, 상태 조회, 취소와 중복 취소까지 순서대로 검증한다.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+        ]
+      },
+      "item": [
+        {
+          "name": "결제 전 크레딧 잔액 조회",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const balance = pm.response.json().data.balance;",
+                  "pm.expect(balance).to.be.a('number');",
+                  "pm.environment.set('balanceBeforePayment', String(balance));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "response": []
+        },
+        {
+          "name": "선물 사전 검증",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.product.productId).to.eql(Number(pm.environment.get('productId')));",
+                  "pm.expect(data.product.quantity).to.eql(Number(pm.environment.get('quantity')));",
+                  "pm.environment.set('expectedUnitPrice', String(data.product.unitPrice));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}}\n}"
+            },
+            "url": "{{mainBaseUrl}}/gifts/preflight"
+          },
+          "response": []
+        },
+        {
+          "name": "결제 승인",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('paymentIdempotencyKey', pm.variables.replaceIn('PAYMENT-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "pm.expect(data.giftExpiresAt).to.be.a('string').and.not.empty;",
+                  "pm.environment.set('orderId', data.orderId);",
+                  "pm.environment.set('giftId', String(data.giftId));",
+                  "pm.environment.set('paymentKey', data.paymentKey);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{paymentIdempotencyKey}}" },
+              { "key": "X-Payment-Scenario", "value": "{{paymentScenario}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}}\n}"
+            },
+            "url": "{{mainBaseUrl}}/payments"
+          },
+          "response": []
+        },
+        {
+          "name": "동일 결제 요청 재전송",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('orderId'));",
+                  "pm.expect(String(data.giftId)).to.eql(pm.environment.get('giftId'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{paymentIdempotencyKey}}" },
+              { "key": "X-Payment-Scenario", "value": "{{paymentScenario}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}}\n}"
+            },
+            "url": "{{mainBaseUrl}}/payments"
+          },
+          "response": []
+        },
+        {
+          "name": "결제 상태 조회",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('orderId'));",
+                  "pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{orderId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "보낸 선물 상세 조회",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('orderId'));",
+                  "pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "pm.expect(data.expiresAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/sent/{{giftId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "결제 취소",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('cancellationIdempotencyKey', pm.variables.replaceIn('CANCEL-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('orderId'));",
+                  "pm.expect(data.paymentStatus).to.eql('CANCELED');",
+                  "pm.expect(data.giftStatus).to.eql('CANCELED');",
+                  "pm.expect(data.canceledAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{cancellationIdempotencyKey}}" }
+            ],
+            "url": "{{mainBaseUrl}}/payments/{{orderId}}/cancellations"
+          },
+          "response": []
+        },
+        {
+          "name": "동일 취소 요청 재전송",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('orderId'));",
+                  "pm.expect(data.paymentStatus).to.eql('CANCELED');",
+                  "pm.expect(data.giftStatus).to.eql('CANCELED');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{cancellationIdempotencyKey}}" }
+            ],
+            "url": "{{mainBaseUrl}}/payments/{{orderId}}/cancellations"
+          },
+          "response": []
+        },
+        {
+          "name": "취소 상태 조회",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.paymentStatus).to.eql('CANCELED');",
+                  "pm.expect(data.giftStatus).to.eql('CANCELED');",
+                  "pm.expect(data.canceledAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{orderId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "취소 후 크레딧 잔액 조회",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const balance = pm.response.json().data.balance;",
+                  "pm.expect(balance).to.eql(Number(pm.environment.get('balanceBeforePayment')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02. 결제 후 선물 수락",
+      "description": "새 결제를 생성하고 발신자·수신자 관점의 목록 및 상세 응답을 확인한 뒤 수신자가 선물을 수락한다.",
+      "item": [
+        {
+          "name": "선물 사전 검증",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.environment.set('expectedUnitPrice', String(data.product.unitPrice));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}}\n}"
+            },
+            "url": "{{mainBaseUrl}}/gifts/preflight"
+          },
+          "response": []
+        },
+        {
+          "name": "수락용 결제 승인",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('acceptPaymentIdempotencyKey', pm.variables.replaceIn('PAYMENT-ACCEPT-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "pm.environment.set('acceptOrderId', data.orderId);",
+                  "pm.environment.set('acceptGiftId', String(data.giftId));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{acceptPaymentIdempotencyKey}}" },
+              { "key": "X-Payment-Scenario", "value": "APPROVE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}}\n}"
+            },
+            "url": "{{mainBaseUrl}}/payments"
+          },
+          "response": []
+        },
+        {
+          "name": "보낸 선물 목록 조회",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().data.items;",
+                  "const gift = items.find(item => String(item.giftId) === pm.environment.get('acceptGiftId'));",
+                  "pm.expect(gift, '생성한 선물이 목록에 있어야 한다').to.exist;",
+                  "pm.expect(gift.orderId).to.eql(pm.environment.get('acceptOrderId'));",
+                  "pm.expect(gift.expiresAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/sent"
+          },
+          "response": []
+        },
+        {
+          "name": "보낸 선물 상세 조회",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('acceptOrderId'));",
+                  "pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "pm.expect(data.expiresAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/sent/{{acceptGiftId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "받은 선물 목록 조회",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{recipientAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().data.items;",
+                  "const gift = items.find(item => String(item.giftId) === pm.environment.get('acceptGiftId'));",
+                  "pm.expect(gift, '생성한 선물이 목록에 있어야 한다').to.exist;",
+                  "pm.expect(gift.orderId).to.eql(pm.environment.get('acceptOrderId'));",
+                  "pm.expect(gift.expiresAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received"
+          },
+          "response": []
+        },
+        {
+          "name": "받은 선물 상세 조회",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{recipientAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('acceptOrderId'));",
+                  "pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "pm.expect(data.expiresAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{acceptGiftId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "선물 수락",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{recipientAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(String(data.giftId)).to.eql(pm.environment.get('acceptGiftId'));",
+                  "pm.expect(data.giftStatus).to.eql('COMPLETED');",
+                  "pm.expect(data.rewardAmount).to.eql(100000);",
+                  "pm.expect(data.completedAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{acceptGiftId}}/accept"
+          },
+          "response": []
+        },
+        {
+          "name": "동일 선물 수락 재전송",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{recipientAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(String(data.giftId)).to.eql(pm.environment.get('acceptGiftId'));",
+                  "pm.expect(data.giftStatus).to.eql('COMPLETED');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{acceptGiftId}}/accept"
+          },
+          "response": []
+        },
+        {
+          "name": "수락 후 결제 상태 조회",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "pm.expect(data.giftStatus).to.eql('COMPLETED');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{acceptOrderId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03. 오류 응답",
+      "description": "각 요청은 독립적으로 실행할 수 있다. 결제 거절 요청은 로컬 Payment Server의 DECLINE 시나리오를 사용한다.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+        ]
+      },
+      "item": [
+        {
+          "name": "필수 결제 필드 누락",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.error.code).to.eql('INVALID_REQUEST');",
+                  "pm.expect(body.error.traceId).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "INVALID-{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": null,\n  \"recipientUserId\": null,\n  \"quantity\": 0,\n  \"expectedUnitPrice\": -1\n}"
+            },
+            "url": "{{mainBaseUrl}}/payments"
+          },
+          "response": []
+        },
+        {
+          "name": "결제 승인 거절",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.error.code).to.eql('PAYMENT_DECLINED');",
+                  "pm.expect(body.error.traceId).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "DECLINE-{{$guid}}" },
+              { "key": "X-Payment-Scenario", "value": "DECLINE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}}\n}"
+            },
+            "url": "{{mainBaseUrl}}/payments"
+          },
+          "response": []
+        },
+        {
+          "name": "잘못된 주문번호 조회",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.error.code).to.eql('INVALID_REQUEST');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/not-a-uuid"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04. Payment Server 내부 API 진단",
+      "description": "Main Backend를 거치지 않고 Payment Server 계약만 확인한다. `internalApiKey`가 비어 있으면 각 요청을 건너뛴다. 이 흐름은 Payment Server의 payments 데이터만 생성하므로 사용자 결제·선물 흐름 검증에는 사용하지 않는다.",
+      "item": [
+        {
+          "name": "내부 결제 승인",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('internalApiKey')) pm.execution.skipRequest();",
+                  "pm.environment.set('internalOrderId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('internalOrderId'));",
+                  "pm.expect(data.status).to.eql('COMPLETED');",
+                  "pm.environment.set('internalPaymentKey', data.paymentKey);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Internal-Api-Key", "value": "{{internalApiKey}}" },
+              { "key": "X-Payment-Scenario", "value": "APPROVE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{internalOrderId}}\",\n  \"amount\": {{internalAmount}}\n}"
+            },
+            "url": "{{paymentBaseUrl}}/payments/confirm"
+          },
+          "response": []
+        },
+        {
+          "name": "내부 결제 상태 조회",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('internalApiKey')) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('internalOrderId'));",
+                  "pm.expect(data.status).to.eql('COMPLETED');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Internal-Api-Key", "value": "{{internalApiKey}}" }
+            ],
+            "url": "{{paymentBaseUrl}}/payments/orders/{{internalOrderId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "내부 결제 취소",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('internalApiKey')) pm.execution.skipRequest();",
+                  "pm.environment.set('internalCancellationIdempotencyKey', pm.variables.replaceIn('INTERNAL-CANCEL-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('internalOrderId'));",
+                  "pm.expect(data.status).to.eql('CANCELED');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Internal-Api-Key", "value": "{{internalApiKey}}" },
+              { "key": "Idempotency-Key", "value": "{{internalCancellationIdempotencyKey}}" }
+            ],
+            "url": "{{paymentBaseUrl}}/payments/{{internalPaymentKey}}/cancel"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
