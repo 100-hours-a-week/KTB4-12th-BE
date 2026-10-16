@@ -16,6 +16,7 @@ import com.gift.gift.domain.credit.entity.CreditTransactionType;
 import com.gift.gift.domain.credit.repository.CreditAccountRepository;
 import com.gift.gift.domain.credit.repository.CreditTransactionRepository;
 import com.gift.gift.domain.gift.entity.GiftHistory;
+import com.gift.gift.domain.gift.event.GiftCreatedEvent;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.gift.support.GiftPolicy;
 import com.gift.gift.domain.order.entity.Order;
@@ -152,6 +153,13 @@ public class PaymentCompletionService {
                         completedOrder.getId(),
                         completedOrder.getPayerId(),
                         savedGift.getId(),
+                        savedGift.getProductNameSnapshot()
+                )
+        );
+        eventPublisher.publishEvent(
+                new GiftCreatedEvent(
+                        savedGift.getId(),
+                        completedOrder.getRecipientId(),
                         savedGift.getProductNameSnapshot()
                 )
         );

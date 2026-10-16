@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.gift.repository.GiftQueryRow;
+import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.gift.support.GiftCursor;
 import com.gift.gift.global.pagination.OpaqueCursorCodec;
 
@@ -40,7 +41,7 @@ class GiftPageAssemblerTest {
         GiftCursor nextCursor = cursorCodec.decode(page.nextCursor(), GiftCursor.class);
         assertThat(page.items()).containsExactlyElementsOf(fetched.subList(0, 20));
         assertThat(page.hasNext()).isTrue();
-        assertThat(nextCursor).isEqualTo(new GiftCursor(lastItem.completedAt(), lastItem.giftId()));
+        assertThat(nextCursor).isEqualTo(new GiftCursor(lastItem.createdAt(), lastItem.giftId()));
     }
 
     @Test
@@ -73,12 +74,15 @@ class GiftPageAssemblerTest {
     }
 
     private List<GiftQueryRow> rows(int count) {
-        LocalDateTime firstCompletedAt = LocalDateTime.of(2026, 9, 17, 20, 0);
+        LocalDateTime firstCreatedAt = LocalDateTime.of(2026, 9, 17, 20, 0);
 
         return IntStream.range(0, count)
                 .mapToObj(index -> new GiftQueryRow(
                         100L - index,
-                        firstCompletedAt.minusMinutes(index),
+                        200L - index,
+                        firstCreatedAt.minusMinutes(index),
+                        GiftStatus.WAITING_FOR_ACCEPTANCE,
+                        firstCreatedAt.plusDays(7).minusMinutes(index),
                         1L,
                         "상대 사용자",
                         null,

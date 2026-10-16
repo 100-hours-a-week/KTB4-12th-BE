@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.NoHandlerFoundException;
 
 import com.gift.gift.domain.auth.exception.LoginRateLimitExceededException;
 import com.gift.gift.global.response.ApiResponse;
@@ -153,6 +154,13 @@ public class GlobalExceptionHandler {
                 .status(exception.getErrorCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(response.getBody());
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNoHandlerFoundException(
+            NoHandlerFoundException exception
+    ) {
+        return requestError(ErrorCode.NOT_FOUND, List.of());
     }
 
     @ExceptionHandler(Exception.class)

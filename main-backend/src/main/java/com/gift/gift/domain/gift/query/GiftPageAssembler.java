@@ -37,7 +37,7 @@ public class GiftPageAssembler {
         }
 
         GiftQueryRow lastItem = items.getLast();
-        GiftCursor nextCursor = new GiftCursor(lastItem.completedAt(), lastItem.giftId());
+        GiftCursor nextCursor = new GiftCursor(lastItem.createdAt(), lastItem.giftId());
 
         return new GiftPage(items, true, cursorCodec.encode(nextCursor));
     }

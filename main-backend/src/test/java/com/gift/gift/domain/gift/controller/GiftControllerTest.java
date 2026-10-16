@@ -4,9 +4,9 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,7 +23,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
-import com.gift.gift.domain.gift.dto.response.GiftCreateResponse;
 import com.gift.gift.domain.gift.dto.response.GiftPreflightResponse;
 import com.gift.gift.domain.gift.dto.response.GiftReceivedDetailResponse;
 import com.gift.gift.domain.gift.dto.response.GiftSentDetailResponse;
@@ -59,8 +58,9 @@ class GiftControllerTest {
 
     private static final Long USER_ID = 1L;
     private static final LocalDateTime COMPLETED_AT = LocalDateTime.of(2026, 8, 29, 14, 20);
+    private static final OffsetDateTime EXPIRES_AT = OffsetDateTime.parse("2026-09-05T14:20:00+09:00");
+    private static final String ORDER_ID = "550e8400-e29b-41d4-a716-446655440000";
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
-    private static final UUID IDEMPOTENCY_KEY = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
     private GiftQueryService giftQueryService;
     private GiftService giftService;
@@ -126,6 +126,9 @@ class GiftControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("보낸 선물 목록을 조회했습니다."))
                 .andExpect(jsonPath("$.data.items[0].giftId").value(301))
+                .andExpect(jsonPath("$.data.items[0].orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.items[0].giftStatus").value("WAITING_FOR_ACCEPTANCE"))
+                .andExpect(jsonPath("$.data.items[0].expiresAt").value("2026-09-05T14:20:00+09:00"))
                 .andExpect(jsonPath("$.data.items[0].recipient.name").value("김민정"))
                 .andExpect(jsonPath("$.data.items[0].product.thumbnailUrl").value("https://cdn.example.com/51.jpg"))
                 .andExpect(jsonPath("$.data.items[0].totalPrice").value(70000))
@@ -176,6 +179,9 @@ class GiftControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("받은 선물 목록을 조회했습니다."))
                 .andExpect(jsonPath("$.data.items[0].giftId").value(410))
+                .andExpect(jsonPath("$.data.items[0].orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.items[0].giftStatus").value("WAITING_FOR_ACCEPTANCE"))
+                .andExpect(jsonPath("$.data.items[0].expiresAt").value("2026-09-05T14:20:00+09:00"))
                 .andExpect(jsonPath("$.data.items[0].sender.name").value("박선물"))
                 .andExpect(jsonPath("$.data.items[0].product.thumbnailUrl").value("https://cdn.example.com/51.jpg"))
                 .andExpect(jsonPath("$.data.pagination.nextCursor").value("next-cursor"))
@@ -225,6 +231,8 @@ class GiftControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("보낸 선물 상세 정보를 조회했습니다."))
                 .andExpect(jsonPath("$.data.giftId").value(301))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.giftStatus").value("WAITING_FOR_ACCEPTANCE"))
                 .andExpect(jsonPath("$.data.recipient.name").value("김민정"))
                 .andExpect(jsonPath("$.data.product.imageUrl").value("https://cdn.example.com/51.jpg"))
                 .andExpect(jsonPath("$.error").doesNotExist());
@@ -242,6 +250,8 @@ class GiftControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("받은 선물 상세 정보를 조회했습니다."))
                 .andExpect(jsonPath("$.data.giftId").value(410))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.giftStatus").value("WAITING_FOR_ACCEPTANCE"))
                 .andExpect(jsonPath("$.data.sender.name").value("박선물"))
                 .andExpect(jsonPath("$.data.product.imageUrl").value("https://cdn.example.com/51.jpg"))
                 .andExpect(jsonPath("$.error").doesNotExist());
@@ -474,101 +484,15 @@ class GiftControllerTest {
     }
 
     @Test
-    @DisplayName("선물 생성은 인증 사용자·멱등 키·요청 본문으로 생성하고 201과 결과를 반환한다")
-    void createGift_returnsCreated_forValidRequest() throws Exception {
-        GiftCreateResponse response = GiftCreateResponse.from(new GiftCreateResponse.Gift(
-                501L,
-                COMPLETED_AT,
-                "김민지",
-                new GiftCreateResponse.Product(
-                        "이니스프리 그린티 수분 크림",
-                        2,
-                        BigDecimal.valueOf(32_000),
-                        BigDecimal.valueOf(64_000),
-                        "https://cdn.example.com/501.jpg"
-                )
-        ));
-        when(giftService.createGiftResponse(eq(USER_ID), eq(IDEMPOTENCY_KEY), any())).thenReturn(response);
-
+    @DisplayName("구형 선물 생성 API는 더 이상 제공하지 않는다")
+    void createGift_returnsNotFound() throws Exception {
         mockMvc.perform(post("/gifts")
                         .contentType(APPLICATION_JSON)
-                        .header("Idempotency-Key", IDEMPOTENCY_KEY.toString())
-                        .content(createGiftBody()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.message").value("선물을 보냈습니다."))
-                .andExpect(jsonPath("$.data.gift.giftId").value(501))
-                .andExpect(jsonPath("$.data.gift.recipientName").value("김민지"))
-                .andExpect(jsonPath("$.data.gift.product.totalPrice").value(64000))
-                .andExpect(jsonPath("$.data.gift.product.imageUrl").value("https://cdn.example.com/501.jpg"))
-                .andExpect(jsonPath("$.error").doesNotExist());
-
-        verify(giftService).createGiftResponse(eq(USER_ID), eq(IDEMPOTENCY_KEY), any());
-        verifyNoMoreInteractions(giftService);
-    }
-
-    @Test
-    @DisplayName("Idempotency-Key 헤더가 없으면 400 INVALID_REQUEST를 반환한다")
-    void createGift_returnsInvalidRequest_whenIdempotencyKeyHeaderIsMissing() throws Exception {
-        mockMvc.perform(post("/gifts")
-                        .contentType(APPLICATION_JSON)
-                        .content(createGiftBody()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
-
-        verifyNoInteractions(giftService);
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"not-a-uuid", "550e8400-e29b-41d4-a716", ""})
-    @DisplayName("Idempotency-Key 헤더가 UUID 형식이 아니면 400 INVALID_REQUEST를 반환한다")
-    void createGift_returnsInvalidRequest_whenIdempotencyKeyHeaderIsNotUuid(String idempotencyKeyHeader) throws Exception {
-        mockMvc.perform(post("/gifts")
-                        .contentType(APPLICATION_JSON)
-                        .header("Idempotency-Key", idempotencyKeyHeader)
-                        .content(createGiftBody()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
-
-        verifyNoInteractions(giftService);
-    }
-
-    @Test
-    @DisplayName("선물 생성 요청 본문 값이 없으면 400 INVALID_REQUEST를 반환한다")
-    void createGift_returnsInvalidRequest_whenBodyFieldsAreMissing() throws Exception {
-        mockMvc.perform(post("/gifts")
-                        .contentType(APPLICATION_JSON)
-                        .header("Idempotency-Key", IDEMPOTENCY_KEY.toString())
                         .content("{}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
 
         verifyNoInteractions(giftService);
-    }
-
-    @Test
-    @DisplayName("자기 자신에게 선물하면 422 GIFT_CANNOT_SEND_TO_SELF를 반환한다")
-    void createGift_returnsGiftCannotSendToSelf_whenServiceThrows() throws Exception {
-        when(giftService.createGiftResponse(eq(USER_ID), eq(IDEMPOTENCY_KEY), any()))
-                .thenThrow(new GiftException(ErrorCode.GIFT_CANNOT_SEND_TO_SELF));
-
-        mockMvc.perform(post("/gifts")
-                        .contentType(APPLICATION_JSON)
-                        .header("Idempotency-Key", IDEMPOTENCY_KEY.toString())
-                        .content(createGiftBody()))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.error.code").value("GIFT_CANNOT_SEND_TO_SELF"))
-                .andExpect(jsonPath("$.data").doesNotExist());
-    }
-
-    private String createGiftBody() {
-        return """
-                {
-                  "productId": 51,
-                  "recipientUserId": 27,
-                  "quantity": 2,
-                  "expectedUnitPrice": 32000
-                }
-                """;
     }
 
     private String preflightBody() {
@@ -584,6 +508,9 @@ class GiftControllerTest {
     private SentGiftListItem sentListItem() {
         return SentGiftListItem.from(
                 301L,
+                ORDER_ID,
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                EXPIRES_AT,
                 COMPLETED_AT,
                 new SentGiftListItem.Recipient(27L, "김민정"),
                 new SentGiftListItem.Product(51L, "오 드 퍼퓸 50ml", "Example Brand", "https://cdn.example.com/51.jpg"),
@@ -596,6 +523,9 @@ class GiftControllerTest {
     private ReceivedGiftListItem receivedListItem() {
         return ReceivedGiftListItem.from(
                 410L,
+                ORDER_ID,
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                EXPIRES_AT,
                 COMPLETED_AT,
                 new ReceivedGiftListItem.Sender(12L, "박선물"),
                 new ReceivedGiftListItem.Product(51L, "오 드 퍼퓸 50ml", "Example Brand", "https://cdn.example.com/51.jpg"),
@@ -608,6 +538,9 @@ class GiftControllerTest {
     private GiftSentDetailResponse sentDetail() {
         return GiftSentDetailResponse.from(
                 301L,
+                ORDER_ID,
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                EXPIRES_AT,
                 COMPLETED_AT,
                 new GiftSentDetailResponse.Recipient(27L, "김민정"),
                 new GiftSentDetailResponse.Product(
@@ -622,6 +555,9 @@ class GiftControllerTest {
     private GiftReceivedDetailResponse receivedDetail() {
         return GiftReceivedDetailResponse.from(
                 410L,
+                ORDER_ID,
+                GiftStatus.WAITING_FOR_ACCEPTANCE,
+                EXPIRES_AT,
                 COMPLETED_AT,
                 new GiftReceivedDetailResponse.Sender(12L, "박선물"),
                 new GiftReceivedDetailResponse.Product(

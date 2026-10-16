@@ -19,6 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -29,8 +30,15 @@ import com.gift.gift.domain.credit.service.SignupCreditService;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
+import com.gift.gift.infrastructure.payment.client.PaymentClient;
+import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
+import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
+import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -44,6 +52,7 @@ class FriendGiftFlowIntegrationTest {
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private SignupCreditService signupCreditService;
     @Autowired private JdbcTemplate jdbc;
+    @MockitoBean private PaymentClient paymentClient;
 
     private User requester;
     private User receiver;
@@ -113,13 +122,16 @@ class FriendGiftFlowIntegrationTest {
         long friendId = friends(requester, receiver, 1);
         assertThat(friends(receiver, requester, 1)).isEqualTo(friendId);
         preflight(sender, recipient, true);
+        stubApproval();
         String giftBody = giftBody(recipient, true);
-        MvcResult gift = mvc.perform(post("/gifts").header("Idempotency-Key", UUID.randomUUID())
+        MvcResult gift = mvc.perform(post("/payments")
+                        .header("Idempotency-Key", "PAYMENT-" + UUID.randomUUID())
+                        .header("X-Payment-Scenario", "APPROVE")
                         .with(jwt().jwt(j -> j.subject(sender.getId().toString())))
                         .contentType(MediaType.APPLICATION_JSON).content(giftBody))
                 .andExpect(status().isCreated()).andReturn();
         long giftId = mapper.readTree(gift.getResponse().getContentAsString()).path("data")
-                .path("gift").path("giftId").asLong();
+                .path("giftId").asLong();
 
         // Preflight는 친구 관계를 예약하지 않으므로 삭제 후 Create가 다시 검증해야 한다.
         preflight(sender, recipient, true);
@@ -129,7 +141,9 @@ class FriendGiftFlowIntegrationTest {
         friends(requester, receiver, 0);
         friends(receiver, requester, 0);
         preflight(sender, recipient, false);
-        mvc.perform(post("/gifts").header("Idempotency-Key", UUID.randomUUID())
+        mvc.perform(post("/payments")
+                        .header("Idempotency-Key", "PAYMENT-" + UUID.randomUUID())
+                        .header("X-Payment-Scenario", "APPROVE")
                         .with(jwt().jwt(j -> j.subject(sender.getId().toString())))
                         .contentType(MediaType.APPLICATION_JSON).content(giftBody))
                 .andExpect(status().isUnprocessableEntity())
@@ -187,12 +201,28 @@ class FriendGiftFlowIntegrationTest {
                 + ",\"quantity\":1" + (create ? ",\"expectedUnitPrice\":32000" : "") + "}";
     }
 
+    private void stubApproval() {
+        when(paymentClient.confirm(any(PaymentConfirmRequest.class), eq("APPROVE")))
+                .thenAnswer(invocation -> {
+                    PaymentConfirmRequest request = invocation.getArgument(0);
+                    return new PaymentResponse(
+                            request.orderId(),
+                            UUID.randomUUID().toString(),
+                            UUID.randomUUID().toString(),
+                            PaymentServerStatus.COMPLETED,
+                            request.amount(),
+                            java.time.LocalDateTime.of(2026, 10, 16, 14, 30)
+                    );
+                });
+    }
+
     @AfterEach
     void cleanUp() {
         jdbc.update("DELETE FROM notification_outbox WHERE recipient_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM notifications WHERE recipient_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM credit_transactions WHERE user_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM gift_histories WHERE product_id = ?", productId);
+        jdbc.update("DELETE FROM orders WHERE payer_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM friend_requests WHERE requester_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM friendships WHERE user_id_1 IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM products WHERE id = ?", productId);

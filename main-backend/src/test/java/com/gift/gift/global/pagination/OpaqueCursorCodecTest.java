@@ -60,7 +60,7 @@ class OpaqueCursorCodecTest {
     }
 
     private record CursorWithUnknownField(
-            LocalDateTime completedAt,
+            LocalDateTime createdAt,
             Long id,
             String unknown
     ) {

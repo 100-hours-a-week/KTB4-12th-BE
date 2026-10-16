@@ -31,6 +31,8 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import com.gift.gift.domain.gift.dto.response.ReceivedGiftListItem;
 import com.gift.gift.domain.gift.dto.response.SentGiftListItem;
 import com.gift.gift.domain.gift.entity.GiftHistory;
+import com.gift.gift.domain.gift.entity.GiftStatus;
+import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.entity.ProductImage;
@@ -98,7 +100,12 @@ class GiftQueryServiceIntegrationTest {
         assertThat(firstSentPage.pagination().hasNext()).isTrue();
         assertThat(firstSentPage.pagination().nextCursor()).isNotBlank();
         assertThat(firstSentPage.items()).allSatisfy(item ->
-                assertThat(item.product().thumbnailUrl()).isNull());
+                {
+                    assertThat(item.product().thumbnailUrl()).isNull();
+                    assertThat(item.orderId()).isNotBlank();
+                    assertThat(item.giftStatus()).isEqualTo(GiftStatus.WAITING_FOR_ACCEPTANCE);
+                    assertThat(item.expiresAt()).isNotNull();
+                });
         assertThat(lastSentPage.items()).extracting(SentGiftListItem::giftId)
                 .containsExactly(fixture.giftIds().getLast());
         assertThat(lastSentPage.pagination().hasNext()).isFalse();
@@ -115,7 +122,7 @@ class GiftQueryServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("보낸·받은 선물 목록 조회 쿼리 수는 데이터 수와 무관하게 두 번이다")
+    @DisplayName("보낸·받은 선물 목록 조회 쿼리 수는 데이터 수와 무관하게 세 번이다")
     void getGifts_executesTwoQueriesRegardlessOfItemCount() {
         PageFixture singleGiftFixture = persistPageFixture(1);
         PageFixture fullPageFixture = persistPageFixture(21);
@@ -137,10 +144,10 @@ class GiftQueryServiceIntegrationTest {
         giftQueryService.getReceivedGifts(fullPageFixture.recipientId(), null);
         long fullReceivedPageQueryCount = statistics.getPrepareStatementCount();
 
-        assertThat(singleSentGiftQueryCount).isEqualTo(2);
-        assertThat(fullSentPageQueryCount).isEqualTo(2);
-        assertThat(singleReceivedGiftQueryCount).isEqualTo(2);
-        assertThat(fullReceivedPageQueryCount).isEqualTo(2);
+        assertThat(singleSentGiftQueryCount).isEqualTo(3);
+        assertThat(fullSentPageQueryCount).isEqualTo(3);
+        assertThat(singleReceivedGiftQueryCount).isEqualTo(3);
+        assertThat(fullReceivedPageQueryCount).isEqualTo(3);
     }
 
     @Test
@@ -220,26 +227,44 @@ class GiftQueryServiceIntegrationTest {
 
         List<GiftHistory> giftHistories = new ArrayList<>();
         for (int index = 0; index < giftCount; index++) {
-            GiftHistory giftHistory = new GiftHistory(
+            String orderId = UUID.randomUUID().toString();
+            String requestHash = "%064d".formatted(index);
+            Order order = new Order(
+                    orderId,
+                    sender.getId(),
+                    recipient.getId(),
+                    product.getId(),
+                    1,
+                    10_000L,
+                    10_000L,
+                    UUID.randomUUID().toString(),
+                    requestHash
+            );
+            entityManager.persist(order);
+            entityManager.flush();
+
+            GiftHistory giftHistory = GiftHistory.waitingForAcceptance(
+                    order.getId(),
                     sender,
                     recipient,
                     product,
                     1,
                     BigDecimal.valueOf(10_000),
                     "선물 상품",
-                    UUID.randomUUID(),
-                    "%064d".formatted(index)
+                    UUID.fromString(orderId),
+                    requestHash,
+                    LocalDateTime.of(2026, 9, 25, 12, 0).minusMinutes(index)
             );
             entityManager.persist(giftHistory);
             giftHistories.add(giftHistory);
         }
         entityManager.flush();
 
-        LocalDateTime latestCompletedAt = LocalDateTime.of(2026, 9, 18, 12, 0);
+        LocalDateTime latestCreatedAt = LocalDateTime.of(2026, 9, 18, 12, 0);
         for (int index = 0; index < giftHistories.size(); index++) {
             jdbcTemplate.update(
-                    "UPDATE gift_histories SET completed_at = ? WHERE id = ?",
-                    latestCompletedAt.minusMinutes(index),
+                    "UPDATE gift_histories SET created_at = ? WHERE id = ?",
+                    latestCreatedAt.minusMinutes(index),
                     giftHistories.get(index).getId()
             );
         }
