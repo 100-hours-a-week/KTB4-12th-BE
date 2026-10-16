@@ -65,7 +65,8 @@ import com.gift.gift.global.common.BaseTimeEntity;
                                     'PAYMENT_DECLINED',
                                     'PAYMENT_RESULT_UNCONFIRMED',
                                     'PAYMENT_SERVER_UNAVAILABLE',
-                                    'LOCAL_PROCESSING_FAILED'
+                                    'LOCAL_PROCESSING_FAILED',
+                                    'PAYMENT_RECONCILIATION_REQUIRED'
                                 )
                                 """
                 )

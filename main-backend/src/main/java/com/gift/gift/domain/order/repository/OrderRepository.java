@@ -2,7 +2,9 @@ package com.gift.gift.domain.order.repository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.List;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -20,6 +22,31 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByOrderIdAndPayerId(String orderId, Long payerId);
 
     Optional<Order> findByPayerIdAndIdempotencyKey(Long payerId, String idempotencyKey);
+
+    @Query("""
+            select orders
+            from Order orders
+            where orders.status = :pendingStatus
+              and orders.updatedAt <= :staleBefore
+              and (
+                    orders.approvalResult is null
+                    or orders.approvalResult = :unknownResult
+                    or orders.approvalResult = :approvedResult
+              )
+              and (
+                    orders.failureCode is null
+                    or orders.failureCode <> :reconciliationRequired
+              )
+            order by orders.updatedAt asc, orders.id asc
+            """)
+    List<Order> findReconciliationCandidates(
+            @Param("pendingStatus") OrderStatus pendingStatus,
+            @Param("unknownResult") PaymentApprovalResult unknownResult,
+            @Param("approvedResult") PaymentApprovalResult approvedResult,
+            @Param("reconciliationRequired") OrderFailureCode reconciliationRequired,
+            @Param("staleBefore") LocalDateTime staleBefore,
+            Pageable pageable
+    );
 
     @Modifying(
             flushAutomatically = true,
@@ -138,6 +165,31 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("pendingStatus") OrderStatus pendingStatus,
             @Param("approvedResult") PaymentApprovalResult approvedResult,
             @Param("failureCode") OrderFailureCode failureCode,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update Order orders
+            set orders.approvalResult = :unknownResult,
+                orders.failureCode = :reconciliationRequired,
+                orders.updatedAt = :updatedAt
+            where orders.id = :orderRecordId
+              and orders.status = :pendingStatus
+              and (
+                    orders.approvalResult is null
+                    or orders.approvalResult = :unknownResult
+              )
+              and (
+                    orders.failureCode is null
+                    or orders.failureCode <> :reconciliationRequired
+              )
+            """)
+    int markReconciliationRequired(
+            @Param("orderRecordId") Long orderRecordId,
+            @Param("pendingStatus") OrderStatus pendingStatus,
+            @Param("unknownResult") PaymentApprovalResult unknownResult,
+            @Param("reconciliationRequired") OrderFailureCode reconciliationRequired,
             @Param("updatedAt") LocalDateTime updatedAt
     );
 

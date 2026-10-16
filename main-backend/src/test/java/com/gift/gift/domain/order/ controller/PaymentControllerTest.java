@@ -21,6 +21,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
 import com.gift.gift.domain.order.entity.OrderStatus;
+import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
@@ -194,6 +195,7 @@ class PaymentControllerTest {
                         ORDER_ID,
                         OrderStatus.COMPLETED,
                         PaymentApprovalResult.APPROVED,
+                        null,
                         501L,
                         GiftStatus.WAITING_FOR_ACCEPTANCE,
                         64_000L,
@@ -227,6 +229,30 @@ class PaymentControllerTest {
         verify(paymentQueryService).getStatus(USER_ID, ORDER_ID);
         verifyNoInteractions(paymentService);
         verifyNoMoreInteractions(paymentQueryService);
+    }
+
+    @Test
+    @DisplayName("운영 확인이 필요한 결제는 새로고침 상태 응답에 실패 코드를 반환한다")
+    void getStatus_returnsReconciliationRequiredFailureCode() throws Exception {
+        PaymentStatusResponse response = new PaymentStatusResponse(
+                ORDER_ID,
+                OrderStatus.PENDING,
+                PaymentApprovalResult.UNKNOWN,
+                OrderFailureCode.PAYMENT_RECONCILIATION_REQUIRED,
+                null,
+                null,
+                64_000L,
+                null,
+                null
+        );
+        when(paymentQueryService.getStatus(USER_ID, ORDER_ID)).thenReturn(response);
+
+        mockMvc.perform(get("/payments/{orderId}", ORDER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.paymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.approvalResult").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.failureCode")
+                        .value("PAYMENT_RECONCILIATION_REQUIRED"));
     }
 
     @Test

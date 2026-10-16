@@ -16,6 +16,7 @@ import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
+import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
@@ -62,6 +63,7 @@ class PaymentQueryServiceTest {
         when(order.getOrderId()).thenReturn(ORDER_ID);
         when(order.getStatus()).thenReturn(OrderStatus.COMPLETED);
         when(order.getApprovalResult()).thenReturn(PaymentApprovalResult.APPROVED);
+        when(order.getFailureCode()).thenReturn(OrderFailureCode.LOCAL_PROCESSING_FAILED);
         when(order.getAmount()).thenReturn(AMOUNT);
         when(order.getApprovedAt()).thenReturn(APPROVED_AT);
         when(order.getCanceledAt()).thenReturn(null);
@@ -78,6 +80,7 @@ class PaymentQueryServiceTest {
         assertThat(response.orderId()).isEqualTo(ORDER_ID);
         assertThat(response.paymentStatus()).isEqualTo(OrderStatus.COMPLETED);
         assertThat(response.approvalResult()).isEqualTo(PaymentApprovalResult.APPROVED);
+        assertThat(response.failureCode()).isEqualTo(OrderFailureCode.LOCAL_PROCESSING_FAILED);
         assertThat(response.giftId()).isEqualTo(GIFT_ID);
         assertThat(response.giftStatus()).isEqualTo(GiftStatus.WAITING_FOR_ACCEPTANCE);
         assertThat(response.amount()).isEqualTo(AMOUNT);
