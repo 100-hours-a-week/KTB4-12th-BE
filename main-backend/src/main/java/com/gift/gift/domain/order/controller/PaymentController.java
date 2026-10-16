@@ -16,6 +16,7 @@ import com.gift.gift.domain.order.dto.response.PaymentCreateResponse;
 import com.gift.gift.domain.order.dto.response.PaymentProcessingResponse;
 import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
 import com.gift.gift.domain.order.entity.CancellationSource;
+import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.response.OrderSuccessCode;
 import com.gift.gift.domain.order.service.PaymentCancellationResult;
 import com.gift.gift.domain.order.service.PaymentCancellationService;
@@ -50,7 +51,10 @@ public class PaymentController {
         PaymentResult result = paymentService.pay(payerId, idempotencyKey, scenario, request);
 
         if (result.isProcessing()) {
-            OrderSuccessCode successCode = OrderSuccessCode.PAYMENT_PROCESSING;
+            OrderSuccessCode successCode =
+                    result.processing().approvalResult() == PaymentApprovalResult.APPROVED
+                            ? OrderSuccessCode.PAYMENT_LOCAL_PROCESSING
+                            : OrderSuccessCode.PAYMENT_PROCESSING;
             PaymentProcessingResponse response = PaymentProcessingResponse.from(
                     result.processing(),
                     RETRY_AFTER_SECONDS

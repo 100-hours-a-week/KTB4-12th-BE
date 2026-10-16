@@ -149,6 +149,44 @@ class PaymentControllerTest {
     }
 
     @Test
+    @DisplayName("승인은 완료되고 로컬 처리가 진행 중이면 확정 메시지와 함께 202를 반환한다")
+    void create_returnsAcceptedWhenLocalPaymentIsProcessing() throws Exception {
+        when(paymentService.pay(
+                eq(USER_ID),
+                eq("payment-request-001"),
+                isNull(),
+                any()
+        )).thenReturn(PaymentResult.processing(
+                new PaymentProcessingResult(
+                        ORDER_ID,
+                        PaymentApprovalResult.APPROVED
+                ),
+                true
+        ));
+
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", "payment-request-001")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "productId": 101,
+                                  "recipientUserId": 27,
+                                  "quantity": 2,
+                                  "expectedUnitPrice": 32000
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.message").value(
+                        "결제는 승인되었으며 주문 처리를 완료하고 있습니다. 완료되면 알려드리겠습니다."
+                ))
+                .andExpect(jsonPath("$.data.orderId").value(ORDER_ID))
+                .andExpect(jsonPath("$.data.paymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.approvalResult").value("APPROVED"))
+                .andExpect(jsonPath("$.data.retryAfterSeconds").value(5));
+    }
+
+    @Test
     @DisplayName("인증 사용자의 결제 상태를 200 응답으로 반환한다")
     void getStatus_returnsPaymentStatus() throws Exception {
         PaymentStatusResponse response =

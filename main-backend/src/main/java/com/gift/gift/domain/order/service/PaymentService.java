@@ -3,6 +3,8 @@ package com.gift.gift.domain.order.service;
 import java.util.Objects;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
@@ -23,10 +25,13 @@ import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
 @RequiredArgsConstructor
 public class PaymentService {
 
+    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
+
     private final PaymentRequestService paymentRequestService;
     private final PaymentClient paymentClient;
     private final OrderApprovalTransactionService approvalService;
     private final PaymentCompletionService completionService;
+    private final PaymentLocalCompletionRetry localCompletionRetry;
 
     public PaymentResult pay(
             Long payerId,
@@ -131,12 +136,43 @@ public class PaymentService {
 
     private PaymentResult complete(Order order, boolean created) {
         try {
-            PaymentCompletion completion = completionService.complete(order.getId());
+            PaymentCompletion completion = localCompletionRetry.execute(
+                    order.getOrderId(),
+                    () -> completionService.complete(order.getId())
+            );
             return PaymentResult.completed(completion, created);
         } catch (RuntimeException exception) {
+            LocalPaymentFailureType failureType =
+                    LocalPaymentFailureClassifier.classify(exception);
+
             approvalService.markLocalFailure(order.getId());
-            throw exception;
+
+            log.error(
+                    "승인 후 로컬 결제 완료 처리에 실패했습니다. "
+                            + "orderId={}, failureType={}",
+                    order.getOrderId(),
+                    failureType,
+                    exception
+            );
+
+            if (!isRecoverableLocalFailure(failureType)) {
+                throw exception;
+            }
+
+            return PaymentResult.processing(
+                    new PaymentProcessingResult(
+                            order.getOrderId(),
+                            PaymentApprovalResult.APPROVED
+                    ),
+                    created
+            );
         }
+    }
+
+    private boolean isRecoverableLocalFailure(LocalPaymentFailureType failureType) {
+        return failureType == LocalPaymentFailureType.DEADLOCK
+                || failureType == LocalPaymentFailureType.TRANSIENT_INFRASTRUCTURE
+                || failureType == LocalPaymentFailureType.UNKNOWN;
     }
 
     private PaymentConfirmRequest confirmRequest(Order order) {
