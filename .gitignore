@@ -65,3 +65,8 @@ bin/
 application-local.yml
 application-local.yaml
 application-local.properties
+
+# Local load tests and benchmark fixtures
+/scripts/loadtest/
+/main-backend/src/test/java/com/gift/gift/domain/friend/benchmark/
+/main-backend/src/test/java/com/gift/gift/domain/notification/benchmark/
