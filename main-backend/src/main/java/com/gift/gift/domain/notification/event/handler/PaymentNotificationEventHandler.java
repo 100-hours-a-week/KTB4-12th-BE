@@ -11,6 +11,7 @@ import com.gift.gift.domain.notification.entity.NotificationReferenceType;
 import com.gift.gift.domain.notification.entity.NotificationType;
 import com.gift.gift.domain.notification.service.NotificationService;
 import com.gift.gift.domain.notification.support.NotificationDeduplicationKeyGenerator;
+import com.gift.gift.domain.notification.support.NotificationProductNameFormatter;
 import com.gift.gift.domain.order.event.PaymentCanceledEvent;
 import com.gift.gift.domain.order.event.PaymentCompletedEvent;
 
@@ -35,7 +36,7 @@ public class PaymentNotificationEventHandler {
                         NotificationReferenceType.PAYMENT,
                         event.orderRecordId(),
                         "결제가 완료되었어요",
-                        event.productName()
+                        NotificationProductNameFormatter.abbreviate(event.productName())
                                 + " 결제가 완료되었습니다.",
                         keyGenerator.generate(
                                 type,
@@ -60,7 +61,7 @@ public class PaymentNotificationEventHandler {
                         NotificationReferenceType.PAYMENT,
                         event.orderRecordId(),
                         "결제가 취소되었어요",
-                        event.productName()
+                        NotificationProductNameFormatter.abbreviate(event.productName())
                                 + " 결제가 취소되었습니다.",
                         keyGenerator.generate(
                                 type,
@@ -85,7 +86,7 @@ public class PaymentNotificationEventHandler {
                         NotificationReferenceType.GIFT,
                         event.giftId(),
                         "보상이 지급되었어요",
-                        event.productName()
+                        NotificationProductNameFormatter.abbreviate(event.productName())
                                 + " 선물 완료 보상이 지급되었습니다.",
                         keyGenerator.generate(
                                 type,
