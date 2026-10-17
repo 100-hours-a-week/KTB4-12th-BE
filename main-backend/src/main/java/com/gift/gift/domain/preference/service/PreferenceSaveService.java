@@ -8,11 +8,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.credit.entity.CreditAccount;
+import com.gift.gift.domain.credit.entity.CreditTransaction;
+import com.gift.gift.domain.credit.entity.CreditTransactionType;
+import com.gift.gift.domain.credit.repository.CreditAccountRepository;
+import com.gift.gift.domain.credit.repository.CreditTransactionRepository;
 import com.gift.gift.domain.preference.dto.response.GiftPreferenceResponse;
 import com.gift.gift.domain.preference.dto.response.SaveDislikeCategoriesResponse;
 import com.gift.gift.domain.preference.entity.UserDislikeCategory;
@@ -33,11 +39,15 @@ import com.gift.gift.global.exception.ErrorCode;
 @RequiredArgsConstructor
 public class PreferenceSaveService {
 
+    private static final long UPDATE_COST = 3L;
+
     private final UserGiftPreferenceRepository userGiftPreferenceRepository;
     private final UserDislikeCategoryRepository userDislikeCategoryRepository;
     private final CategoryQueryService categoryQueryService;
     private final UserQueryService userQueryService;
     private final RecipientProfileRepository recipientProfileRepository;
+    private final CreditAccountRepository creditAccountRepository;
+    private final CreditTransactionRepository creditTransactionRepository;
     private final Clock clock;
 
     @Transactional
@@ -58,6 +68,10 @@ public class PreferenceSaveService {
                 changed = true;
             }
         } else if (!Objects.equals(existing.getPreference(), normalized)) {
+            chargePreferenceUpdate(
+                    userId,
+                    CreditTransactionType.GIFT_PREFERENCE_UPDATE_USE
+            );
             existing.changePreference(normalized);
             changed = true;
         }
@@ -109,6 +123,13 @@ public class PreferenceSaveService {
         boolean selectionChanged = !activeBefore.equals(requestedIds);
         LocalDateTime now = LocalDateTime.now(clock);
 
+        if (selectionChanged && !user.isFirstLogin()) {
+            chargePreferenceUpdate(
+                    userId,
+                    CreditTransactionType.DISLIKE_CATEGORY_UPDATE_USE
+            );
+        }
+
         for (UserDislikeCategory dislike : existingDislikes) {
             Long categoryId = dislike.getCategory().getId();
 
@@ -136,6 +157,32 @@ public class PreferenceSaveService {
         }
 
         return SaveDislikeCategoriesResponse.from(categoryIds);
+    }
+
+    private void chargePreferenceUpdate(
+            Long userId,
+            CreditTransactionType transactionType
+    ) {
+        CreditAccount account = creditAccountRepository
+                .findByUserIdForUpdate(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "사용자의 크레딧 계좌가 존재하지 않습니다."
+                ));
+
+        if (!account.decrease(UPDATE_COST)) {
+            throw new PreferenceException(ErrorCode.INSUFFICIENT_CREDIT);
+        }
+
+        creditTransactionRepository.save(new CreditTransaction(
+                userId,
+                transactionType,
+                UPDATE_COST,
+                account.getBalance(),
+                null,
+                null,
+                null,
+                transactionType.name() + ":" + UUID.randomUUID()
+        ));
     }
 
     private void recordProfileChange(

@@ -15,6 +15,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.gift.gift.domain.credit.entity.CreditAccount;
 import com.gift.gift.domain.friend.entity.Friendship;
 import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.preference.service.PreferenceSaveService;
@@ -93,6 +94,9 @@ class ProfileRecoveryIntegrationTest {
             sql("DELETE FROM recipient_profiles WHERE recipient_id = :id", recipientId);
             sql("DELETE FROM user_dislike_categories WHERE user_id = :id", recipientId);
             sql("DELETE FROM user_gift_preferences WHERE user_id = :id", recipientId);
+            sql("DELETE FROM credit_transactions WHERE user_id = :id", recipientId);
+            sql("DELETE FROM credit_accounts WHERE user_id = :id", recipientId);
+            sql("DELETE FROM credit_accounts WHERE user_id = :id", ownerId);
             sql("DELETE FROM friendships WHERE user_id_1 = :id OR user_id_2 = :id", ownerId);
             sql("DELETE FROM products WHERE id = :id", firstId);
             sql("DELETE FROM products WHERE id = :id", secondId);
@@ -273,6 +277,7 @@ class ProfileRecoveryIntegrationTest {
     private User user() {
         User user = new User(UUID.randomUUID() + "@test.com", "$2a$10$" + "a".repeat(53), "테스트", LocalDate.of(2000, 1, 1));
         entityManager.persist(user);
+        entityManager.persist(new CreditAccount(user.getId(), 100L));
         return user;
     }
     private Product product(Category child, String name) {

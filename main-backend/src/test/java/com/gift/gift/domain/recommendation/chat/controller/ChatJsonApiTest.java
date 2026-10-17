@@ -24,10 +24,13 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.recommendation.chat.config.ChatConversationTokenProperties;
+import com.gift.gift.domain.recommendation.chat.exception.ChatErrorCode;
+import com.gift.gift.domain.recommendation.chat.exception.ChatException;
 import com.gift.gift.domain.recommendation.chat.exception.ChatInputExceptionHandler;
 import com.gift.gift.domain.recommendation.chat.model.ChatConversationIdentity;
 import com.gift.gift.domain.recommendation.chat.security.ChatConversationTokenProvider;
 import com.gift.gift.domain.recommendation.chat.service.ChatConversationAccessService;
+import com.gift.gift.domain.recommendation.chat.service.ChatDailyUsageService;
 import com.gift.gift.domain.recommendation.chat.service.ChatService;
 import com.gift.gift.domain.recommendation.chat.web.ChatBodyAdvice;
 import com.gift.gift.domain.user.service.AuthenticatedUserService;
@@ -56,6 +59,7 @@ class ChatJsonApiTest {
     private MockRestServiceServer server;
     private MockMvc mvc;
     private ChatConversationTokenProvider tokens;
+    private ChatDailyUsageService dailyUsageService;
     private String conversationToken;
 
     @BeforeEach
@@ -91,7 +95,15 @@ class ChatJsonApiTest {
         when(users.isActive(anyLong())).thenReturn(true);
 
         ChatConversationAccessService access = new ChatConversationAccessService(users, tokens);
-        ChatService service = new ChatService(access, tokens, client);
+        dailyUsageService = mock(
+                ChatDailyUsageService.class
+        );
+        ChatService service = new ChatService(
+                access,
+                tokens,
+                client,
+                dailyUsageService
+        );
 
         mvc = MockMvcBuilders.standaloneSetup(new ChatController(service))
                 .setCustomArgumentResolvers(
@@ -221,6 +233,26 @@ class ChatJsonApiTest {
                 .andExpect(jsonPath("$.error.code").value("CONFLICT"))
                 .andExpect(jsonPath("$.message").value(
                         "질문 ID 또는 현재 대화 처리 상태가 요청과 충돌합니다."
+                ));
+    }
+
+    @Test
+    @DisplayName("일일 질문 한도를 모두 사용하면 AI 호출 없이 429를 반환한다")
+    void submitTurn_rejectsDailyLimitBeforeAiCall() throws Exception {
+        doThrow(new ChatException(ChatErrorCode.DAILY_LIMIT_EXCEEDED))
+                .when(dailyUsageService)
+                .consume(anyLong(), any(), any());
+
+        mvc.perform(put(PUBLIC + "/turns/" + TURN)
+                        .header("X-Conversation-Token", conversationToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"선물 추천\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value(
+                        "AI_DAILY_LIMIT_EXCEEDED"
+                ))
+                .andExpect(jsonPath("$.message").value(
+                        "오늘 사용할 수 있는 AI 채팅 횟수를 모두 사용했습니다."
                 ));
     }
 

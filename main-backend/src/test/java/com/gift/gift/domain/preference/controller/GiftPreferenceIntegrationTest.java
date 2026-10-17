@@ -31,6 +31,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
+import com.gift.gift.domain.credit.entity.CreditAccount;
+import com.gift.gift.domain.credit.repository.CreditAccountRepository;
 import com.gift.gift.domain.preference.entity.UserGiftPreference;
 import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
 import com.gift.gift.domain.preference.service.PreferenceSaveService;
@@ -56,6 +58,8 @@ class GiftPreferenceIntegrationTest {
     @Autowired
     private UserGiftPreferenceRepository preferenceRepository;
     @Autowired
+    private CreditAccountRepository creditAccountRepository;
+    @Autowired
     private PreferenceSaveService saveService;
     @Autowired
     private JdbcTemplate jdbc;
@@ -66,8 +70,10 @@ class GiftPreferenceIntegrationTest {
     @AfterEach
     void cleanUpOwnedData() {
         for (Long userId : createdUserIds) {
+            jdbc.update("DELETE FROM credit_transactions WHERE user_id = ?", userId);
             jdbc.update("DELETE FROM recipient_profiles WHERE recipient_id = ?", userId);
             jdbc.update("DELETE FROM user_gift_preferences WHERE user_id = ?", userId);
+            jdbc.update("DELETE FROM credit_accounts WHERE user_id = ?", userId);
             userRepository.deleteById(userId);
         }
     }
@@ -249,6 +255,10 @@ class GiftPreferenceIntegrationTest {
     private User saveUser() {
         User user = userRepository.saveAndFlush(new User(UUID.randomUUID() + "@example.com",
                 "$2a$10$" + "a".repeat(53), "테스트", LocalDate.of(1990, 1, 1)));
+        creditAccountRepository.saveAndFlush(new CreditAccount(
+                user.getId(),
+                100L
+        ));
         createdUserIds.add(user.getId());
         return user;
     }

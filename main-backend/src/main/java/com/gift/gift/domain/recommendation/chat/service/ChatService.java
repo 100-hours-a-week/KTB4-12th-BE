@@ -25,6 +25,7 @@ public class ChatService {
     private final ChatConversationAccessService access;
     private final ChatConversationTokenProvider tokens;
     private final AiChatClient ai;
+    private final ChatDailyUsageService dailyUsageService;
 
     public Result<CreatedConversation> createOrRecoverConversation(
             Long userId,
@@ -78,10 +79,18 @@ public class ChatService {
             throw new ChatInputException(ValidationErrorReason.REQUIRED);
         }
 
+        String message = body.normalizedMessage();
+
+        dailyUsageService.consume(
+                userId,
+                identity.conversationId(),
+                turn
+        );
+
         return ai.submitTurn(
                 identity.conversationId(),
                 turn,
-                body.normalizedMessage()
+                message
         );
     }
 
