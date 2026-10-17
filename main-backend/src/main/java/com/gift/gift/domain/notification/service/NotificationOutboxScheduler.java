@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
@@ -16,17 +17,22 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class NotificationOutboxScheduler implements InitializingBean, DisposableBean {
     private final NotificationOutboxDispatcher dispatcher;
-    // A TaskScheduler bean would also become the default for unrelated @Scheduled methods.
     private final ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+
+    @Value("${app.notification.outbox.poll-delay-ms:200}")
+    private long pollDelayMillis = 200;
 
     @Override
     public void afterPropertiesSet() {
+        if (pollDelayMillis <= 0) {
+            throw new IllegalArgumentException("알림 Outbox 폴링 지연 시간은 양수여야 합니다.");
+        }
         scheduler.setPoolSize(1);
         scheduler.setThreadNamePrefix("notification-outbox-");
         scheduler.setWaitForTasksToCompleteOnShutdown(true);
         scheduler.setAwaitTerminationSeconds(30);
         scheduler.initialize();
-        scheduler.scheduleWithFixedDelay(this::poll, Duration.ofSeconds(1));
+        scheduler.scheduleWithFixedDelay(this::poll, Duration.ofMillis(pollDelayMillis));
     }
 
     public void poll() {

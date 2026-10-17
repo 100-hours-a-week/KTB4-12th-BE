@@ -2,7 +2,10 @@ package com.gift.gift.domain.notification.repository;
 
 import java.util.List;
 
+import jakarta.annotation.PostConstruct;
+
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -14,6 +17,16 @@ import com.gift.gift.domain.notification.entity.NotificationType;
 @RequiredArgsConstructor
 public class NotificationOutboxRepository {
     private final JdbcTemplate jdbcTemplate;
+
+    @Value("${app.notification.outbox.batch-size:100}")
+    private int batchSize = 100;
+
+    @PostConstruct
+    void validateBatchSize() {
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("알림 Outbox 배치 크기는 양수여야 합니다.");
+        }
+    }
 
     public void insert(NotificationCreateCommand command) {
         jdbcTemplate.update("""
@@ -32,8 +45,8 @@ public class NotificationOutboxRepository {
         return jdbcTemplate.queryForList("""
                 SELECT id FROM notification_outbox
                 WHERE status = 'PENDING' AND next_attempt_at <= CURRENT_TIMESTAMP(6)
-                ORDER BY next_attempt_at, id LIMIT 20
-                """, Long.class);
+                ORDER BY next_attempt_at, id LIMIT ?
+                """, Long.class, batchSize);
     }
 
     public List<Job> lockDue(Long id) {

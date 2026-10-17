@@ -61,8 +61,8 @@ class PaymentNotificationEventHandlerTest {
         assertThat(command.recipientId()).isEqualTo(PAYER_ID);
         assertThat(command.sourceIdentifier()).isEqualTo("101");
         assertThat(command.type()).isEqualTo(NotificationType.PAYMENT_COMPLETED);
-        assertThat(command.referenceType()).isEqualTo(NotificationReferenceType.PAYMENT);
-        assertThat(command.referenceId()).isEqualTo(ORDER_RECORD_ID);
+        assertThat(command.referenceType()).isEqualTo(NotificationReferenceType.GIFT);
+        assertThat(command.referenceId()).isEqualTo(GIFT_ID);
         assertThat(command.title()).isEqualTo("결제가 완료되었어요");
         assertThat(command.message()).isEqualTo("선물 상품 결제가 완료되었습니다.");
         assertThat(command.deduplicationKey()).isEqualTo("PAYMENT_COMPLETED:101:20");
@@ -98,7 +98,7 @@ class PaymentNotificationEventHandlerTest {
     @DisplayName("선물 완료 보상 이벤트를 발신자 보상 알림 명령으로 변환한다")
     void handle_convertsGiftCompletedRewardEvent() {
         GiftCompletedRewardEvent event =
-                new GiftCompletedRewardEvent(GIFT_ID, PAYER_ID, PRODUCT_NAME);
+                new GiftCompletedRewardEvent(GIFT_ID, PAYER_ID, PRODUCT_NAME, 100_000L);
 
         when(keyGenerator.generate(
                 NotificationType.GIFT_COMPLETED_REWARD,
@@ -116,7 +116,7 @@ class PaymentNotificationEventHandlerTest {
         assertThat(command.referenceType()).isEqualTo(NotificationReferenceType.GIFT);
         assertThat(command.referenceId()).isEqualTo(GIFT_ID);
         assertThat(command.title()).isEqualTo("보상이 지급되었어요");
-        assertThat(command.message()).isEqualTo("선물 상품 선물 완료 보상이 지급되었습니다.");
+        assertThat(command.message()).isEqualTo("선물 상품 선물 완료 보상 100,000 크레딧이 지급되었습니다.");
         assertThat(command.deduplicationKey()).isEqualTo("GIFT_COMPLETED_REWARD:501:20");
     }
 

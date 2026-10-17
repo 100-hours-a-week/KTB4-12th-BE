@@ -2,7 +2,12 @@ package com.gift.gift.domain.gift.event;
 
 import java.util.Objects;
 
-public record GiftCompletedRewardEvent(Long giftId, Long senderId, String productName) {
+public record GiftCompletedRewardEvent(
+        Long giftId,
+        Long senderId,
+        String productName,
+        long rewardAmount
+) {
 
     public GiftCompletedRewardEvent {
 
