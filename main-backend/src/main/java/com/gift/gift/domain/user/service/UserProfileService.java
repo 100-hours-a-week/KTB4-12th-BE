@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.credit.service.CreditQueryService;
 import com.gift.gift.domain.gift.repository.GiftCountRow;
 import com.gift.gift.domain.gift.service.GiftQueryService;
 import com.gift.gift.domain.user.dto.request.UpdateUserProfileRequest;
@@ -23,6 +24,7 @@ import com.gift.gift.domain.user.repository.UserRepository;
 public class UserProfileService {
 
     private final UserRepository userRepository;
+    private final CreditQueryService creditQueryService;
     private final GiftQueryService giftQueryService;
     private final Clock clock;
 
@@ -39,6 +41,7 @@ public class UserProfileService {
 
         return UserProfileResponse.from(
                 user,
+                creditQueryService.getBalance(userId).balance(),
                 giftCount,
                 today,
                 clock.getZone()

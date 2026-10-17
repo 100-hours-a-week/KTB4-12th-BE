@@ -85,7 +85,8 @@ public class GiftAcceptanceService {
                         completedGift.getId(),
                         senderId,
                         completedGift
-                                .getProductNameSnapshot()
+                                .getProductNameSnapshot(),
+                        reward.getAmount()
                 )
         );
 

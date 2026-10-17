@@ -13,6 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.gift.gift.domain.credit.dto.response.CreditBalanceResponse;
+import com.gift.gift.domain.credit.service.CreditQueryService;
 import com.gift.gift.domain.gift.repository.GiftCountRow;
 import com.gift.gift.domain.gift.service.GiftQueryService;
 import com.gift.gift.domain.user.dto.request.UpdateUserProfileRequest;
@@ -37,6 +39,7 @@ class UserProfileServiceTest {
             ZoneId.of("Asia/Seoul");
 
     private UserRepository userRepository;
+    private CreditQueryService creditQueryService;
     private GiftQueryService giftQueryService;
     private UserProfileService userProfileService;
     private ObjectMapper objectMapper;
@@ -45,6 +48,7 @@ class UserProfileServiceTest {
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
+        creditQueryService = mock(CreditQueryService.class);
         giftQueryService = mock(GiftQueryService.class);
         objectMapper = new ObjectMapper();
 
@@ -55,6 +59,7 @@ class UserProfileServiceTest {
 
         userProfileService = new UserProfileService(
                 userRepository,
+                creditQueryService,
                 giftQueryService,
                 clock
         );
@@ -86,6 +91,8 @@ class UserProfileServiceTest {
                 USER_ID,
                 LocalDate.of(2026, 9, 21)
         )).thenReturn(new GiftCountRow(12L, 8L));
+        when(creditQueryService.getBalance(USER_ID))
+                .thenReturn(new CreditBalanceResponse(500_000L));
 
         UserProfileResponse response =
                 userProfileService.getMyProfile(USER_ID);
@@ -97,6 +104,7 @@ class UserProfileServiceTest {
         assertThat(response.birth())
                 .isEqualTo("1998-03-15");
         assertThat(response.isBirthdayPublic()).isFalse();
+        assertThat(response.creditBalance()).isEqualTo(500_000L);
         assertThat(response.giftSummary().sentCount())
                 .isEqualTo(12L);
         assertThat(response.giftSummary().receivedCount())

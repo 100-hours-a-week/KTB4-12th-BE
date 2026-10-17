@@ -32,8 +32,8 @@ public class PaymentNotificationEventHandler {
                         event.payerId(),
                         sourceIdentifier,
                         type,
-                        NotificationReferenceType.PAYMENT,
-                        event.orderRecordId(),
+                        NotificationReferenceType.GIFT,
+                        event.giftId(),
                         "결제가 완료되었어요",
                         event.productName()
                                 + " 결제가 완료되었습니다.",
@@ -86,7 +86,9 @@ public class PaymentNotificationEventHandler {
                         event.giftId(),
                         "보상이 지급되었어요",
                         event.productName()
-                                + " 선물 완료 보상이 지급되었습니다.",
+                                + " 선물 완료 보상 "
+                                + String.format("%,d", event.rewardAmount())
+                                + " 크레딧이 지급되었습니다.",
                         keyGenerator.generate(
                                 type,
                                 sourceIdentifier,
