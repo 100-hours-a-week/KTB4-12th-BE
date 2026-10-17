@@ -2,12 +2,18 @@ package com.gift.gift.domain.notification.service;
 
 import java.util.Optional;
 import java.sql.SQLException;
+import java.sql.SQLInvalidAuthorizationSpecException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLTransientConnectionException;
 
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 import com.gift.gift.domain.notification.entity.Notification;
 import com.gift.gift.domain.notification.entity.NotificationReferenceType;
@@ -27,6 +33,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
 
 class NotificationServiceTest {
 
@@ -70,6 +78,112 @@ class NotificationServiceTest {
                 .when(notificationCreateTransactionService).save(command);
 
         assertThatThrownBy(() -> notificationService.create(command)).isSameAs(violation);
+        verify(notificationCreateTransactionService, times(1)).save(command);
+    }
+
+    @Test
+    @DisplayName("일시적인 잠금 오류 이후 새 저장 시도로 복구한다")
+    void create_retriesTransientSaveFailure() {
+        NotificationCreateCommand command = command();
+        doThrow(new CannotAcquireLockException("lock timeout")).doNothing()
+                .when(notificationCreateTransactionService).save(command);
+
+        notificationService.create(command);
+
+        verify(notificationCreateTransactionService, times(2)).save(command);
+    }
+
+    @Test
+    @DisplayName("DB 연결 실패는 총 세 번 시도하고 마지막 오류를 전파한다")
+    void create_stopsAfterThreeResourceFailures() {
+        NotificationCreateCommand command = command();
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("DB unavailable");
+        doThrow(failure).when(notificationCreateTransactionService).save(command);
+
+        assertThatThrownBy(() -> notificationService.create(command)).isSameAs(failure);
+
+        verify(notificationCreateTransactionService, times(3)).save(command);
+    }
+
+    @Test
+    @DisplayName("트랜잭션 시작 중 일시적인 커넥션 풀 고갈은 재시도한다")
+    void create_retriesTransactionConnectionTimeout() {
+        NotificationCreateCommand command = command();
+        doThrow(new CannotCreateTransactionException("cannot begin", new SQLTransientConnectionException("pool busy")))
+                .doNothing().when(notificationCreateTransactionService).save(command);
+
+        notificationService.create(command);
+
+        verify(notificationCreateTransactionService, times(2)).save(command);
+    }
+
+    @Test
+    @DisplayName("드라이버의 연결 끊김 SQLState 08도 새 트랜잭션으로 재시도한다")
+    void create_retriesTransactionConnectionState() {
+        NotificationCreateCommand command = command();
+        doThrow(new CannotCreateTransactionException("cannot begin",
+                new SQLNonTransientConnectionException("connection lost", "08006")))
+                .doNothing().when(notificationCreateTransactionService).save(command);
+
+        notificationService.create(command);
+
+        verify(notificationCreateTransactionService, times(2)).save(command);
+    }
+
+    @Test
+    @DisplayName("트랜잭션 시작 중 DB 인증 오류는 재시도하지 않는다")
+    void create_doesNotRetryDatabaseAuthenticationFailure() {
+        NotificationCreateCommand command = command();
+        CannotCreateTransactionException failure = new CannotCreateTransactionException("cannot begin",
+                new SQLInvalidAuthorizationSpecException("access denied", "28000"));
+        doThrow(failure).when(notificationCreateTransactionService).save(command);
+
+        assertThatThrownBy(() -> notificationService.create(command)).isSameAs(failure);
+
+        verify(notificationCreateTransactionService, times(1)).save(command);
+    }
+
+    @Test
+    @DisplayName("중복 선조회 중 DB 연결 실패도 재시도한다")
+    void create_retriesDeduplicationLookupFailure() {
+        NotificationCreateCommand command = command();
+        when(notificationRepository.existsByDeduplicationKey(command.deduplicationKey()))
+                .thenThrow(new DataAccessResourceFailureException("connection unavailable")).thenReturn(false);
+
+        notificationService.create(command);
+
+        verify(notificationRepository, times(2)).existsByDeduplicationKey(command.deduplicationKey());
+        verify(notificationCreateTransactionService, times(1)).save(command);
+    }
+
+    @Test
+    @DisplayName("저장 결과가 불명확한 실패 이후 이미 저장된 알림을 다시 만들지 않는다")
+    void create_skipsSaveWhenRetryFindsExistingNotification() {
+        NotificationCreateCommand command = command();
+        when(notificationRepository.existsByDeduplicationKey(command.deduplicationKey())).thenReturn(false, true);
+        doThrow(new DataAccessResourceFailureException("connection lost"))
+                .when(notificationCreateTransactionService).save(command);
+
+        notificationService.create(command);
+
+        verify(notificationCreateTransactionService, times(1)).save(command);
+    }
+
+    @Test
+    @DisplayName("재시도 대기 중 인터럽트는 보존하고 추가 저장을 중단한다")
+    void create_preservesInterruptionAndStopsRetrying() {
+        NotificationCreateCommand command = command();
+        doThrow(new CannotAcquireLockException("lock timeout"))
+                .when(notificationCreateTransactionService).save(command);
+        Thread.currentThread().interrupt();
+        try {
+            assertThatThrownBy(() -> notificationService.create(command))
+                    .isInstanceOf(IllegalStateException.class).hasCauseInstanceOf(InterruptedException.class);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            verify(notificationCreateTransactionService, times(1)).save(command);
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     @Test
