@@ -56,6 +56,10 @@ public enum ErrorCode {
             HttpStatus.TOO_MANY_REQUESTS,
             "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."
     ),
+    AI_DAILY_LIMIT_EXCEEDED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "오늘 사용할 수 있는 AI 채팅 횟수를 모두 사용했습니다."
+    ),
     UNAUTHORIZED(
             HttpStatus.UNAUTHORIZED,
             "로그인이 필요합니다."

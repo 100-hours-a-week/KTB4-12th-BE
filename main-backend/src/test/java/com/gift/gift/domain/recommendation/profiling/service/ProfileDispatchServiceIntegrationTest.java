@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -17,10 +18,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.gift.gift.domain.credit.repository.CreditAccountRepository;
+import com.gift.gift.domain.credit.repository.CreditTransactionRepository;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
+import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
 import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.repository.CategoryRepository;
+import com.gift.gift.domain.recommendation.chat.repository.AiChatTurnUsageRepository;
 import com.gift.gift.domain.recommendation.profiling.dto.request.AiProfileRequest;
 import com.gift.gift.domain.recommendation.profiling.dto.response.AiProfileAcceptedResponse;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
@@ -63,23 +68,48 @@ class ProfileDispatchServiceIntegrationTest {
     @Autowired
     private UserDislikeCategoryRepository dislikeRepository;
 
+    @Autowired
+    private UserGiftPreferenceRepository giftPreferenceRepository;
+
+    @Autowired
+    private CreditTransactionRepository creditTransactionRepository;
+
+    @Autowired
+    private CreditAccountRepository creditAccountRepository;
+
     @MockitoBean
     private AiProfilingClient aiProfilingClient;
+
+    @Autowired
+    private AiChatTurnUsageRepository aiChatTurnUsageRepository;
 
     @MockitoBean
     private Clock clock;
 
     @BeforeEach
     void setUp() {
-        profileRepository.deleteAll();
-        dislikeRepository.deleteAll();
-        categoryRepository.deleteAll();
-        userRepository.deleteAll();
+        clearTestData();
 
         reset(aiProfilingClient);
         when(aiProfilingClient.isHealthy()).thenReturn(true);
 
         setCurrentTime(NOW);
+    }
+
+    @AfterEach
+    void tearDown() {
+        clearTestData();
+    }
+
+    private void clearTestData() {
+        aiChatTurnUsageRepository.deleteAll();
+        profileRepository.deleteAll();
+        dislikeRepository.deleteAll();
+        giftPreferenceRepository.deleteAll();
+        categoryRepository.deleteAll();
+        creditTransactionRepository.deleteAll();
+        creditAccountRepository.deleteAll();
+        userRepository.deleteAll();
     }
 
     @Test

@@ -44,6 +44,10 @@ public enum ChatErrorCode {
             ErrorCode.TOO_MANY_REQUESTS,
             "요청이 너무 많아요. 잠시 후 다시 시도해주세요."
     ),
+    DAILY_LIMIT_EXCEEDED(
+            ErrorCode.AI_DAILY_LIMIT_EXCEEDED,
+            "오늘 사용할 수 있는 AI 채팅 횟수를 모두 사용했습니다."
+    ),
     AI_SERVICE_UNAVAILABLE(
             ErrorCode.SERVICE_UNAVAILABLE,
             "AI 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."

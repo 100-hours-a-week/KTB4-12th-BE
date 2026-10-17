@@ -63,4 +63,19 @@ public class CreditAccount extends BaseTimeEntity {
         this.userId = userId;
         this.balance = balance;
     }
+
+    public boolean decrease(long amount) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException(
+                    "차감할 크레딧은 양수여야 합니다."
+            );
+        }
+
+        if (balance < amount) {
+            return false;
+        }
+
+        balance -= amount;
+        return true;
+    }
 }
