@@ -15,11 +15,13 @@ public record UserProfileResponse(
         String email,
         LocalDate birth,
         boolean isBirthdayPublic,
+        long creditBalance,
         GiftSummary giftSummary
 ) {
 
     public static UserProfileResponse from(
             User user,
+            long creditBalance,
             GiftCountRow giftCount,
             LocalDate today,
             ZoneId zoneId
@@ -47,6 +49,7 @@ public record UserProfileResponse(
                 user.getEmail(),
                 user.getBirth(),
                 user.isBirthdayPublic(),
+                creditBalance,
                 new GiftSummary(
                         giftCount.sentCount(),
                         giftCount.receivedCount(),
