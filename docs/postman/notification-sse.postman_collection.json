@@ -1,0 +1,33 @@
+{
+  "info": {
+    "name": "Notification SSE delivery ACK",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "알림 스트림 연결",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/notifications/events"
+      }
+    },
+    {
+      "name": "알림 수신 ACK",
+      "request": {
+        "method": "PATCH",
+        "url": "{{baseUrl}}/notifications/events/{{deliveryId}}/ack",
+        "description": "SSE id 필드의 전달 작업 ID. 본인 연결 작업만 ACK 가능. 반복 ACK 200, 타인/삭제된 작업 404."
+      }
+    }
+  ]
+}
