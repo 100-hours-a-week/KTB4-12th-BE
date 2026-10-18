@@ -2,8 +2,13 @@ package com.gift.gift.domain.notification.service;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +26,12 @@ public class NotificationSseHub implements DisposableBean {
     private final NotificationSseConnectionService connectionService;
     private final String nodeId = UUID.randomUUID().toString();
     private final Map<String, SseEmitter> connections = new ConcurrentHashMap<>();
+
+    private final Set<String> sending = ConcurrentHashMap.newKeySet();
+    private final ThreadPoolExecutor sender = new ThreadPoolExecutor(
+            4, 4, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100),
+            Thread.ofPlatform().daemon(true).name("notification-sse-send-", 0).factory(),
+            new ThreadPoolExecutor.AbortPolicy());
 
     public String nodeId() {
         return nodeId;
@@ -49,12 +60,27 @@ public class NotificationSseHub implements DisposableBean {
 
     public boolean send(String connectionId, Long deliveryId, NotificationListItem notification) {
         SseEmitter emitter = connections.get(connectionId);
-        if (emitter == null) return false;
+        return emitter != null && offer(connectionId, emitter, SseEmitter.event()
+                .id(deliveryId.toString()).name("notification").data(notification));
+    }
+
+    private boolean offer(String connectionId, SseEmitter emitter, SseEmitter.SseEventBuilder event) {
+        if (!sending.add(connectionId)) return false;
         try {
-            emitter.send(SseEmitter.event().id(deliveryId.toString()).name("notification").data(notification));
+            sender.execute(() -> {
+                try {
+                    if (connections.get(connectionId) == emitter) emitter.send(event);
+                } catch (IOException | IllegalStateException failure) {
+                    remove(connectionId, emitter);
+                } finally {
+                    sending.remove(connectionId);
+                    if (connections.get(connectionId) != emitter) emitter.complete();
+                }
+            });
             return true;
-        } catch (IOException | IllegalStateException failure) {
-            close(connectionId, emitter);
+        } catch (RejectedExecutionException full) {
+            // 호출 스레드에서 대신 전송하지 않는다. 미확인 전달 작업은 DB에서 다시 조회한다.
+            sending.remove(connectionId);
             return false;
         }
     }
@@ -69,11 +95,7 @@ public class NotificationSseHub implements DisposableBean {
                     close(id, emitter);
                     return;
                 }
-                try {
-                    emitter.send(SseEmitter.event().comment("keepalive"));
-                } catch (IOException | IllegalStateException failure) {
-                    close(id, emitter);
-                }
+                offer(id, emitter, SseEmitter.event().comment("keepalive"));
             });
         } catch (RuntimeException failure) {
             // DB에서 연결 등록을 유지하지 못하면 조용히 누락시키지 않고 재연결을 유도한다.
@@ -88,12 +110,19 @@ public class NotificationSseHub implements DisposableBean {
 
     private void close(String connectionId, SseEmitter emitter) {
         remove(connectionId, emitter);
-        emitter.complete();
+        if (sending.contains(connectionId)) return;
+        try {
+            sender.execute(emitter::complete);
+        } catch (RejectedExecutionException full) {
+            // shortcut: 풀 포화 시 종료는 Servlet timeout에 의존한다. 즉시 종료가 필요하면 별도 종료 경로를 둔다.
+            log.warn("SSE 연결 종료 대기: 전송 풀 포화 또는 종료");
+        }
     }
 
     @Override
     public void destroy() {
         closeAll();
+        sender.shutdownNow();
     }
 
     private void remove(String connectionId, SseEmitter emitter) {

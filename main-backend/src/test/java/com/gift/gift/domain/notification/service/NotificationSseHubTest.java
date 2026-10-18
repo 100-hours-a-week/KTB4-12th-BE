@@ -2,6 +2,7 @@ package com.gift.gift.domain.notification.service;
 
 import java.io.IOException;
 import java.lang.reflect.Proxy;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -124,6 +125,60 @@ class NotificationSseHubTest {
         assertThat(hub.hasConnections()).isTrue();
         org.mockito.Mockito.verify(registry, org.mockito.Mockito.never())
                 .disconnect(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    @DisplayName("느린 연결의 쓰기가 막혀도 다른 연결 전송과 임대 갱신은 계속된다")
+    void slowConnection_doesNotBlockOtherConnectionsOrRenewal() throws Exception {
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        connect(1L, null, started, release);
+        String slow = lastConnectionId;
+        var fast = connect(2L);
+        String fastId = lastConnectionId;
+        try {
+            assertThat(hub.send(slow, 1L, notification())).isTrue();
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(hub.send(slow, 2L, notification())).isFalse();
+            assertThat(hub.send(fastId, 3L, notification())).isTrue();
+            fast.awaitSend();
+            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2), hub::sendHeartbeats);
+            org.mockito.Mockito.verify(registry).renew(hub.nodeId());
+            assertThat(release.getCount()).isEqualTo(1);
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    @DisplayName("전송 풀 4개와 대기열 100개가 차도 호출 스레드에서 전송하지 않고 임대를 갱신한다")
+    void saturatedPool_rejectsWithoutCallerRunsOrUnboundedGrowth() throws Exception {
+        var started = new CountDownLatch(4);
+        var release = new CountDownLatch(1);
+        try {
+            for (long i = 1; i <= 4; i++) {
+                connect(i, null, started, release);
+                assertThat(hub.send(lastConnectionId, i, notification())).isTrue();
+            }
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            for (long i = 5; i <= 104; i++) {
+                connect(i);
+                assertThat(hub.send(lastConnectionId, i, notification())).isTrue();
+            }
+            connect(105L);
+            String rejected = lastConnectionId;
+            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+                assertThat(hub.send(rejected, 105L, notification())).isFalse();
+                hub.sendHeartbeats();
+            });
+            var pool = (ThreadPoolExecutor) ReflectionTestUtils.getField(hub, "sender");
+            assertThat(pool.getLargestPoolSize()).isEqualTo(4);
+            assertThat(pool.getQueue()).hasSize(100);
+            org.mockito.Mockito.verify(registry).renew(hub.nodeId());
+            assertThat(release.getCount()).isEqualTo(1);
+        } finally {
+            release.countDown();
+        }
     }
 
     private EmitterProbe connect(Long recipientId) {

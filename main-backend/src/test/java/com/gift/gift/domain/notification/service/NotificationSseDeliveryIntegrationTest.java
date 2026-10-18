@@ -229,6 +229,30 @@ class NotificationSseDeliveryIntegrationTest {
         } finally { a.destroy(); b.destroy(); }
     }
 
+    @Test
+    @DisplayName("같은 연결의 전송이 막혀도 나머지 전달 작업을 완료 처리하거나 잃지 않는다")
+    void busyConnection_keepsUnacknowledgedJobsInDatabase() throws Exception {
+        var hub = new NotificationSseHub(connections);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var received = receive(hub.connect(recipient), entered, release);
+        try {
+            notifications.create(command());
+            notifications.create(command());
+            var poller = new NotificationSseDeliveryScheduler(deliveries, hub);
+            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), poller::poll);
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), hub::sendHeartbeats);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notification_sse_deliveries"
+                    + " WHERE node_id = ? AND acknowledged_at IS NULL", Long.class, hub.nodeId())).isEqualTo(2);
+            release.countDown();
+            received.get(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            hub.destroy();
+        }
+    }
+
     private CompletableFuture<com.gift.gift.domain.notification.dto.response.NotificationListItem> receive(
             org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter) throws Exception {
         return receive(emitter, null, null);
