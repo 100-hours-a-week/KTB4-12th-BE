@@ -8,9 +8,13 @@ COPY main-backend/build.gradle ./main-backend/build.gradle
 COPY payment-server/build.gradle ./payment-server/build.gradle
 RUN chmod +x gradlew
 
+# 소스 변경과 무관한 wrapper·의존성 준비 결과를 일반 Docker 레이어로 재사용.
+RUN ./gradlew --no-daemon --init-script gradle/docker-cache.init.gradle \
+    :payment-server:resolveDockerDependencies
+
 COPY payment-server/src/main ./payment-server/src/main
 RUN set -eux; \
-    ./gradlew --no-daemon :payment-server:clean :payment-server:bootJar; \
+    ./gradlew --no-daemon --offline :payment-server:clean :payment-server:bootJar; \
     set -- payment-server/build/libs/*.jar; \
     [ "$#" -eq 1 ]; \
     cp "$1" app.jar
