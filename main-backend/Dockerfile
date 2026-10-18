@@ -25,6 +25,8 @@ RUN apt-get update \
 
 WORKDIR /app
 
+ENV PRODUCT_SEARCH_ENABLED=false
+
 COPY --from=build --chown=app:app /workspace/app.jar /app/app.jar
 
 USER app

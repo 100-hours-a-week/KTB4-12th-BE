@@ -6,6 +6,11 @@ spring:
   application:
     name: gift
 
+  data:
+    elasticsearch:
+      repositories:
+        enabled: false
+
   # datasource는 MySqlTestContainerInitializer가 Testcontainers MySQL 값으로 주입한다.
   datasource:
     hikari:
@@ -40,6 +45,9 @@ storage:
     bucket: ${PRODUCT_IMAGE_BUCKET:test-product-image-bucket}
 
 management:
+  health:
+    elasticsearch:
+      enabled: ${app.product-search.enabled:false}
   endpoints:
     web:
       exposure:
@@ -56,6 +64,10 @@ logging:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
 
 app:
+  product-search:
+    enabled: ${PRODUCT_SEARCH_ENABLED:false}
+    index-name: ${PRODUCT_SEARCH_INDEX:gift-products-local-v1}
+
   scheduling:
     enabled: false
 
