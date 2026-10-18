@@ -380,10 +380,12 @@ class ProductRecommendedQueryIntegrationTest {
         productIds.add(product.getId());
         entityManager.flush();
         entityManager.createNativeQuery("""
-                UPDATE products SET views = :views, sales = :sales, created_at = :time WHERE id = :id
+                UPDATE products SET sales = :sales, created_at = :time WHERE id = :id
                 """)
-                .setParameter("views", views).setParameter("sales", sales)
+                .setParameter("sales", sales)
                 .setParameter("time", createdAt).setParameter("id", product.getId()).executeUpdate();
+        entityManager.createNativeQuery("UPDATE product_view_stats SET views = :views WHERE product_id = :id")
+                .setParameter("views", views).setParameter("id", product.getId()).executeUpdate();
         return product;
     }
 

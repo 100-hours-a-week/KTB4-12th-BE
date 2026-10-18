@@ -145,9 +145,10 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
     ) {
         StringBuilder sql = new StringBuilder("""
             SELECT p.id, p.name, p.brand, p.price,
-                   p.views, p.sales, p.created_at, r.rank_order
+                   COALESCE(stats.views, 0), p.sales, p.created_at, r.rank_order
             FROM recipient_recommended_products r
             JOIN products p ON p.id = r.product_id
+            LEFT JOIN product_view_stats stats ON stats.product_id = p.id
             WHERE r.recipient_id = :recipientUserId
               AND r.source_version = :analyzedSourceVersion
             """);
@@ -189,8 +190,9 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
     ) {
         StringBuilder sql = new StringBuilder("""
             SELECT p.id, p.name, p.brand, p.price,
-                   p.views, p.sales, p.created_at, NULL
+                   COALESCE(stats.views, 0), p.sales, p.created_at, NULL
             FROM products p
+            LEFT JOIN product_view_stats stats ON stats.product_id = p.id
             WHERE 1 = 1
             """);
 
@@ -223,7 +225,7 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
         StringJoiner orderBy = new StringJoiner(", ", " ORDER BY ", "");
 
         for (String field : fields) {
-            orderBy.add("p." + columnName(field) + " DESC");
+            orderBy.add(sortExpression(field) + " DESC");
         }
 
         sql.append(orderBy);
@@ -334,6 +336,12 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
         return "createdAt".equals(field) ? "created_at" : field;
     }
 
+    private static String sortExpression(String field) {
+        return "views".equals(field)
+                ? "COALESCE(stats.views, 0)"
+                : "p." + columnName(field);
+    }
+
     private static List<String> sortFields(ProductSort sort) {
         return switch (sort) {
             case AI_RECOMMENDED ->
@@ -365,11 +373,11 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
             }
 
             // 현재 필드가 더 작은지(<) 조건 추가
-            branch.add("p." + columnName(field) + " < :cursor_" + field);
+            branch.add(sortExpression(field) + " < :cursor_" + field);
             alternatives.add(branch.toString());
 
             // 다음 루프를 위해 현재 필드의 같음(=) 조건 누적
-            equalities.add("p." + columnName(field) + " = :cursor_" + field);
+            equalities.add(sortExpression(field) + " = :cursor_" + field);
         }
 
         return alternatives.toString();
