@@ -15,7 +15,7 @@ import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.exception.ProductErrorCode;
 import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.service.ProductQueryService;
-import com.gift.gift.domain.product.service.ProductViewService;
+import com.gift.gift.domain.product.service.ProductDetailService;
 import com.gift.gift.global.response.ApiResponse;
 
 @RestController
@@ -24,7 +24,7 @@ import com.gift.gift.global.response.ApiResponse;
 public class ProductController {
 
     private final ProductQueryService productQueryService;
-    private final ProductViewService productViewService;
+    private final ProductDetailService productDetailService;
 
     @GetMapping
     public ApiResponse<ProductListResponse> getProducts(
@@ -69,10 +69,7 @@ public class ProductController {
         Long userId = Long.valueOf(principal.getName());
 
         ProductDetailResponse response =
-                productQueryService.getProductDetail(parsedProductId);
-
-        // 상세 상품이 정상적으로 조회된 뒤 조회 수 기록
-        productViewService.recordProductView(userId, parsedProductId);
+                productDetailService.getProductDetail(userId, parsedProductId);
 
         return ApiResponse.success(
                 "상품 상세를 조회했습니다.",

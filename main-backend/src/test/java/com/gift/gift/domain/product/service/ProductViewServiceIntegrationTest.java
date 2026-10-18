@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,12 +20,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.gift.gift.domain.product.repository.ProductRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 
 @SpringBootTest
@@ -33,8 +37,11 @@ class ProductViewServiceIntegrationTest {
     private static final String PASSWORD_HASH =
             "$2a$10$ZUYQG3Jm25Pimrzy9y7/EDJY4bopDMj/XRFMg8QZyGXLc2x7uCU/6";
 
-    @Autowired
+    @MockitoSpyBean
     private ProductViewService productViewService;
+
+    @Autowired
+    private ProductDetailService productDetailService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -96,7 +103,7 @@ class ProductViewServiceIntegrationTest {
 
     @AfterEach
     void tearDown() {
-        reset(productRepository);
+        reset(productRepository, productViewService);
 
         if (productId != null) {
             jdbcTemplate.update(
@@ -114,6 +121,49 @@ class ProductViewServiceIntegrationTest {
         for (Long userId : userIds) {
             jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
         }
+    }
+
+    @Test
+    @DisplayName("상세 요청 스레드에서 조회 기록을 저장하고 반환 전에 커밋한다")
+    void getProductDetail_commitsHistoryOnRequestThread() {
+        Long userId = createUser();
+        Thread requestThread = Thread.currentThread();
+        AtomicInteger commits = new AtomicInteger();
+        doAnswer(invocation -> {
+            assertThat(Thread.currentThread()).isSameAs(requestThread);
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            assertThat(TransactionSynchronizationManager.isCurrentTransactionReadOnly()).isFalse();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == STATUS_COMMITTED) {
+                        commits.incrementAndGet();
+                    }
+                }
+            });
+            return invocation.callRealMethod();
+        }).when(productViewService).recordProductView(userId, productId);
+
+        assertThat(productDetailService.getProductDetail(userId, productId).product().productId())
+                .isEqualTo(productId);
+
+        assertThat(commits.get()).isEqualTo(1);
+        assertThat(viewHistoryCount(userId)).isEqualTo(1);
+        assertThat(viewCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("조회 기록 저장에 실패하면 상세 요청도 실패하고 이력을 롤백한다")
+    void getProductDetail_rollsBackWhenViewIncrementFails() {
+        Long userId = createUser();
+        doThrow(new DataAccessResourceFailureException("의도한 증가 실패"))
+                .when(productRepository).incrementViewsIfActive(productId);
+
+        assertThatThrownBy(() -> productDetailService.getProductDetail(userId, productId))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+
+        assertThat(viewHistoryCount(userId)).isZero();
+        assertThat(viewCount()).isZero();
     }
 
     @Test
