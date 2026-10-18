@@ -3,13 +3,14 @@ package com.gift.gift.domain.notification.service;
 import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -25,17 +26,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class NotificationSseHubTest {
 
-    private final NotificationSseHub hub = new NotificationSseHub();
+    private final NotificationSseConnectionService registry = org.mockito.Mockito.mock(NotificationSseConnectionService.class);
+    private final NotificationSseHub hub = new NotificationSseHub(registry);
+    private String lastConnectionId;
+
+    @AfterEach
+    void cleanup() {
+        hub.destroy();
+    }
 
     @Test
     @DisplayName("알림은 해당 수신자의 SSE 연결에만 전달한다")
     void publish_sendsOnlyToRecipientConnections() {
         EmitterProbe recipient = connect(1L);
+        String recipientConnection = lastConnectionId;
         EmitterProbe anotherRecipient = connect(2L);
         NotificationListItem notification = notification();
 
-        hub.publish(1L, notification);
+        hub.send(recipientConnection, 1L, notification);
 
+        recipient.awaitSend();
         assertThat(recipient.sentData()).anySatisfy(item ->
                 assertThat(((DataWithMediaType) item).getData()).isSameAs(notification)
         );
@@ -80,7 +90,9 @@ class NotificationSseHubTest {
     void publish_removesConnectionWhenSendFails() {
         EmitterProbe emitter = connect(1L, new IOException("disconnected"));
 
-        hub.publish(1L, notification());
+        hub.send(lastConnectionId, 1L, notification());
+        emitter.awaitSend();
+        org.mockito.Mockito.verify(registry, org.mockito.Mockito.timeout(5000)).disconnect(lastConnectionId);
         int attemptedDataCount = emitter.sentData().size();
         hub.sendHeartbeats();
 
@@ -94,10 +106,24 @@ class NotificationSseHubTest {
         EmitterProbe emitter = connect(1L);
 
         hub.sendHeartbeats();
+        emitter.awaitSend();
 
         assertThat(emitter.sentData()).anySatisfy(item ->
                 assertThat(((DataWithMediaType) item).getData()).asString().contains("keepalive")
         );
+    }
+
+    @Test
+    @DisplayName("heartbeat 조회 도중 등록한 새 연결을 이전 조회 결과로 종료하지 않는다")
+    void heartbeat_preservesConnectionRegisteredDuringRenewal() {
+        org.mockito.Mockito.when(registry.renew(hub.nodeId())).thenAnswer(ignored -> {
+            hub.connect(1L);
+            return Set.of();
+        });
+        hub.sendHeartbeats();
+        assertThat(hub.hasConnections()).isTrue();
+        org.mockito.Mockito.verify(registry, org.mockito.Mockito.never())
+                .disconnect(org.mockito.ArgumentMatchers.anyString());
     }
 
     private EmitterProbe connect(Long recipientId) {
@@ -105,8 +131,20 @@ class NotificationSseHubTest {
     }
 
     private EmitterProbe connect(Long recipientId, IOException sendFailure) {
+        return connect(recipientId, sendFailure, null, null);
+    }
+
+    private EmitterProbe connect(Long recipientId, IOException sendFailure,
+                                 CountDownLatch started, CountDownLatch release) {
         SseEmitter emitter = hub.connect(recipientId);
-        List<Object> sentData = new ArrayList<>();
+        var ids = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(registry, org.mockito.Mockito.atLeastOnce()).register(ids.capture(),
+                org.mockito.ArgumentMatchers.eq(hub.nodeId()), org.mockito.ArgumentMatchers.anyLong());
+        lastConnectionId = ids.getValue();
+        org.mockito.Mockito.when(registry.renew(hub.nodeId())).thenAnswer(ignored ->
+                new java.util.HashSet<>(ids.getAllValues()));
+        List<Object> sentData = new CopyOnWriteArrayList<>();
+        CountDownLatch sent = new CountDownLatch(1);
         Map<String, Object> callbacks = new HashMap<>();
         Class<?> handlerType = handlerType();
         Object handler = Proxy.newProxyInstance(
@@ -114,12 +152,17 @@ class NotificationSseHubTest {
                 new Class<?>[] {handlerType},
                 (proxy, method, arguments) -> {
                     if (method.getName().equals("send")) {
-                        Object sent = arguments[0];
-                        if (sent instanceof Set<?> items) {
+                        if (started != null) {
+                            started.countDown();
+                            release.await(10, TimeUnit.SECONDS);
+                        }
+                        Object value = arguments[0];
+                        if (value instanceof Set<?> items) {
                             sentData.addAll(items);
                         } else {
-                            sentData.add(sent);
+                            sentData.add(value);
                         }
+                        sent.countDown();
                         if (sendFailure != null) {
                             throw sendFailure;
                         }
@@ -130,7 +173,7 @@ class NotificationSseHubTest {
                 }
         );
         ReflectionTestUtils.invokeMethod(emitter, "initialize", handler);
-        return new EmitterProbe(sentData, callbacks);
+        return new EmitterProbe(sentData, callbacks, sent);
     }
 
     private Class<?> handlerType() {
@@ -154,7 +197,15 @@ class NotificationSseHubTest {
         );
     }
 
-    private record EmitterProbe(List<Object> sentData, Map<String, Object> callbacks) {
+    private record EmitterProbe(List<Object> sentData, Map<String, Object> callbacks, CountDownLatch sent) {
+        private void awaitSend() {
+            try {
+                assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+        }
 
         private Runnable timeout() {
             return (Runnable) callbacks.get("onTimeout");
