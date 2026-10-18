@@ -3,6 +3,8 @@ package com.gift.gift.domain.product.service;
 import java.util.*;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +25,8 @@ import com.gift.gift.domain.product.query.ProductPage;
 import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.*;
+import com.gift.gift.domain.product.search.ProductSearchDocument;
+import com.gift.gift.domain.product.search.ProductSearchRepository;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
@@ -43,6 +47,7 @@ public class ProductQueryService {
     private final UserQueryService userQueryService;
     private final FriendQueryService friendQueryService;
     private final RecipientProfileRepository recipientProfileRepository;
+    private final ObjectProvider<ProductSearchRepository> esSearchRepositoryProvider;
 
     @Transactional(
             readOnly = true,
@@ -93,11 +98,7 @@ public class ProductQueryService {
         );
 
         List<ProductSummaryProjection> fetched =
-                productRepository.searchProducts(
-                        condition,
-                        cursor,
-                        ProductPageAssembler.FETCH_COUNT
-                );
+                searchProducts(condition, cursor);
 
         ProductPage page = pageAssembler.assemble(
                 fetched,
@@ -207,5 +208,44 @@ public class ProductQueryService {
                     ProductErrorCode.RECIPIENT_NOT_FOUND
             );
         }
+    }
+
+    private List<ProductSummaryProjection> searchProducts(
+            ProductSearchCondition condition,
+            ProductCursor cursor
+    ) {
+        boolean supportsEs = !condition.isAiRequested()
+                && condition.hasQuery()
+                && condition.query().codePointCount(
+                0,
+                condition.query().length()
+        ) >= 2;
+
+        if (supportsEs) {
+            ProductSearchRepository esRepository =
+                    esSearchRepositoryProvider.getIfAvailable();
+
+            if (esRepository != null) {
+                try {
+                    return esRepository.search(
+                                    condition,
+                                    cursor,
+                                    ProductPageAssembler.FETCH_COUNT
+                            )
+                            .getSearchHits().stream()
+                            .map(hit -> hit.getContent())
+                            .map(ProductSearchDocument::toProjection)
+                            .toList();
+                } catch (DataAccessException exception) {
+                    throw new ProductException(ErrorCode.SERVICE_UNAVAILABLE);
+                }
+            }
+        }
+
+        return productRepository.searchProducts(
+                condition,
+                cursor,
+                ProductPageAssembler.FETCH_COUNT
+        );
     }
 }

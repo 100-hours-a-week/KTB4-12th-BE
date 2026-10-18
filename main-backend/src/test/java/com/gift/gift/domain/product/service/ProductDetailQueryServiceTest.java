@@ -7,6 +7,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
@@ -20,6 +21,7 @@ import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.ProductImageRepository;
 import com.gift.gift.domain.product.repository.ProductRepository;
+import com.gift.gift.domain.product.search.ProductSearchRepository;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
 import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
@@ -52,7 +54,8 @@ class ProductDetailQueryServiceTest {
                 imageUrlProvider,
                 mock(UserQueryService.class),
                 mock(FriendQueryService.class),
-                mock(RecipientProfileRepository.class)
+                mock(RecipientProfileRepository.class),
+                new StaticListableBeanFactory().getBeanProvider(ProductSearchRepository.class)
         );
     }
 

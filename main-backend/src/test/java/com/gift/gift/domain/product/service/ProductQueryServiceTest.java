@@ -14,6 +14,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.data.elasticsearch.core.SearchHit;
+import org.springframework.data.elasticsearch.core.SearchHits;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
@@ -26,6 +30,8 @@ import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.*;
+import com.gift.gift.domain.product.search.ProductSearchDocument;
+import com.gift.gift.domain.product.search.ProductSearchRepository;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfileStatus;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
@@ -48,6 +54,7 @@ class ProductQueryServiceTest {
     private UserQueryService userQueryService;
     private FriendQueryService friendQueryService;
     private RecipientProfileRepository recipientProfileRepository;
+    private StaticListableBeanFactory searchBeanFactory;
 
     @BeforeEach
     void setUp() {
@@ -56,6 +63,7 @@ class ProductQueryServiceTest {
         userQueryService = mock(UserQueryService.class);
         friendQueryService = mock(FriendQueryService.class);
         recipientProfileRepository = mock(RecipientProfileRepository.class);
+        searchBeanFactory = new StaticListableBeanFactory();
 
         cursorCodec = new ProductCursorCodec(
                 JsonMapper.builder().build()
@@ -78,8 +86,159 @@ class ProductQueryServiceTest {
                 objectKey -> "https://image/test/" + objectKey,
                 userQueryService,
                 friendQueryService,
-                recipientProfileRepository
+                recipientProfileRepository,
+                searchBeanFactory.getBeanProvider(ProductSearchRepository.class)
         );
+    }
+
+    @Test
+    @DisplayName("ES 일반 검색은 기존 응답과 20번째 상품 커서를 유지한다")
+    void getProducts_usesEsAndPreservesPagination() {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        List<ProductSearchDocument> documents = new ArrayList<>();
+        for (long id = 1; id <= 21; id++) {
+            documents.add(new ProductSearchDocument(
+                    id, "선물 세트 " + id, "브랜드", new BigDecimal("10000"),
+                    100, 10, "2026-07-13T03:00:00.123456Z"
+            ));
+        }
+        SearchHits<ProductSearchDocument> hits = esHits(documents);
+        when(esRepository.search(any(), isNull(), eq(21))).thenReturn(hits);
+        when(productImageRepository.findThumbnailCandidates(anyList())).thenReturn(List.of());
+        ProductSearchCondition condition = new ProductSearchCondition(
+                "세트", List.of(11L), ProductSort.POPULAR
+        );
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("세트", List.of(11L), ProductSort.POPULAR, null, null), null
+        );
+
+        assertThat(response.products()).hasSize(20);
+        assertThat(response.products().getFirst().productName()).isEqualTo("선물 세트 1");
+        assertThat(response.pagination().hasNext()).isTrue();
+        ProductCursor cursor = cursorCodec.decode(response.pagination().nextCursor(), condition);
+        assertThat(cursor.productId()).isEqualTo(20L);
+        assertThat(cursor.createdAt()).isEqualTo(LocalDateTime.of(2026, 7, 13, 12, 0, 0, 123456000));
+        assertThat(cursor.views()).isEqualTo(100);
+        assertThat(cursor.sales()).isEqualTo(10);
+        verify(esRepository).search(condition, null, 21);
+        verify(productRepository, never()).searchProducts(any(), any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("ES 다음 페이지 요청은 디코딩한 기존 커서를 전달한다")
+    void getProducts_passesCursorToEs() {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        ProductSearchCondition condition = new ProductSearchCondition("세트", List.of(), ProductSort.MOST_GIFTED);
+        ProductCursor cursor = new ProductCursor(
+                1, ProductSort.MOST_GIFTED, "세트", List.of(), 20L,
+                LocalDateTime.of(2026, 7, 13, 12, 0, 0, 123456000), 100, 10
+        );
+        SearchHits<ProductSearchDocument> hits = esHits(List.of());
+        when(esRepository.search(condition, cursor, 21)).thenReturn(hits);
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("세트", null, ProductSort.MOST_GIFTED, null,
+                        cursorCodec.encode(cursor, condition)), null
+        );
+
+        assertThat(response.products()).isEmpty();
+        assertThat(response.pagination().hasNext()).isFalse();
+        assertThat(response.pagination().nextCursor()).isNull();
+        verify(esRepository).search(condition, cursor, 21);
+        verifyNoInteractions(productRepository);
+    }
+
+    @Test
+    @DisplayName("ES 빈 검색 결과를 MySQL로 다시 검색하지 않는다")
+    void getProducts_doesNotFallBackWhenEsReturnsEmpty() {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        SearchHits<ProductSearchDocument> hits = esHits(List.of());
+        when(esRepository.search(any(), isNull(), eq(21))).thenReturn(hits);
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("세트", null, ProductSort.POPULAR, null, null), null
+        );
+
+        assertThat(response.products()).isEmpty();
+        assertThat(response.pagination().hasNext()).isFalse();
+        verifyNoInteractions(productRepository);
+    }
+
+    @Test
+    @DisplayName("ES 검색 실패는 서비스 불가로 처리하고 MySQL로 재검색하지 않는다")
+    void getProducts_reportsUnavailableWhenEsFails() {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        when(esRepository.search(any(), isNull(), eq(21)))
+                .thenThrow(new DataAccessResourceFailureException("ES unavailable"));
+
+        assertThatThrownBy(() -> productQueryService.getProducts(
+                new ProductListRequest("세트", null, ProductSort.POPULAR, null, null), null
+        )).isInstanceOfSatisfying(ProductException.class, exception ->
+                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+
+        verifyNoInteractions(productRepository, productImageRepository);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "세", "😀"})
+    @DisplayName("검색어가 없거나 한 코드포인트이면 ES 대신 기존 검색을 유지한다")
+    void getProducts_keepsMysqlForUnsupportedQuery(String query) {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        stubFirstPage(List.of());
+
+        productQueryService.getProducts(
+                new ProductListRequest(query, null, ProductSort.POPULAR, null, null), null
+        );
+
+        assertThat(captureCondition().query()).isEqualTo(query);
+        verifyNoInteractions(esRepository);
+    }
+
+    @Test
+    @DisplayName("ES Bean이 없으면 두 글자 검색도 기존 MySQL을 사용한다")
+    void getProducts_keepsMysqlWithoutEsBean() {
+        stubFirstPage(List.of());
+
+        productQueryService.getProducts(
+                new ProductListRequest("세트", null, ProductSort.POPULAR, null, null), null
+        );
+
+        assertThat(captureCondition().query()).isEqualTo("세트");
+    }
+
+    @Test
+    @DisplayName("ES가 활성화되어도 AI 추천의 인기순 대체는 기존 검색을 사용한다")
+    void getProducts_keepsMysqlForAiFallbackWithQuery() {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        stubAccessibleRecipient();
+        stubFirstPage(List.of());
+
+        productQueryService.getProducts(
+                new ProductListRequest("세트", null, ProductSort.AI_RECOMMENDED, 10L, null), 1L
+        );
+
+        assertThat(captureCondition().sort()).isEqualTo(ProductSort.POPULAR);
+        verifyNoInteractions(esRepository);
+    }
+
+    @SuppressWarnings("unchecked")
+    private SearchHits<ProductSearchDocument> esHits(List<ProductSearchDocument> documents) {
+        SearchHits<ProductSearchDocument> hits = mock(SearchHits.class);
+        List<SearchHit<ProductSearchDocument>> searchHits = new ArrayList<>();
+        for (ProductSearchDocument document : documents) {
+            SearchHit<ProductSearchDocument> hit = mock(SearchHit.class);
+            when(hit.getContent()).thenReturn(document);
+            searchHits.add(hit);
+        }
+        when(hits.getSearchHits()).thenReturn(searchHits);
+        return hits;
     }
 
     // 1. 기본 정렬 결정 테스트

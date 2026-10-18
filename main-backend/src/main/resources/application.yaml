@@ -34,6 +34,16 @@ spring:
       max-file-size: 8MB
       max-request-size: 10MB
 
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://127.0.0.1:9201}
+    connection-timeout: 3s
+    socket-timeout: 10s
+
+  data:
+    elasticsearch:
+      repositories:
+        enabled: false
+
 storage:
   s3:
     region: ${AWS_REGION}
@@ -51,6 +61,10 @@ app:
       allowed-origins: ${CORS_ALLOWED_ORIGINS}
     login-rate-limit:
       hmac-secret-base64: ${LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64}
+
+  product-search:
+    enabled: ${PRODUCT_SEARCH_ENABLED:false}
+    index-name: ${PRODUCT_SEARCH_INDEX:gift-products-local-v1}
 
   ai-chat:
     client:
@@ -102,6 +116,9 @@ app:
       sheet-name: ${GOOGLE_SHEET_TAB:}
 
 management:
+  health:
+    elasticsearch:
+      enabled: ${app.product-search.enabled:false}
   endpoints:
     web:
       exposure:

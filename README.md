@@ -54,6 +54,34 @@ docker build \
 Health Check 경로는 두 애플리케이션 모두 `/actuator/health`입니다. Payment Server는 외부에
 공개하지 않고 Main Backend가 접근할 수 있는 내부 네트워크에서 실행합니다.
 
+## 상품 검색 배포 설정
+
+현재 배포는 `PRODUCT_SEARCH_ENABLED=false`로 기존 MySQL 검색을 사용합니다.
+Main Backend 이미지의 기본값과 CI 검증 컨테이너에도 `false`를 적용하며 ES Health 검사는 제외합니다.
+서버의 Docker/Compose/SSM 환경 설정에서 이 값을 덮어쓰는 경우에도 `false`로 유지해야 합니다.
+실제 서버의 SSM 배포 문서는 이 저장소에서 관리하지 않으므로 배포 담당자가 주입값을 확인해야 합니다.
+
+로컬 ES 검증 시에만 `PRODUCT_SEARCH_ENABLED=true`와 `ELASTICSEARCH_URIS`를 지정합니다.
+운영 활성화는 최신 상품 적재·변경 동기화·운영 검증을 완료한 후 별도로 결정합니다.
+
+ES 사용 시 `PRODUCT_SEARCH_INDEX`로 서비스 DB에 대응하는 인덱스를 지정합니다.
+초기 매핑은 `main-backend/src/main/resources/elasticsearch/products-index.json`에 있으며,
+현재 로컬 검증 인덱스는 `gift-products-local-v1`입니다. 인덱스 생성·상품 적재는 자동 실행하지 않습니다.
+현재 적재 데이터의 MySQL DATETIME은 한국 시간(+09:00)으로 해석하며 커서도 같은 기준으로 변환합니다.
+
+ES는 두 글자 이상 일반 상품 검색에만 사용합니다. 검색어 없음·한 글자·AI 추천 요청은 기존 경로를 유지합니다.
+활성화된 ES 검색이 실패하면 503을 반환하며 MySQL로 자동 재검색하지 않습니다.
+변경 동기화와 PIT는 아직 적용하지 않아 데이터 갱신 중에는 검색 결과·페이지 순서가 달라질 수 있습니다.
+모든 부분 문자열·영문 대소문자·특수문자에 대한 기존 검색과의 동등성은 추가 검증이 필요합니다.
+
+ES가 없어도 실행되는 검증은 일반 테스트에 포함됩니다. 실제 ES 통합 테스트는 해당 인덱스에
+상품을 적재한 로컬 환경에서만 다음과 같이 실행합니다.
+
+```bash
+RUN_LOCAL_ES_TEST=true ./gradlew :main-backend:test \
+  --tests 'com.gift.gift.domain.product.search.ProductSearchRepositoryIntegrationTest'
+```
+
 ## IntelliJ IDEA formatter
 
 프로젝트에 포함된 `.editorconfig`와 Project Code Style을 사용합니다.
