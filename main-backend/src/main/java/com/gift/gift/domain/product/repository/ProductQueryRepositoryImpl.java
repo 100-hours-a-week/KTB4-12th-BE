@@ -24,6 +24,24 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
     private final EntityManager entityManager;
 
     @Override
+    public List<ProductDetailProjection> findActiveDetail(Long productId) {
+        return entityManager.createQuery("""
+                SELECT new com.gift.gift.domain.product.repository.ProductDetailProjection(
+                    p.id, p.brand, p.name, p.description, p.price, p.quantity,
+                    i.id, i.objectKey, i.sortOrder
+                )
+                FROM Product p
+                LEFT JOIN ProductImage i ON i.product.id = p.id AND i.deletedAt IS NULL
+                WHERE p.id = :productId AND p.deletedAt IS NULL
+                ORDER BY
+                    CASE WHEN i.sortOrder IS NULL THEN 1 ELSE 0 END ASC,
+                    i.sortOrder ASC, i.createdAt ASC, i.id ASC
+                """, ProductDetailProjection.class)
+                .setParameter("productId", productId)
+                .getResultList();
+    }
+
+    @Override
     public List<ProductSummaryProjection> searchProducts(
             ProductSearchCondition condition,
             ProductCursor cursor,
