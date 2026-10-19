@@ -41,9 +41,6 @@ public class Product extends BaseTimeEntity {
     private Integer quantity;
 
     @Column(nullable = false)
-    private Integer views = 0;
-
-    @Column(nullable = false)
     private Integer sales = 0;
 
     @Column(name = "search_version", nullable = false, updatable = false)

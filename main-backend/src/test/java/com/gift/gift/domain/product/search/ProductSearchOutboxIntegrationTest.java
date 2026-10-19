@@ -106,6 +106,8 @@ class ProductSearchOutboxIntegrationTest {
         viewService.recordProductView(userId, productId);
 
         assertThat(value("views")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT views FROM products WHERE id = ?",
+                Long.class, productId)).isZero();
         assertThat(value("search_version")).isEqualTo(1);
         assertThat(versions()).containsExactly(1L);
     }
@@ -224,6 +226,10 @@ class ProductSearchOutboxIntegrationTest {
     }
 
     private long value(String column) {
+        if ("views".equals(column)) {
+            return jdbc.queryForObject(
+                    "SELECT views FROM product_view_stats WHERE product_id = ?", Long.class, productId);
+        }
         return jdbc.queryForObject("SELECT " + column + " FROM products WHERE id = ?", Long.class, productId);
     }
 

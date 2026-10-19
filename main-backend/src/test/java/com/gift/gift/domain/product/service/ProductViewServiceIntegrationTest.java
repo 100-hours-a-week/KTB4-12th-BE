@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,12 +20,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import com.gift.gift.domain.product.repository.ProductRepository;
+import com.gift.gift.domain.product.repository.ProductViewStatsRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 
 @SpringBootTest
@@ -33,14 +37,17 @@ class ProductViewServiceIntegrationTest {
     private static final String PASSWORD_HASH =
             "$2a$10$ZUYQG3Jm25Pimrzy9y7/EDJY4bopDMj/XRFMg8QZyGXLc2x7uCU/6";
 
-    @Autowired
+    @MockitoSpyBean
     private ProductViewService productViewService;
+
+    @Autowired
+    private ProductDetailService productDetailService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @MockitoSpyBean
-    private ProductRepository productRepository;
+    private ProductViewStatsRepository productViewStatsRepository;
 
     private final List<Long> userIds = new ArrayList<>();
 
@@ -96,7 +103,7 @@ class ProductViewServiceIntegrationTest {
 
     @AfterEach
     void tearDown() {
-        reset(productRepository);
+        reset(productViewStatsRepository, productViewService);
 
         if (productId != null) {
             jdbcTemplate.update(
@@ -114,6 +121,49 @@ class ProductViewServiceIntegrationTest {
         for (Long userId : userIds) {
             jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
         }
+    }
+
+    @Test
+    @DisplayName("상세 요청 스레드에서 조회 기록을 저장하고 반환 전에 커밋한다")
+    void getProductDetail_commitsHistoryOnRequestThread() {
+        Long userId = createUser();
+        Thread requestThread = Thread.currentThread();
+        AtomicInteger commits = new AtomicInteger();
+        doAnswer(invocation -> {
+            assertThat(Thread.currentThread()).isSameAs(requestThread);
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            assertThat(TransactionSynchronizationManager.isCurrentTransactionReadOnly()).isFalse();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == STATUS_COMMITTED) {
+                        commits.incrementAndGet();
+                    }
+                }
+            });
+            return invocation.callRealMethod();
+        }).when(productViewService).recordProductView(userId, productId);
+
+        assertThat(productDetailService.getProductDetail(userId, productId).product().productId())
+                .isEqualTo(productId);
+
+        assertThat(commits.get()).isEqualTo(1);
+        assertThat(viewHistoryCount(userId)).isEqualTo(1);
+        assertThat(viewCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("조회 기록 저장에 실패하면 상세 요청도 실패하고 이력을 롤백한다")
+    void getProductDetail_rollsBackWhenViewIncrementFails() {
+        Long userId = createUser();
+        doThrow(new DataAccessResourceFailureException("의도한 증가 실패"))
+                .when(productViewStatsRepository).incrementViewsIfActive(productId, 1);
+
+        assertThatThrownBy(() -> productDetailService.getProductDetail(userId, productId))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+
+        assertThat(viewHistoryCount(userId)).isZero();
+        assertThat(viewCount()).isZero();
     }
 
     @Test
@@ -208,8 +258,8 @@ class ProductViewServiceIntegrationTest {
     void recordProductView_rollsBackHistoryWhenViewIncrementFails() {
         Long userId = createUser();
         doThrow(new DataAccessResourceFailureException("의도한 증가 실패"))
-                .when(productRepository)
-                .incrementViewsIfActive(productId);
+                .when(productViewStatsRepository)
+                .incrementViewsIfActive(productId, 1);
 
         assertThatThrownBy(() ->
                 productViewService.recordProductView(userId, productId)
@@ -217,6 +267,44 @@ class ProductViewServiceIntegrationTest {
 
         assertThat(viewHistoryCount(userId)).isZero();
         assertThat(viewCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("통계 행이 없으면 이력 저장도 롤백한다")
+    void recordProductView_rollsBackWhenStatsMissing() {
+        Long userId = createUser();
+        jdbcTemplate.update("DELETE FROM product_view_stats WHERE product_id = ?", productId);
+
+        assertThatThrownBy(() -> productViewService.recordProductView(userId, productId))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(viewHistoryCount(userId)).isZero();
+    }
+
+    @Test
+    @DisplayName("상품 생성·삭제·복구 시 통계 상태가 연동되고 레거시 조회수는 갱신하지 않는다")
+    void productTriggers_synchronizeStatsLifecycle() {
+        assertThat(viewCount()).isZero();
+        productViewService.recordProductView(createUser(), productId);
+        assertThat(viewCount()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT views FROM products WHERE id = ?",
+                Integer.class, productId)).isZero();
+
+        jdbcTemplate.update("UPDATE products SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", productId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT deleted_at IS NOT NULL FROM product_view_stats WHERE product_id = ?",
+                Boolean.class, productId)).isTrue();
+        jdbcTemplate.update("UPDATE products SET deleted_at = NULL WHERE id = ?", productId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT deleted_at IS NULL FROM product_view_stats WHERE product_id = ?",
+                Boolean.class, productId)).isTrue();
+        assertThat(viewCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("상품 물리 삭제 시 통계 행도 삭제한다")
+    void productTriggers_removeStatsOnPhysicalDeletion() {
+        jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
+        assertThat(productViewStatsRepository.existsById(productId)).isFalse();
     }
 
     private Long createUser() {
@@ -257,7 +345,7 @@ class ProductViewServiceIntegrationTest {
 
     private int viewCount() {
         return jdbcTemplate.queryForObject(
-                "SELECT views FROM products WHERE id = ?",
+                "SELECT views FROM product_view_stats WHERE product_id = ?",
                 Integer.class,
                 productId
         );

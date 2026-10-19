@@ -8,6 +8,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.product.cursor.ProductCursor;
@@ -18,7 +19,6 @@ import com.gift.gift.domain.product.dto.response.ProductImageResponse;
 import com.gift.gift.domain.product.dto.response.ProductListResponse;
 import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
 import com.gift.gift.domain.product.entity.Product;
-import com.gift.gift.domain.product.entity.ProductImage;
 import com.gift.gift.domain.product.exception.ProductErrorCode;
 import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.query.ProductPage;
@@ -125,23 +125,20 @@ public class ProductQueryService {
         );
     }
 
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ProductDetailResponse getProductDetail(Long productId) {
-        Product product = productRepository
-                .findByIdAndDeletedAtIsNull(productId)
-                .orElseThrow(
-                        () -> new ProductException(ErrorCode.PRODUCT_NOT_FOUND)
-                );
-
-        List<ProductImage> activeImages = productImageRepository
-                .findActiveDetailImages(productId);
-
-        List<ProductImageResponse> images = new ArrayList<>();
-        for (ProductImage image : activeImages) {
-            String imageUrl = imageUrlProvider.generateUrl(image.getObjectKey());
-            images.add(ProductImageResponse.from(image, imageUrl));
+        List<ProductDetailProjection> rows = productRepository.findActiveDetail(productId);
+        if (rows.isEmpty()) {
+            throw new ProductException(ErrorCode.PRODUCT_NOT_FOUND);
         }
 
-        return ProductDetailResponse.from(product, images);
+        List<ProductImageResponse> images = new ArrayList<>();
+        for (ProductDetailProjection row : rows) {
+            if (row.imageId() != null) {
+                images.add(ProductImageResponse.from(row, imageUrlProvider.generateUrl(row.objectKey())));
+            }
+        }
+        return ProductDetailResponse.from(rows.getFirst(), images);
     }
 
     public Optional<Product> findAvailableProduct(Long productId) {

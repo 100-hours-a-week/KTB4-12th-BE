@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.repository.ProductRepository;
+import com.gift.gift.domain.product.repository.ProductViewStatsRepository;
 import com.gift.gift.domain.product.repository.ProductViewRepository;
 import com.gift.gift.domain.product.search.ProductSearchOutboxWriter;
 import com.gift.gift.global.exception.ErrorCode;
@@ -17,6 +18,7 @@ public class ProductViewService {
 
     private final ProductRepository productRepository;
     private final ProductViewRepository productViewRepository;
+    private final ProductViewStatsRepository productViewStatsRepository;
     private final ProductSearchOutboxWriter outboxWriter;
 
     @Transactional
@@ -56,10 +58,12 @@ public class ProductViewService {
             );
         }
 
-        if (productRepository.incrementViewsIfActive(productId) != 1) {
-            throw new ProductException(
-                    ErrorCode.PRODUCT_NOT_FOUND
-            );
+        if (productViewStatsRepository.incrementViewsIfActive(productId, 1) != 1) {
+            throw new IllegalStateException("상품 조회수 통계 행이 없습니다.");
+        }
+
+        if (productRepository.incrementSearchVersionIfActive(productId) != 1) {
+            throw new ProductException(ErrorCode.PRODUCT_NOT_FOUND);
         }
 
         outboxWriter.enqueue(productId);

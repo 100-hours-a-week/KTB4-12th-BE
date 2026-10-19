@@ -34,13 +34,11 @@ public interface ProductRepository
     @Modifying
     @Query(value = """
             UPDATE products
-            SET views = views + 1,
-                search_version = search_version + 1,
-                updated_at = CURRENT_TIMESTAMP(6)
+            SET search_version = search_version + 1
             WHERE id = :productId
               AND deleted_at IS NULL
             """, nativeQuery = true)
-    int incrementViewsIfActive(
+    int incrementSearchVersionIfActive(
             @Param("productId") Long productId
     );
 

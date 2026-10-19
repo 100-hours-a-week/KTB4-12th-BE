@@ -84,6 +84,10 @@ class ProductDetailRepositoryIntegrationTest {
 
         assertThat(productRepository.findByIdAndDeletedAtIsNull(deleted.getId()))
                 .isEmpty();
+        assertThat(productRepository.findActiveDetail(active.getId())).hasSize(1);
+        assertThat(productRepository.findActiveDetail(soldOut.getId())).singleElement()
+                .satisfies(row -> assertThat(row.quantity()).isZero());
+        assertThat(productRepository.findActiveDetail(deleted.getId())).isEmpty();
     }
 
     @Test
@@ -99,6 +103,7 @@ class ProductDetailRepositoryIntegrationTest {
 
         assertThat(productRepository.findByIdAndDeletedAtIsNull(productId))
                 .isEmpty();
+        assertThat(productRepository.findActiveDetail(productId)).isEmpty();
     }
 
     @Test
@@ -149,6 +154,9 @@ class ProductDetailRepositoryIntegrationTest {
                         nullC.getId(),
                         nullA.getId()
                 );
+        assertThat(productRepository.findActiveDetail(product.getId()))
+                .extracting(ProductDetailProjection::imageId)
+                .containsExactly(first.getId(), second.getId(), nullB.getId(), nullC.getId(), nullA.getId());
     }
 
     @Test
@@ -162,6 +170,27 @@ class ProductDetailRepositoryIntegrationTest {
         assertThat(
                 productImageRepository.findActiveDetailImages(product.getId())
         ).isEmpty();
+        assertThat(productRepository.findActiveDetail(product.getId())).singleElement()
+                .satisfies(row -> {
+                    assertThat(row.productId()).isEqualTo(product.getId());
+                    assertThat(row.imageId()).isNull();
+                });
+    }
+
+    @Test
+    @DisplayName("모든 이미지가 삭제되어도 상품 상세 행은 유지한다")
+    void findDetail_retainsProductWhenAllImagesDeleted() {
+        Product product = saveProduct(8);
+        ProductImage image = saveImage(product, 1);
+        entityManager.flush();
+        entityManager.createQuery("UPDATE ProductImage i SET i.deletedAt = :at WHERE i.id = :id")
+                .setParameter("at", BASE_TIME).setParameter("id", image.getId()).executeUpdate();
+        entityManager.clear();
+        assertThat(productRepository.findActiveDetail(product.getId())).singleElement()
+                .satisfies(row -> {
+                    assertThat(row.productId()).isEqualTo(product.getId());
+                    assertThat(row.imageId()).isNull();
+                });
     }
 
     private Product saveProduct(int quantity) {

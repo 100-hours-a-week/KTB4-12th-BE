@@ -34,6 +34,9 @@ class ProductPersistenceIntegrationTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private ProductViewStatsRepository productViewStatsRepository;
+
     @Test
     @DisplayName("카테고리, 상품, 상품 이미지를 저장하고 연관관계를 조회한다")
     void saveAndFindProductPersistence() {
@@ -94,7 +97,7 @@ class ProductPersistenceIntegrationTest {
         assertThat(foundProduct.getPrice())
                 .isEqualByComparingTo("59000");
         assertThat(foundProduct.getQuantity()).isEqualTo(10);
-        assertThat(foundProduct.getViews()).isZero();
+        assertThat(productViewStatsRepository.findById(productId).orElseThrow().getViews()).isZero();
         assertThat(foundProduct.getSales()).isZero();
         assertThat(foundProduct.getCreatedAt()).isNotNull();
         assertThat(foundProduct.getUpdatedAt()).isNotNull();

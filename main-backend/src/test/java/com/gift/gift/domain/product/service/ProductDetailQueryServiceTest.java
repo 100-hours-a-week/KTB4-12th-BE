@@ -2,7 +2,6 @@ package com.gift.gift.domain.product.service;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +20,7 @@ import com.gift.gift.domain.product.query.ProductPageAssembler;
 import com.gift.gift.domain.product.query.ProductThumbnailMapper;
 import com.gift.gift.domain.product.repository.ProductImageRepository;
 import com.gift.gift.domain.product.repository.ProductRepository;
+import com.gift.gift.domain.product.repository.ProductDetailProjection;
 import com.gift.gift.domain.product.search.ProductSearchRepository;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
 import com.gift.gift.domain.user.service.UserQueryService;
@@ -151,8 +151,8 @@ class ProductDetailQueryServiceTest {
     @Test
     @DisplayName("상품이 없으면 상품 없음 예외를 발생시키고 이미지는 조회하지 않는다")
     void getProductDetail_throwsWhenProductNotFound() {
-        when(productRepository.findByIdAndDeletedAtIsNull(PRODUCT_ID))
-                .thenReturn(Optional.empty());
+        when(productRepository.findActiveDetail(PRODUCT_ID))
+                .thenReturn(List.of());
 
         assertThatThrownBy(() -> service.getProductDetail(PRODUCT_ID))
                 .isInstanceOfSatisfying(
@@ -196,9 +196,17 @@ class ProductDetailQueryServiceTest {
     }
 
     private void stubDetail(Product product, List<ProductImage> images) {
-        when(productRepository.findByIdAndDeletedAtIsNull(PRODUCT_ID))
-                .thenReturn(Optional.of(product));
-        when(productImageRepository.findActiveDetailImages(PRODUCT_ID))
-                .thenReturn(images);
+        List<ProductDetailProjection> rows = images.isEmpty()
+                ? List.of(row(product, null))
+                : images.stream().map(image -> row(product, image)).toList();
+        when(productRepository.findActiveDetail(PRODUCT_ID)).thenReturn(rows);
+    }
+
+    private ProductDetailProjection row(Product product, ProductImage image) {
+        return new ProductDetailProjection(
+                product.getId(), product.getBrand(), product.getName(), product.getDescription(),
+                product.getPrice(), product.getQuantity(), image == null ? null : image.getId(),
+                image == null ? null : image.getObjectKey(), image == null ? null : image.getSortOrder()
+        );
     }
 }
