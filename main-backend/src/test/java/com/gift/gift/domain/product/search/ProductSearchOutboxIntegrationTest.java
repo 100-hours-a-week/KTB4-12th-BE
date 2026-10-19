@@ -26,18 +26,21 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.gift.gift.domain.product.service.ProductStockService;
+import com.gift.gift.domain.product.service.ProductViewBatchService;
 import com.gift.gift.domain.product.service.ProductViewService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doCallRealMethod;
 
 @SpringBootTest(properties = "app.product-search.outbox.enabled=true")
 class ProductSearchOutboxIntegrationTest {
 
     @Autowired private ProductStockService stockService;
     @Autowired private ProductViewService viewService;
+    @Autowired private ProductViewBatchService viewBatchService;
     @Autowired private ProductSearchOutboxWriter writer;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private JdbcTemplate jdbc;
@@ -78,6 +81,7 @@ class ProductSearchOutboxIntegrationTest {
     @AfterEach
     void cleanUp() {
         jdbc.update("DELETE FROM product_search_outbox WHERE product_id = ?", productId);
+        jdbc.update("DELETE FROM product_view_events WHERE product_id = ?", productId);
         jdbc.update("DELETE FROM product_views WHERE product_id = ?", productId);
         jdbc.update("DELETE FROM products WHERE id = ?", productId);
         jdbc.update("DELETE FROM categories WHERE id = ?", categoryId);
@@ -105,6 +109,11 @@ class ProductSearchOutboxIntegrationTest {
         viewService.recordProductView(userId, productId);
         viewService.recordProductView(userId, productId);
 
+        assertThat(versions()).isEmpty();
+        assertThat(value("search_version")).isZero();
+        assertThat(value("views")).isZero();
+        assertThat(viewBatchService.processPendingEvents()).isEqualTo(1);
+
         assertThat(value("views")).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT views FROM products WHERE id = ?",
                 Long.class, productId)).isZero();
@@ -127,6 +136,7 @@ class ProductSearchOutboxIntegrationTest {
     void callerRollbackRemovesAllProductChangesAndJobs() {
         assertThatThrownBy(() -> transaction().executeWithoutResult(tx -> {
             viewService.recordProductView(userId, productId);
+            assertThat(viewBatchService.processPendingEvents()).isEqualTo(1);
             stockService.deductStockIfAvailable(productId, 3);
             assertThat(versions()).containsExactly(1L, 2L);
             throw new IllegalStateException("결제 후속 처리 실패");
@@ -155,16 +165,43 @@ class ProductSearchOutboxIntegrationTest {
     }
 
     @Test
-    @DisplayName("Outbox 저장 실패 시 조회 이력과 조회수도 롤백된다")
-    void outboxFailureRollsBackViewHistoryAndCounter() {
+    @DisplayName("Outbox 실패 시 배치 집계와 완료 처리를 롤백하고 조회 이벤트는 재처리한다")
+    void outboxFailureRollsBackViewBatchAndAllowsRetry() {
+        viewService.recordProductView(userId, productId);
         doThrow(new DataAccessResourceFailureException("Outbox 저장 실패")).when(outbox).insert(productId);
 
-        assertThatThrownBy(() -> viewService.recordProductView(userId, productId))
+        assertThatThrownBy(() -> viewBatchService.processPendingEvents())
                 .isInstanceOf(DataAccessResourceFailureException.class);
         assertThat(value("views")).isZero();
         assertThat(value("search_version")).isZero();
+        assertThat(versions()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_views WHERE product_id = ?",
-                Integer.class, productId)).isZero();
+                Integer.class, productId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_view_events WHERE product_id = ? AND processed_at IS NULL",
+                Integer.class, productId)).isEqualTo(1);
+
+        doCallRealMethod().when(outbox).insert(productId);
+        assertThat(viewBatchService.processPendingEvents()).isEqualTo(1);
+        assertThat(value("views")).isEqualTo(1);
+        assertThat(versions()).containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("여러 조회 이벤트를 상품별로 집계한 뒤 버전과 Outbox는 한 번만 기록한다")
+    void viewBatchCreatesOneJobPerProductAndBatch() {
+        viewService.recordProductView(userId, productId);
+        jdbc.update("UPDATE product_views SET last_viewed_at=TIMESTAMPADD(HOUR,-25,NOW(6)) WHERE product_id=?",
+                productId);
+        viewService.recordProductView(userId, productId);
+        assertThat(versions()).isEmpty();
+
+        assertThat(viewBatchService.processPendingEvents()).isEqualTo(2);
+        assertThat(value("views")).isEqualTo(2);
+        assertThat(value("search_version")).isEqualTo(1);
+        assertThat(versions()).containsExactly(1L);
+
+        assertThat(viewBatchService.processPendingEvents()).isZero();
+        assertThat(versions()).containsExactly(1L);
     }
 
     @Test
