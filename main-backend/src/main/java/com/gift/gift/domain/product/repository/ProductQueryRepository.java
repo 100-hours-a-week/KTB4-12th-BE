@@ -6,6 +6,8 @@ import com.gift.gift.domain.product.cursor.ProductCursor;
 
 public interface ProductQueryRepository {
 
+    List<ProductDetailProjection> findActiveDetail(Long productId);
+
     default List<ProductSummaryProjection> searchProducts(
             ProductSearchCondition condition,
             int fetchCount

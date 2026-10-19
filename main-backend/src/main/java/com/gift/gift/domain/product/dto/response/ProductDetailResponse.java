@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import com.gift.gift.domain.product.entity.Product;
+import com.gift.gift.domain.product.repository.ProductDetailProjection;
 
 public record ProductDetailResponse(
         ProductResponse product
@@ -16,6 +17,13 @@ public record ProductDetailResponse(
         return new ProductDetailResponse(
                 ProductResponse.from(product, images)
         );
+    }
+
+    public static ProductDetailResponse from(ProductDetailProjection product, List<ProductImageResponse> images) {
+        return new ProductDetailResponse(new ProductResponse(
+                product.productId(), product.brand(), product.name(), product.description(),
+                product.price(), images, product.quantity()
+        ));
     }
 
     public record ProductResponse(
