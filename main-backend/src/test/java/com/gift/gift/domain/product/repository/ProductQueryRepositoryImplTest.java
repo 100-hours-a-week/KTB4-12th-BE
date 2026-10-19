@@ -49,12 +49,14 @@ class ProductQueryRepositoryImplTest {
             verify(entityManager).createNativeQuery(sql.capture());
             assertThat(sql.getValue())
                     .contains("MATCH(p.name, p.brand)", "IN BOOLEAN MODE",
-                            "p.deleted_at IS NULL", "p.category_id IN (:categoryIds)",
+                            "LEFT JOIN product_view_stats stats ON stats.product_id = p.id",
+                            "COALESCE(stats.views, 0)", "p.deleted_at IS NULL",
+                            "p.category_id IN (:categoryIds)",
                             "p.created_at < :cursor_createdAt")
                     .doesNotContain("p.createdAt", "SELECT new", " LIKE ");
             String order = switch (sort) {
-                case POPULAR -> "p.views DESC, p.sales DESC, p.created_at DESC, p.id DESC";
-                case MOST_GIFTED -> "p.sales DESC, p.views DESC, p.created_at DESC, p.id DESC";
+                case POPULAR -> "COALESCE(stats.views, 0) DESC, p.sales DESC, p.created_at DESC, p.id DESC";
+                case MOST_GIFTED -> "p.sales DESC, COALESCE(stats.views, 0) DESC, p.created_at DESC, p.id DESC";
                 case NEWEST -> "p.created_at DESC, p.id DESC";
                 default -> throw new AssertionError();
             };

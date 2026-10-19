@@ -19,7 +19,8 @@ class FriendshipMigrationTest {
     @Test
     @DisplayName("V17은 활성 사용자 쌍만 병합하고 최초·최종 시각과 원본 테이블을 보존한다")
     void migrate_mergesActivePairsAndPreservesSource() throws Exception {
-        try (MySQLContainer mysql = new MySQLContainer("mysql:8.4")) {
+        try (MySQLContainer mysql = new MySQLContainer("mysql:8.4")
+                .withCommand("--log-bin-trust-function-creators=1")) {
             mysql.start();
             Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
                     .locations("classpath:db/migration").target("16").load().migrate();

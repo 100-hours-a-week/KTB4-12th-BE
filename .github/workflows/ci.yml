@@ -125,7 +125,7 @@ jobs:
             --health-interval=5s \
             --health-timeout=5s \
             --health-retries=20 \
-            mysql:8.4
+            mysql:8.4 --log-bin-trust-function-creators=1
 
           for attempt in {1..30}; do
             STATUS="$(docker inspect --format '{{.State.Health.Status}}' "$MYSQL_CONTAINER")"

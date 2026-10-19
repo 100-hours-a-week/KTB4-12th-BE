@@ -301,14 +301,21 @@ class ProductCursorPaginationIntegrationTest {
         // 정렬 테스트에 필요한 통계와 시간을 DB에 명시적으로 설정한다.
         entityManager.createQuery("""
                 UPDATE Product p
-                SET p.views = :views,
-                    p.sales = :sales,
+                SET p.sales = :sales,
                     p.createdAt = :createdAt
                 WHERE p.id = :id
                 """)
-                .setParameter("views", views)
                 .setParameter("sales", sales)
                 .setParameter("createdAt", createdAt)
+                .setParameter("id", product.getId())
+                .executeUpdate();
+
+        entityManager.createQuery("""
+                UPDATE ProductViewStats stats
+                SET stats.views = :views
+                WHERE stats.productId = :id
+                """)
+                .setParameter("views", views)
                 .setParameter("id", product.getId())
                 .executeUpdate();
 

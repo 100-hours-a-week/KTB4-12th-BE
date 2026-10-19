@@ -80,7 +80,7 @@ class ProfileRecoveryIntegrationTest {
             firstId = product(child, "추천 상품").getId();
             secondId = product(child, "인기 상품").getId();
             entityManager.flush();
-            sql("UPDATE products SET views = 100 WHERE id = :id", secondId);
+            sql("UPDATE product_view_stats SET views = 100 WHERE product_id = :id", secondId);
         });
     }
 

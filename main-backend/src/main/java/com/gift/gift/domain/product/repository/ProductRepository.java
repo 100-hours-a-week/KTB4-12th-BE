@@ -29,16 +29,6 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
             @Param("productId") Long productId
     );
 
-    @Modifying
-    @Query(value = """
-        UPDATE products
-        SET views = views + 1,
-            updated_at = CURRENT_TIMESTAMP(6)
-        WHERE id = :productId
-          AND deleted_at IS NULL
-        """, nativeQuery = true)
-    int incrementViewsIfActive(@Param("productId") Long productId);
-
     @Modifying(flushAutomatically = true)
     @Query(value = """
             UPDATE products

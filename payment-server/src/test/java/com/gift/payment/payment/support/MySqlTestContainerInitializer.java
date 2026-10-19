@@ -7,7 +7,8 @@ import org.testcontainers.mysql.MySQLContainer;
 
 public class MySqlTestContainerInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
-    private static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4");
+    private static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4")
+            .withCommand("--log-bin-trust-function-creators=1");
 
     static {
         MYSQL.start();
