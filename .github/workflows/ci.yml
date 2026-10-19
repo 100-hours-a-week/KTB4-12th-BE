@@ -36,7 +36,10 @@ jobs:
     timeout-minutes: 30
     env:
       PRODUCT_SEARCH_ENABLED: 'false'
+      PRODUCT_SEARCH_OUTBOX_ENABLED: 'false'
+      PRODUCT_SEARCH_SYNC_ENABLED: 'false'
       RUN_LOCAL_ES_TEST: 'false'
+      RUN_LOCAL_ES_SYNC_TEST: 'false'
       PAYMENT_SERVER_API_KEY: ci-payment-server-api-key
       PAYMENT_SERVER_BASE_URL: http://payment-server:8090
       PAYMENT_CONNECT_TIMEOUT: 1s
@@ -149,6 +152,8 @@ jobs:
             --env DB_USERNAME=gift_smoke \
             --env DB_PASSWORD=gift_smoke_password \
             --env PRODUCT_SEARCH_ENABLED \
+            --env PRODUCT_SEARCH_OUTBOX_ENABLED \
+            --env PRODUCT_SEARCH_SYNC_ENABLED \
             --env AWS_REGION \
             --env PRODUCT_IMAGE_BUCKET \
             --env JWT_SECRET_BASE64 \

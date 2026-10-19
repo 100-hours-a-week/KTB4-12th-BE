@@ -65,8 +65,18 @@ app:
   product-search:
     enabled: ${PRODUCT_SEARCH_ENABLED:false}
     index-name: ${PRODUCT_SEARCH_INDEX:gift-products-local-v1}
+
     outbox:
       enabled: ${PRODUCT_SEARCH_OUTBOX_ENABLED:false}
+
+    sync:
+      enabled: ${PRODUCT_SEARCH_SYNC_ENABLED:false}
+      poll-interval-ms: ${PRODUCT_SEARCH_SYNC_POLL_INTERVAL_MS:5000}
+      batch-size: ${PRODUCT_SEARCH_SYNC_BATCH_SIZE:100}
+      lease-seconds: ${PRODUCT_SEARCH_SYNC_LEASE_SECONDS:60}
+      max-failures: ${PRODUCT_SEARCH_SYNC_MAX_FAILURES:10}
+      retry-base-seconds: ${PRODUCT_SEARCH_SYNC_RETRY_BASE_SECONDS:2}
+      retry-max-seconds: ${PRODUCT_SEARCH_SYNC_RETRY_MAX_SECONDS:300}
 
   ai-chat:
     client:

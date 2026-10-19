@@ -1,0 +1,9 @@
+{
+  "properties": {
+    "search_version": {
+      "type": "long",
+      "index": false,
+      "doc_values": false
+    }
+  }
+}
