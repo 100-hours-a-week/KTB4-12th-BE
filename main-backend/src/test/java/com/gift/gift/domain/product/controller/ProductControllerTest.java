@@ -23,7 +23,7 @@ import com.gift.gift.domain.product.dto.response.ProductSummaryResponse;
 import com.gift.gift.domain.product.exception.ProductException;
 import com.gift.gift.domain.product.repository.ProductSort;
 import com.gift.gift.domain.product.service.ProductQueryService;
-import com.gift.gift.domain.product.service.ProductViewService;
+import com.gift.gift.domain.product.service.ProductDetailService;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
 import com.gift.gift.global.pagination.CursorPageResponse.Pagination;
@@ -41,20 +41,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ProductControllerTest {
 
     private ProductQueryService productQueryService;
-    private ProductViewService productViewService;
+    private ProductDetailService productDetailService;
     private LocalValidatorFactoryBean validator;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         productQueryService = mock(ProductQueryService.class);
-        productViewService = mock(ProductViewService.class);
+        productDetailService = mock(ProductDetailService.class);
 
         validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
 
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new ProductController(productQueryService, productViewService)
+                        new ProductController(productQueryService, productDetailService)
                 )
                 .defaultRequest(get("/").principal(() -> "1"))
                 .setControllerAdvice(new GlobalExceptionHandler())
@@ -462,7 +462,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("상품 상세를 공통 성공 응답으로 반환한다")
     void getProductDetail_returnsProduct() throws Exception {
-        when(productQueryService.getProductDetail(101L))
+        when(productDetailService.getProductDetail(1L, 101L))
                 .thenReturn(productDetailResponse(8));
 
         mockMvc.perform(get("/products/101"))
@@ -494,13 +494,13 @@ class ProductControllerTest {
                 ).value(1))
                 .andExpect(jsonPath("$.error").doesNotExist());
 
-        verify(productQueryService).getProductDetail(101L);
+        verify(productDetailService).getProductDetail(1L, 101L);
     }
 
     @Test
     @DisplayName("품절 상품도 재고 0으로 정상 반환한다")
     void getProductDetail_returnsSoldOutProduct() throws Exception {
-        when(productQueryService.getProductDetail(101L))
+        when(productDetailService.getProductDetail(1L, 101L))
                 .thenReturn(productDetailResponse(0));
 
         mockMvc.perform(get("/products/101"))
@@ -508,7 +508,7 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.product.stockQuantity")
                         .value(0));
 
-        verify(productQueryService).getProductDetail(101L);
+        verify(productDetailService).getProductDetail(1L, 101L);
     }
 
     @Test
@@ -528,7 +528,7 @@ class ProductControllerTest {
                         )
                 );
 
-        when(productQueryService.getProductDetail(101L))
+        when(productDetailService.getProductDetail(1L, 101L))
                 .thenReturn(response);
 
         mockMvc.perform(get("/products/101"))
@@ -562,13 +562,13 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data")
                         .doesNotExist());
 
-        verifyNoInteractions(productQueryService);
+        verifyNoInteractions(productQueryService, productDetailService);
     }
 
     @Test
     @DisplayName("존재하지 않는 상품은 PRODUCT_NOT_FOUND로 처리한다")
     void getProductDetail_returnsProductNotFound() throws Exception {
-        when(productQueryService.getProductDetail(999L))
+        when(productDetailService.getProductDetail(1L, 999L))
                 .thenThrow(new ProductException(
                         ErrorCode.PRODUCT_NOT_FOUND
                 ));
@@ -590,7 +590,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("상품 상세 조회 실패는 명세된 서버 오류로 처리한다")
     void getProductDetail_returnsInternalServerError() throws Exception {
-        when(productQueryService.getProductDetail(101L))
+        when(productDetailService.getProductDetail(1L, 101L))
                 .thenThrow(new IllegalStateException(
                         "테스트용 예상하지 못한 오류"
                 ));
