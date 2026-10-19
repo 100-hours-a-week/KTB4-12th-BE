@@ -13,7 +13,9 @@ import org.springframework.data.repository.query.Param;
 
 import com.gift.gift.domain.product.entity.Product;
 
-public interface ProductRepository extends JpaRepository<Product, Long>, ProductQueryRepository {
+public interface ProductRepository
+        extends JpaRepository<Product, Long>, ProductQueryRepository {
+
     Optional<Product> findByIdAndDeletedAtIsNull(Long productId);
 
     List<Product> findAllByIdInAndDeletedAtIsNull(List<Long> productIds);
@@ -31,19 +33,23 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
 
     @Modifying
     @Query(value = """
-        UPDATE products
-        SET views = views + 1,
-            updated_at = CURRENT_TIMESTAMP(6)
-        WHERE id = :productId
-          AND deleted_at IS NULL
-        """, nativeQuery = true)
-    int incrementViewsIfActive(@Param("productId") Long productId);
+            UPDATE products
+            SET views = views + 1,
+                search_version = search_version + 1,
+                updated_at = CURRENT_TIMESTAMP(6)
+            WHERE id = :productId
+              AND deleted_at IS NULL
+            """, nativeQuery = true)
+    int incrementViewsIfActive(
+            @Param("productId") Long productId
+    );
 
     @Modifying(flushAutomatically = true)
     @Query(value = """
             UPDATE products
             SET quantity = quantity - :quantity,
                 sales = sales + :quantity,
+                search_version = search_version + 1,
                 updated_at = CURRENT_TIMESTAMP(6)
             WHERE id = :productId
               AND quantity >= :quantity
@@ -56,13 +62,14 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
 
     @Modifying(flushAutomatically = true)
     @Query(value = """
-        UPDATE products
-        SET quantity = quantity + :quantity,
-            sales = sales - :quantity,
-            updated_at = CURRENT_TIMESTAMP(6)
-        WHERE id = :productId
-          AND sales >= :quantity
-        """, nativeQuery = true)
+            UPDATE products
+            SET quantity = quantity + :quantity,
+                sales = sales - :quantity,
+                search_version = search_version + 1,
+                updated_at = CURRENT_TIMESTAMP(6)
+            WHERE id = :productId
+              AND sales >= :quantity
+            """, nativeQuery = true)
     int restoreStock(
             @Param("productId") Long productId,
             @Param("quantity") int quantity

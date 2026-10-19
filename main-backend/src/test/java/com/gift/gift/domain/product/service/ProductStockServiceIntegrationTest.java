@@ -24,7 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.product-search.outbox.enabled=false")
 class ProductStockServiceIntegrationTest {
 
     private static final LocalDateTime INITIAL_UPDATED_AT =
@@ -112,6 +112,12 @@ class ProductStockServiceIntegrationTest {
         assertThat(state.quantity()).isEqualTo(7);
         assertThat(state.sales()).isEqualTo(7);
         assertThat(state.updatedAt()).isAfter(INITIAL_UPDATED_AT);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT search_version FROM products WHERE id = ?", Long.class, productId
+        )).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM product_search_outbox WHERE product_id = ?", Long.class, productId
+        )).isZero();
     }
 
     @Test
