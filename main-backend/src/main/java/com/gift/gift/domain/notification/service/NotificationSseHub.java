@@ -1,6 +1,7 @@
 package com.gift.gift.domain.notification.service;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -49,7 +50,11 @@ public class NotificationSseHub implements DisposableBean {
         emitter.onTimeout(() -> close(connectionId, emitter));
         emitter.onError(ignored -> remove.run());
         try {
+            emitter.send(SseEmitter.event().name("connected").data("connected"));
             connectionService.register(connectionId, nodeId, recipientId);
+        } catch (IOException failure) {
+            emitter.completeWithError(failure);
+            throw new UncheckedIOException(failure);
         } catch (RuntimeException failure) {
             emitter.completeWithError(failure);
             throw failure;

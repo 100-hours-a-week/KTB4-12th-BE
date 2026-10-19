@@ -37,6 +37,16 @@ class NotificationSseHubTest {
     }
 
     @Test
+    @DisplayName("연결 직후 알림 없이도 connected 이벤트를 먼저 전송한다")
+    void connect_sendsConnectedEvent() {
+        EmitterProbe emitter = connect(1L);
+
+        assertThat(emitter.initialData()).extracting(item -> ((DataWithMediaType) item).getData())
+                .containsExactly("event:connected\ndata:", "connected", "\n\n");
+        assertThat(emitter.sentData()).isEmpty();
+    }
+
+    @Test
     @DisplayName("알림은 해당 수신자의 SSE 연결에만 전달한다")
     void publish_sendsOnlyToRecipientConnections() {
         EmitterProbe recipient = connect(1L);
@@ -199,6 +209,7 @@ class NotificationSseHubTest {
         org.mockito.Mockito.when(registry.renew(hub.nodeId())).thenAnswer(ignored ->
                 new java.util.HashSet<>(ids.getAllValues()));
         List<Object> sentData = new CopyOnWriteArrayList<>();
+        List<Object> initialData = new CopyOnWriteArrayList<>();
         CountDownLatch sent = new CountDownLatch(1);
         Map<String, Object> callbacks = new HashMap<>();
         Class<?> handlerType = handlerType();
@@ -207,6 +218,11 @@ class NotificationSseHubTest {
                 new Class<?>[] {handlerType},
                 (proxy, method, arguments) -> {
                     if (method.getName().equals("send")) {
+                        if (arguments[0] instanceof Set<?> items && items.stream().anyMatch(item ->
+                                ((DataWithMediaType) item).getData().equals("event:connected\ndata:"))) {
+                            initialData.addAll(items);
+                            return null;
+                        }
                         if (started != null) {
                             started.countDown();
                             release.await(10, TimeUnit.SECONDS);
@@ -228,7 +244,7 @@ class NotificationSseHubTest {
                 }
         );
         ReflectionTestUtils.invokeMethod(emitter, "initialize", handler);
-        return new EmitterProbe(sentData, callbacks, sent);
+        return new EmitterProbe(sentData, callbacks, sent, initialData);
     }
 
     private Class<?> handlerType() {
@@ -252,7 +268,8 @@ class NotificationSseHubTest {
         );
     }
 
-    private record EmitterProbe(List<Object> sentData, Map<String, Object> callbacks, CountDownLatch sent) {
+    private record EmitterProbe(List<Object> sentData, Map<String, Object> callbacks, CountDownLatch sent,
+                                List<Object> initialData) {
         private void awaitSend() {
             try {
                 assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
