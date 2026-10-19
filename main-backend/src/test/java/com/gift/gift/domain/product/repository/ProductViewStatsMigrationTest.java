@@ -21,7 +21,7 @@ class ProductViewStatsMigrationTest {
                 .withCommand("--log-bin-trust-function-creators=1")) {
             mysql.start();
             Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
-                    .locations("classpath:db/migration").target("30").load().migrate();
+                    .locations("classpath:db/migration").target("31").load().migrate();
             try (Connection connection = DriverManager.getConnection(
                     mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
                 JdbcTemplate jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
@@ -41,7 +41,7 @@ class ProductViewStatsMigrationTest {
                         """);
 
                 Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
-                        .locations("classpath:db/migration").target("31").load().migrate();
+                        .locations("classpath:db/migration").target("32").load().migrate();
 
                 assertThat(jdbc.queryForList("SELECT views FROM product_view_stats ORDER BY product_id",
                         Integer.class)).containsExactly(7, 11);
