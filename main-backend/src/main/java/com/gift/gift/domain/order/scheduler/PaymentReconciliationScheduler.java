@@ -18,8 +18,8 @@ public class PaymentReconciliationScheduler {
     @Scheduled(fixedDelayString = "${app.payment.reconciliation.interval:PT1M}")
     @SchedulerLock(
             name = "reconcilePendingPayments",
-            lockAtMostFor = "PT10M",
-            lockAtLeastFor = "PT5S"
+            lockAtMostFor = "PT1H",
+            lockAtLeastFor = "${app.payment.reconciliation.interval:PT1M}"
     )
     public void reconcilePendingPayments() {
         try {

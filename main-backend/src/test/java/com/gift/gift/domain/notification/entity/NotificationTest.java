@@ -35,23 +35,23 @@ class NotificationTest {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> new Notification(
                         20L,
-                        NotificationType.DELIVERY_SHIPPING,
-                        NotificationReferenceType.DELIVERY,
+                        NotificationType.PAYMENT_COMPLETED,
+                        NotificationReferenceType.PAYMENT,
                         null,
-                        "배송 중이에요",
-                        "선물이 배송 중입니다.",
-                        "DELIVERY_SHIPPING:501:20"
+                        "결제가 완료되었어요",
+                        "선물 결제가 완료되었습니다.",
+                        "PAYMENT_COMPLETED:501:20"
                 ));
 
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> new Notification(
                         20L,
-                        NotificationType.DELIVERY_SHIPPING,
+                        NotificationType.PAYMENT_COMPLETED,
                         null,
                         501L,
-                        "배송 중이에요",
-                        "선물이 배송 중입니다.",
-                        "DELIVERY_SHIPPING:501:20"
+                        "결제가 완료되었어요",
+                        "선물 결제가 완료되었습니다.",
+                        "PAYMENT_COMPLETED:501:20"
                 ));
     }
 
