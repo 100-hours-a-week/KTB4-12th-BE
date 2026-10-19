@@ -12,9 +12,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 import com.gift.gift.domain.product.repository.ProductRepository;
+import com.gift.gift.domain.product.search.ProductSearchOutboxWriter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -23,6 +25,9 @@ class ProductStockServiceTest {
 
     @Mock
     private ProductRepository productRepository;
+
+    @Mock
+    private ProductSearchOutboxWriter outboxWriter;
 
     @InjectMocks
     private ProductStockService productStockService;
@@ -34,6 +39,7 @@ class ProductStockServiceTest {
 
         assertThat(productStockService.deductStockIfAvailable(1L, 3))
                 .isTrue();
+        verify(outboxWriter).enqueue(1L);
     }
 
     @Test
@@ -43,6 +49,7 @@ class ProductStockServiceTest {
 
         assertThat(productStockService.deductStockIfAvailable(1L, 3))
                 .isFalse();
+        verifyNoInteractions(outboxWriter);
     }
 
     @ParameterizedTest
@@ -54,7 +61,7 @@ class ProductStockServiceTest {
                 productStockService.deductStockIfAvailable(productId, 1)
         ).isInstanceOf(IllegalArgumentException.class);
 
-        verifyNoInteractions(productRepository);
+        verifyNoInteractions(productRepository, outboxWriter);
     }
 
     @ParameterizedTest
@@ -65,7 +72,7 @@ class ProductStockServiceTest {
                 productStockService.deductStockIfAvailable(1L, quantity)
         ).isInstanceOf(IllegalArgumentException.class);
 
-        verifyNoInteractions(productRepository);
+        verifyNoInteractions(productRepository, outboxWriter);
     }
 
     @Test
@@ -77,5 +84,6 @@ class ProductStockServiceTest {
         assertThatThrownBy(() ->
                 productStockService.deductStockIfAvailable(1L, 1)
         ).isInstanceOf(DataAccessResourceFailureException.class);
+        verifyNoInteractions(outboxWriter);
     }
 }

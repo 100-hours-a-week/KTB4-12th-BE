@@ -43,6 +43,9 @@ public class Product extends BaseTimeEntity {
     @Column(nullable = false)
     private Integer sales = 0;
 
+    @Column(name = "search_version", nullable = false, updatable = false)
+    private Long searchVersion = 0L;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 

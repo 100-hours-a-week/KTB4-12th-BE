@@ -22,6 +22,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.gift.gift.domain.product.repository.ProductViewEventRepository;
+import com.gift.gift.domain.product.repository.ProductRepository;
+import com.gift.gift.domain.product.search.ProductSearchOutboxWriter;
 import com.gift.gift.domain.product.repository.ProductViewStatsRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +49,12 @@ class ProductViewBatchServiceIntegrationTest {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private ProductSearchOutboxWriter outboxWriter;
 
     @MockitoSpyBean
     private ProductViewStatsRepository productViewStatsRepository;
@@ -284,7 +292,7 @@ class ProductViewBatchServiceIntegrationTest {
         reset(productViewEventRepository);
 
         ProductViewBatchService recovered = new ProductViewBatchService(
-                productViewStatsRepository, productViewEventRepository, 500);
+                productViewStatsRepository, productViewEventRepository, productRepository, outboxWriter, 500);
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
         Integer processed = transaction.execute(status -> recovered.processPendingEvents());
         assertThat(processed).isEqualTo(1);
@@ -302,7 +310,7 @@ class ProductViewBatchServiceIntegrationTest {
             recordView(productId);
         }
         ProductViewBatchService smallBatch = new ProductViewBatchService(
-                productViewStatsRepository, productViewEventRepository, 2);
+                productViewStatsRepository, productViewEventRepository, productRepository, outboxWriter, 2);
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
 
         List<Integer> processedCounts = List.of(

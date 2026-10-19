@@ -82,6 +82,23 @@ RUN_LOCAL_ES_TEST=true ./gradlew :main-backend:test \
   --tests 'com.gift.gift.domain.product.search.ProductSearchRepositoryIntegrationTest'
 ```
 
+## 상품 검색 Outbox 기록 설정
+
+`PRODUCT_SEARCH_OUTBOX_ENABLED=false`가 기본값입니다. 운영 환경에서는
+`PRODUCT_SEARCH_ENABLED=false`와 함께 유지합니다. Outbox 비활성 상태에서는
+동기화 작업을 기록하지 않으며 ES 연결도 필요하지 않습니다.
+
+비활성화 여부와 관계없이 Flyway `V34`가 `products.search_version`과
+`product_search_outbox` 테이블을 추가합니다. 조회수 배치 집계·재고 차감·재고 복구가
+실제 성공하면 검색 버전은 증가합니다. 배포 시 마이그레이션 실행 권한과 소요 시간을 확인해야 합니다.
+
+활성화하면 위 세 변경 경로에서 상품 변경과 Outbox 기록이 같은 트랜잭션으로 저장됩니다.
+조회수는 `product_view_stats.views`, 검색 버전은 `products.search_version`에서 관리합니다.
+조회 요청은 이벤트만 저장하며 검색 버전 증가와 Outbox 기록은 실제 배치 집계 트랜잭션에서 수행합니다.
+현재는 기록 저장까지만 구현되어 있으며 ES 반영 워커·재시도·정리는 후속 작업입니다.
+워커 준비 전에는 운영에서 기록을 활성화하지 않습니다. 직접 SQL·외부 적재 경로의 변경은 기록하지 않으며,
+비활성 기간의 변경도 쌓이지 않으므로 ES 검색 활성화 전 최신 데이터 재적재가 필요합니다.
+
 ## IntelliJ IDEA formatter
 
 프로젝트에 포함된 `.editorconfig`와 Project Code Style을 사용합니다.

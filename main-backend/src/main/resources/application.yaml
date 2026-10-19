@@ -65,6 +65,8 @@ app:
   product-search:
     enabled: ${PRODUCT_SEARCH_ENABLED:false}
     index-name: ${PRODUCT_SEARCH_INDEX:gift-products-local-v1}
+    outbox:
+      enabled: ${PRODUCT_SEARCH_OUTBOX_ENABLED:false}
 
   ai-chat:
     client:
