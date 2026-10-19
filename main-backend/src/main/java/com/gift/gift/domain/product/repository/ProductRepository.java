@@ -18,14 +18,14 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
 
     List<Product> findAllByIdInAndDeletedAtIsNull(List<Long> productIds);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("""
             SELECT product
             FROM Product product
             WHERE product.id = :productId
               AND product.deletedAt IS NULL
             """)
-    Optional<Product> findActiveByIdForUpdate(
+    Optional<Product> findActiveByIdForRead(
             @Param("productId") Long productId
     );
 
