@@ -70,6 +70,7 @@ class ProfileRecoveryIntegrationTest {
             User recipient = user();
             ownerId = owner.getId();
             recipientId = recipient.getId();
+            entityManager.persist(new RecipientProfile(recipient));
             entityManager.persist(new Friendship(owner, recipient));
             Category root = new Category("복구-" + UUID.randomUUID(), null);
             entityManager.persist(root);
@@ -236,10 +237,9 @@ class ProfileRecoveryIntegrationTest {
 
     private void persistPending() {
         tx.executeWithoutResult(status -> {
-            RecipientProfile profile = new RecipientProfile(entityManager.find(User.class, recipientId));
+            RecipientProfile profile = profiles.findByRecipientIdForUpdate(recipientId).orElseThrow();
             profile.createNextSourceVersion();
             profile.markPending(local(NOW.minusSeconds(7 * 3600)));
-            entityManager.persist(profile);
         });
     }
 

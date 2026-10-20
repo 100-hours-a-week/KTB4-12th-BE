@@ -129,6 +129,11 @@ class SignupPersistenceTest {
             """, email);
 
         jdbcTemplate.update(
+                "DELETE FROM recipient_profiles WHERE recipient_id IN (SELECT id FROM users WHERE email = ?)",
+                email
+        );
+
+        jdbcTemplate.update(
                 "DELETE FROM users WHERE email = ?",
                 email
         );

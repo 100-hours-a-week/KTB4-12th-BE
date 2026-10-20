@@ -17,6 +17,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.credit.service.SignupCreditService;
+import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
 import com.gift.gift.domain.user.entity.Term;
@@ -54,6 +56,9 @@ class SignupTransactionServiceTest {
     @Mock
     private SignupCreditService signupCreditService;
 
+    @Mock
+    private RecipientProfileRepository profileRepository;
+
     @Captor
     private ArgumentCaptor<User> userCaptor;
 
@@ -70,7 +75,8 @@ class SignupTransactionServiceTest {
                 userRepository,
                 termRepository,
                 consentRepository,
-                signupCreditService
+                signupCreditService,
+                profileRepository
         );
 
         requiredTerm = term(1L, "TERMS", 3, true);
@@ -110,6 +116,12 @@ class SignupTransactionServiceTest {
         verify(consentRepository).saveAllAndFlush(consentCaptor.capture());
 
         verify(signupCreditService).grant(10L);
+
+        ArgumentCaptor<RecipientProfile> profileCaptor = ArgumentCaptor.forClass(RecipientProfile.class);
+        verify(profileRepository).save(profileCaptor.capture());
+        assertSame(result, profileCaptor.getValue().getRecipient());
+        assertEquals(0L, profileCaptor.getValue().getSourceVersion());
+        assertEquals(0L, profileCaptor.getValue().getAnalyzedSourceVersion());
 
         User savedUser = userCaptor.getValue();
 

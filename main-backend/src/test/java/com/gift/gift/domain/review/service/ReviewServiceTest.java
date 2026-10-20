@@ -89,9 +89,7 @@ class ReviewServiceTest {
         when(userQueryService.findActiveUserForUpdate(USER_ID))
                 .thenReturn(Optional.of(recipient));
         when(profileRepository.findByRecipientIdForUpdate(USER_ID))
-                .thenReturn(Optional.empty());
-        when(profileRepository.save(any(RecipientProfile.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenReturn(Optional.of(new RecipientProfile(recipient)));
         when(reviewRepository.saveAndFlush(any(Review.class)))
                 .thenReturn(savedReview);
 
@@ -121,7 +119,7 @@ class ReviewServiceTest {
                 .isEqualTo(5);
         assertThat(reviewToSave.getReviewText())
                 .isEqualTo("좋아요");
-        verify(profileRepository).save(any(RecipientProfile.class));
+        verify(profileRepository, never()).save(any(RecipientProfile.class));
     }
 
     @Test
@@ -410,9 +408,7 @@ class ReviewServiceTest {
                 .thenReturn(Optional.of(giftHistory));
 
         when(profileRepository.findByRecipientIdForUpdate(USER_ID))
-                .thenReturn(Optional.empty());
-        when(profileRepository.save(any(RecipientProfile.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenReturn(Optional.of(new RecipientProfile(recipient)));
 
         return giftHistory;
     }

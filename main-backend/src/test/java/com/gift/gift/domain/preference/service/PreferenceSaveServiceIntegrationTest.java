@@ -25,6 +25,8 @@ import com.gift.gift.domain.preference.exception.PreferenceException;
 import com.gift.gift.domain.preference.repository.UserDislikeCategoryRepository;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.repository.CategoryRepository;
+import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.exception.ErrorCode;
@@ -44,6 +46,9 @@ class PreferenceSaveServiceIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private RecipientProfileRepository profileRepository;
 
     @Autowired
     private CategoryRepository categoryRepository;
@@ -290,12 +295,14 @@ class PreferenceSaveServiceIntegrationTest {
     }
 
     private User saveUser() {
-        return userRepository.saveAndFlush(new User(
+        User user = userRepository.saveAndFlush(new User(
                 UUID.randomUUID() + "@example.com",
                 "$2a$10$" + "a".repeat(53),
                 "테스트",
                 LocalDate.of(1990, 1, 1)
         ));
+        profileRepository.saveAndFlush(new RecipientProfile(user));
+        return user;
     }
 
     private Category saveRoot(String prefix) {

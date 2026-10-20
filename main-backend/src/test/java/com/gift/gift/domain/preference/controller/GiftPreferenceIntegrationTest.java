@@ -36,6 +36,8 @@ import com.gift.gift.domain.credit.repository.CreditAccountRepository;
 import com.gift.gift.domain.preference.entity.UserGiftPreference;
 import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
 import com.gift.gift.domain.preference.service.PreferenceSaveService;
+import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 
@@ -59,6 +61,8 @@ class GiftPreferenceIntegrationTest {
     private UserGiftPreferenceRepository preferenceRepository;
     @Autowired
     private CreditAccountRepository creditAccountRepository;
+    @Autowired
+    private RecipientProfileRepository profileRepository;
     @Autowired
     private PreferenceSaveService saveService;
     @Autowired
@@ -260,6 +264,7 @@ class GiftPreferenceIntegrationTest {
                 100L
         ));
         createdUserIds.add(user.getId());
+        profileRepository.saveAndFlush(new RecipientProfile(user));
         return user;
     }
 
