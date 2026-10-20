@@ -20,8 +20,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.auth.entity.UserSession;
@@ -38,6 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -83,11 +88,40 @@ class LoginSessionServiceTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
     @AfterEach
     void cleanUp() {
         sessionRepository.deleteAll();
         createdUserIds.forEach(userRepository::deleteById);
         createdUserIds.clear();
+    }
+
+    @Test
+    @DisplayName("세션 잠금 조회는 RC이며 후속 기본 트랜잭션은 RR을 유지한다")
+    void saveLoginSession_usesReadCommittedWithoutChangingDefaultIsolation() {
+        User user = saveUser();
+        String existingToken = validToken('e');
+        String newHash = refreshTokenProvider.hash(validToken('n'));
+        doAnswer(invocation -> {
+            assertEquals("READ-COMMITTED", jdbc.queryForObject(
+                    "SELECT @@transaction_isolation", String.class));
+            return mockingDetails(sessionRepository).getMockCreationSettings()
+                    .getDefaultAnswer().answer(invocation);
+        }).when(sessionRepository).findByRefreshTokenHashForUpdate(any());
+
+        loginSessionService.saveLoginSession(
+                user, existingToken, newHash, LOGIN_TIME, LOGIN_TIME.plusDays(14)
+        );
+
+        assertCreatedSession(user, newHash);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                assertEquals("REPEATABLE-READ", jdbc.queryForObject(
+                        "SELECT @@transaction_isolation", String.class)));
     }
 
     @Test
