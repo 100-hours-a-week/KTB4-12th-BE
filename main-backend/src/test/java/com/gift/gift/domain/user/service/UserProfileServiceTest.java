@@ -79,40 +79,28 @@ class UserProfileServiceTest {
         );
     }
 
-    @Test
-    @DisplayName("회원정보와 올해 선물 건수 및 집계 기간을 반환한다")
-    void getMyProfile_returnsUserAndYearlyGiftSummary() {
+    @DisplayName("회원정보와 보낸·받은 선물 건수를 반환한다")
+    void getMyProfile_returnsUserAndGiftSummary() {
         when(userRepository.findByIdAndStatusAndDeletedAtIsNull(
                 USER_ID,
                 UserStatus.ACTIVE
         )).thenReturn(Optional.of(user));
 
-        when(giftQueryService.getYearlyGiftCount(
-                USER_ID,
-                LocalDate.of(2026, 9, 21)
-        )).thenReturn(new GiftCountRow(12L, 8L));
+        when(giftQueryService.getGiftCount(USER_ID))
+                .thenReturn(new GiftCountRow(12L, 8L));
         when(creditQueryService.getBalance(USER_ID))
                 .thenReturn(new CreditBalanceResponse(500_000L));
 
-        UserProfileResponse response =
-                userProfileService.getMyProfile(USER_ID);
+        UserProfileResponse response = userProfileService.getMyProfile(USER_ID);
 
         assertThat(response.userId()).isEqualTo(USER_ID);
         assertThat(response.name()).isEqualTo("홍길동");
-        assertThat(response.email())
-                .isEqualTo("user@example.com");
-        assertThat(response.birth())
-                .isEqualTo("1998-03-15");
+        assertThat(response.email()).isEqualTo("user@example.com");
+        assertThat(response.birth()).isEqualTo("1998-03-15");
         assertThat(response.isBirthdayPublic()).isFalse();
         assertThat(response.creditBalance()).isEqualTo(500_000L);
-        assertThat(response.giftSummary().sentCount())
-                .isEqualTo(12L);
-        assertThat(response.giftSummary().receivedCount())
-                .isEqualTo(8L);
-        assertThat(response.giftSummary().period().from())
-                .isEqualTo("2026-01-01T00:00+09:00");
-        assertThat(response.giftSummary().period().to())
-                .isEqualTo("2026-09-21T23:59:59+09:00");
+        assertThat(response.giftSummary().sentCount()).isEqualTo(12L);
+        assertThat(response.giftSummary().receivedCount()).isEqualTo(8L);
     }
 
     @Test

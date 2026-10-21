@@ -1,6 +1,5 @@
 package com.gift.gift.domain.gift.repository;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -56,17 +55,20 @@ public class GiftQueryRepository {
             """;
 
     private static final String COUNT_SENT_AND_RECEIVED = """
-            SELECT new com.gift.gift.domain.gift.repository.GiftCountRow(
-                COUNT(CASE WHEN g.sender.id = :userId THEN 1 END),
-                COUNT(CASE WHEN g.recipient.id = :userId THEN 1 END)
+        SELECT new com.gift.gift.domain.gift.repository.GiftCountRow(
+            COUNT(CASE WHEN g.sender.id = :userId THEN 1 END),
+            COUNT(CASE WHEN g.recipient.id = :userId THEN 1 END)
+        )
+        FROM GiftHistory g
+        WHERE (g.sender.id = :userId OR g.recipient.id = :userId)
+            AND g.orderRecordId IS NOT NULL
+            AND g.status IN (
+                com.gift.gift.domain.gift.entity.GiftStatus.WAITING_FOR_ACCEPTANCE,
+                com.gift.gift.domain.gift.entity.GiftStatus.COMPLETED,
+                com.gift.gift.domain.gift.entity.GiftStatus.CANCELED
             )
-            FROM GiftHistory g
-            WHERE (g.sender.id = :userId OR g.recipient.id = :userId)
-                AND g.status = com.gift.gift.domain.gift.entity.GiftStatus.COMPLETED
-                AND g.deletedAt IS NULL
-                AND g.completedAt >= :from
-                AND g.completedAt < :toExclusive
-            """;
+            AND g.deletedAt IS NULL
+        """;
 
     private final EntityManager entityManager;
 
@@ -90,11 +92,9 @@ public class GiftQueryRepository {
         return findGiftDetail(giftId, recipientId, "sender", "recipient");
     }
 
-    public GiftCountRow countSentAndReceivedGifts(Long userId, LocalDateTime from, LocalDateTime toExclusive) {
+    public GiftCountRow countSentAndReceivedGifts(Long userId) {
         return entityManager.createQuery(COUNT_SENT_AND_RECEIVED, GiftCountRow.class)
                 .setParameter("userId", userId)
-                .setParameter("from", from)
-                .setParameter("toExclusive", toExclusive)
                 .getSingleResult();
     }
 

@@ -1,9 +1,6 @@
 package com.gift.gift.domain.user.dto.response;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.Objects;
 
 import com.gift.gift.domain.gift.repository.GiftCountRow;
@@ -19,29 +16,10 @@ public record UserProfileResponse(
         GiftSummary giftSummary
 ) {
 
-    public static UserProfileResponse from(
-            User user,
-            long creditBalance,
-            GiftCountRow giftCount,
-            LocalDate today,
-            ZoneId zoneId
-    ) {
+    public static UserProfileResponse from(User user, long creditBalance, GiftCountRow giftCount) {
+
         Objects.requireNonNull(user, "사용자는 null일 수 없습니다.");
-        Objects.requireNonNull(
-                giftCount,
-                "선물 건수는 null일 수 없습니다."
-        );
-        Objects.requireNonNull(today, "기준 날짜는 null일 수 없습니다.");
-        Objects.requireNonNull(zoneId, "시간대는 null일 수 없습니다.");
-
-        OffsetDateTime from = today.withDayOfYear(1)
-                .atStartOfDay(zoneId)
-                .toOffsetDateTime();
-
-        OffsetDateTime to = today
-                .atTime(LocalTime.of(23, 59, 59))
-                .atZone(zoneId)
-                .toOffsetDateTime();
+        Objects.requireNonNull(giftCount, "선물 건수는 null일 수 없습니다.");
 
         return new UserProfileResponse(
                 user.getId(),
@@ -52,22 +30,11 @@ public record UserProfileResponse(
                 creditBalance,
                 new GiftSummary(
                         giftCount.sentCount(),
-                        giftCount.receivedCount(),
-                        new Period(from, to)
+                        giftCount.receivedCount()
                 )
         );
     }
 
-    public record GiftSummary(
-            long sentCount,
-            long receivedCount,
-            Period period
-    ) {
-    }
-
-    public record Period(
-            OffsetDateTime from,
-            OffsetDateTime to
-    ) {
+    public record GiftSummary(long sentCount, long receivedCount) {
     }
 }
