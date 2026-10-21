@@ -192,9 +192,9 @@ public class PreferenceSaveService {
     ) {
         RecipientProfile profile = recipientProfileRepository
                 .findByRecipientIdForUpdate(userId)
-                .orElseGet(() -> recipientProfileRepository.save(
-                        new RecipientProfile(user)
-                ));
+                .orElseThrow(() ->
+                        new IllegalArgumentException("사용자의 기본 프로필이 존재하지 않습니다.")
+                );
         profile.recordPreferenceChange(changedAt);
     }
 

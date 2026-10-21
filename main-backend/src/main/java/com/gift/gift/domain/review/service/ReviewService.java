@@ -68,9 +68,8 @@ public class ReviewService {
             Review savedReview = saveReview(review);
             RecipientProfile profile = recipientProfileRepository
                     .findByRecipientIdForUpdate(userId)
-                    .orElseGet(() -> recipientProfileRepository.save(
-                            new RecipientProfile(recipient)
-                    ));
+                    .orElseThrow(() ->
+                            new IllegalStateException("사용자의 기본 프로필이 존재하지 않습니다."));
             profile.recordPreferenceChange(LocalDateTime.now(clock));
 
             return ReviewResponse.from(savedReview);

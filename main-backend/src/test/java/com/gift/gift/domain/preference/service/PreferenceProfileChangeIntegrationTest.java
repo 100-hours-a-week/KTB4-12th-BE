@@ -274,13 +274,16 @@ class PreferenceProfileChangeIntegrationTest {
     }
 
     @Test
-    @DisplayName("처음부터 비어 있는 취향 저장은 프로파일을 만들지 않는다")
+    @DisplayName("처음부터 비어 있는 취향 저장은 기본 프로파일의 변경 시각을 기록하지 않는다")
     void saveGiftPreference_doesNotMarkUnchangedEmptyPreference() {
         User user = saveUser();
 
         preferenceSaveService.saveGiftPreference(user.getId(), " \n ");
 
-        assertThat(profileRepository.findByRecipient_Id(user.getId())).isEmpty();
+        RecipientProfile profile = findProfile(user.getId());
+        assertThat(profile.getLastChangedAt()).isNull();
+        assertThat(profile.getWindowStartedAt()).isNull();
+        assertThat(profile.getSourceVersion()).isZero();
     }
 
     private void setCurrentTime(Instant instant) {
@@ -315,6 +318,7 @@ class PreferenceProfileChangeIntegrationTest {
                 user.getId(),
                 balance
         ));
+        profileRepository.saveAndFlush(new RecipientProfile(user));
         return user;
     }
 

@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.credit.service.SignupCreditService;
+import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.entity.TermConsent;
 import com.gift.gift.domain.user.entity.User;
@@ -26,6 +28,7 @@ public class SignupTransactionService {
     private final TermRepository termRepository;
     private final TermConsentRepository termConsentRepository;
     private final SignupCreditService signupCreditService;
+    private final RecipientProfileRepository recipientProfileRepository;
 
     @Transactional
     public User create(SignupRequest request, LocalDate birth, String passwordHash) {
@@ -38,6 +41,8 @@ public class SignupTransactionService {
         );
 
         User savedUser = saveUser(user);
+
+        recipientProfileRepository.save(new RecipientProfile(savedUser));
 
         List<TermConsent> consents =
                 request.termConsents().stream()

@@ -239,12 +239,14 @@ class ProfileDispatchServiceIntegrationTest {
     }
 
     private User saveUser() {
-        return userRepository.saveAndFlush(new User(
+        User user = userRepository.saveAndFlush(new User(
                 UUID.randomUUID() + "@example.com",
                 "$2a$10$" + "a".repeat(53),
                 "테스트",
                 LocalDate.of(1990, 1, 1)
         ));
+        profileRepository.saveAndFlush(new RecipientProfile(user));
+        return user;
     }
 
     private Category saveRootCategory(String prefix) {
