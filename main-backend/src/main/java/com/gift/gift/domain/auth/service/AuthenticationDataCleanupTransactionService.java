@@ -1,6 +1,7 @@
 package com.gift.gift.domain.auth.service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -35,27 +36,58 @@ public class AuthenticationDataCleanupTransactionService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int deleteIpRateLimitBatch(
+    public AuthenticationDataCleanupBatchResult deleteIpRateLimitBatch(
             LocalDateTime inactiveBefore,
             int batchSize
     ) {
-        return loginIpRateLimitRepository.deleteInactiveBatch(
-                inactiveBefore,
-                batchSize
+        List<String> candidates = loginIpRateLimitRepository
+                .findInactiveCandidates(inactiveBefore, batchSize)
+                .stream()
+                .sorted()
+                .toList();
+
+        int deletedCount = 0;
+
+        for (String identifierHash : candidates) {
+            deletedCount += loginIpRateLimitRepository
+                    .deleteInactiveByIdentifierHash(
+                            identifierHash,
+                            inactiveBefore
+                    );
+        }
+
+        return new AuthenticationDataCleanupBatchResult(
+                candidates.size(),
+                deletedCount
         );
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int deleteEmailFailureLimitBatch(
+    public AuthenticationDataCleanupBatchResult deleteEmailFailureLimitBatch(
             LocalDateTime inactiveBefore,
             LocalDateTime now,
             int batchSize
     ) {
-        return loginEmailFailureLimitRepository
-                .deleteInactiveBatch(
-                        inactiveBefore,
-                        now,
-                        batchSize
-                );
+        List<String> candidates = loginEmailFailureLimitRepository
+                .findInactiveCandidates(inactiveBefore, now, batchSize)
+                .stream()
+                .sorted()
+                .toList();
+
+        int deletedCount = 0;
+
+        for (String identifierHash : candidates) {
+            deletedCount += loginEmailFailureLimitRepository
+                    .deleteInactiveByIdentifierHash(
+                            identifierHash,
+                            inactiveBefore,
+                            now
+                    );
+        }
+
+        return new AuthenticationDataCleanupBatchResult(
+                candidates.size(),
+                deletedCount
+        );
     }
 }

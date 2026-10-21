@@ -1,6 +1,7 @@
 package com.gift.gift.domain.auth.repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
@@ -58,29 +59,48 @@ public interface LoginEmailFailureLimitRepository
             String identifierHash
     );
 
+    @Query(
+            value = """
+                select identifier_hash
+                from login_email_failure_limits
+                where updated_at <= :inactiveBefore
+                    and (
+                        blocked_until is null
+                        or blocked_until <= :now
+                    )
+                order by updated_at, identifier_hash
+                limit :batchSize
+                """,
+            nativeQuery = true
+    )
+
+    List<String> findInactiveCandidates(
+            @Param("inactiveBefore") LocalDateTime inactiveBefore,
+            @Param("now") LocalDateTime now,
+            @Param("batchSize") int batchSize
+    );
+
     @Modifying(
             flushAutomatically = true,
             clearAutomatically = true
     )
     @Query(
             value = """
-                    delete from login_email_failure_limits
-                    where updated_at <= :inactiveBefore
-                        and (
-                            blocked_until is null
-                            or blocked_until <= :now
-                        )
-                    order by updated_at, identifier_hash
-                    limit :batchSize
-                    """,
+                delete failure_limit
+                from login_email_failure_limits as failure_limit
+                    force index (PRIMARY)
+                where failure_limit.identifier_hash = :identifierHash
+                    and failure_limit.updated_at <= :inactiveBefore
+                    and (
+                        failure_limit.blocked_until is null
+                        or failure_limit.blocked_until <= :now
+                    )
+                """,
             nativeQuery = true
     )
-    int deleteInactiveBatch(
-            @Param("inactiveBefore")
-            LocalDateTime inactiveBefore,
-            @Param("now")
-            LocalDateTime now,
-            @Param("batchSize")
-            int batchSize
+    int deleteInactiveByIdentifierHash(
+            @Param("identifierHash") String identifierHash,
+            @Param("inactiveBefore") LocalDateTime inactiveBefore,
+            @Param("now") LocalDateTime now
     );
 }
