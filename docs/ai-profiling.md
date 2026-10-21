@@ -43,8 +43,8 @@
 
 | 설정 | 기본값·동작 |
 | --- | --- |
-| quiet-period | 1h. 마지막 변경 이후 조용한 시간. 실패 재시작에도 적용 |
-| maximum-window | 6h. 최초 변경 창 이후 최대 대기. 실패 재시작은 창도 다시 시작 |
+| quiet-period | 60s. 마지막 변경 이후 조용한 시간. 실패 재시작에도 적용 |
+| maximum-window | 300s. 최초 변경 창 이후 최대 대기. 실패 재시작은 창도 다시 시작 |
 | dispatch-interval | 1m, AI_PROFILE_DISPATCH_INTERVAL |
 | batch-size | 100, AI_PROFILE_BATCH_SIZE |
 | recovery-batch-size | 50, AI_PROFILE_RECOVERY_BATCH_SIZE. 0이면 복구 생략 |
@@ -52,7 +52,7 @@
 | health 연결·읽기 타임아웃 | 각각 min(기존 설정, 2s). 토큰 없는 별도 RestClient |
 | scheduling-enabled | false. 실행 환경에서 명시적으로 활성화 |
 
-quiet-period와 maximum-window는 기존 Spring 설정으로 재정의할 수 있다. 복구 상한·별도 재시도 Scheduler·next_retry_at·새 컬럼은 PR 5-1에 추가하지 않는다. 디바운스 시간은 장애 중 결과 반영을 보장하는 SLA가 아니다.
+quiet-period와 maximum-window는 기존 Spring 설정으로 재정의할 수 있다. 복구 상한·별도 재시도 Scheduler·next_retry_at·새 컬럼은 PR 5-1에 추가하지 않는다. 디바운스 시간은 장애 중 결과 반영을 보장하는 SLA가 아니다. 스케줄러는 기본 1분 간격으로 실행하므로 시간 조건을 충족한 뒤 다음 틱에 전송한다.
 
 ## 로그와 오류
 
@@ -73,7 +73,7 @@ quiet-period와 maximum-window는 기존 Spring 설정으로 재정의할 수 �
 
 일반 전송 후 변경 없는 오래된 PENDING을 pending_since·ID 순서로 조회하고 행 잠금 안에서 재검증한다. PreparedRecoveryDispatch는 같은 번호와 대기 시각 스냅샷을 보관한다. HTTP는 트랜잭션 밖에서 호출하고 성공·실패 모두 같은 번호의 PENDING과 대기 스냅샷이 일치할 때 pending_since만 갱신한다. retry_count와 신규 변경 시각은 유지한다.
 
-AI_PROFILE_RECOVERY_BATCH_SIZE 기본 50, 0이면 복구 생략. 일반·복구 Batch 합계는 첨부 기준 200 이하로 검증한다. 여러 인스턴스 합산이나 실제 AI 대기열 잔량 제어는 별도다. 복구 간격은 maximum-window(기본 6h)이며 누적 복구 횟수 제한은 없다. 일반 전송의 틱 중단을 우회하지 않는다.
+AI_PROFILE_RECOVERY_BATCH_SIZE 기본 50, 0이면 복구 생략. 일반·복구 Batch 합계는 첨부 기준 200 이하로 검증한다. 여러 인스턴스 합산이나 실제 AI 대기열 잔량 제어는 별도다. 복구 간격은 maximum-window(기본 300s)이며 누적 복구 횟수 제한은 없다. 일반 전송의 틱 중단을 우회하지 않는다.
 
 콜백은 없는·삭제된 상품만 제외하고 입력 순서대로 rank_order를 1부터 다시 매긴다. 전부 제외·빈 배열도 기존 추천을 삭제하고 0행·COMPLETED로 저장한다. 중간 번호 콜백은 최신 요청 상태를 유지하며 같은 번호는 멱등 성공, 저장본보다 오래된 번호는 409다. 삭제·저장·상태 변경은 한 트랜잭션이며 실제 DB 오류는 전체 롤백한다.
 
