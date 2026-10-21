@@ -7,8 +7,8 @@ import java.util.UUID;
 import jakarta.validation.ConstraintViolationException;
 
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.apache.tomcat.util.http.InvalidParameterException;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +18,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
@@ -161,6 +162,11 @@ public class GlobalExceptionHandler {
             NoHandlerFoundException exception
     ) {
         return requestError(ErrorCode.NOT_FOUND, List.of());
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsableException(AsyncRequestNotUsableException exception) {
+        log.debug("비동기 응답 연결이 종료되었습니다. traceId={}", resolveTraceId());
     }
 
     @ExceptionHandler(Exception.class)
