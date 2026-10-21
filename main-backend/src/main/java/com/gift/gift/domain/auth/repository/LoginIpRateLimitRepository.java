@@ -1,6 +1,7 @@
 package com.gift.gift.domain.auth.repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
@@ -52,23 +53,37 @@ public interface LoginIpRateLimitRepository
             @Param("identifierHash") String identifierHash
     );
 
+    @Query(
+            value = """
+                select identifier_hash
+                from login_ip_rate_limits
+                where updated_at <= :inactiveBefore
+                order by updated_at, identifier_hash
+                limit :batchSize
+                """,
+            nativeQuery = true
+    )
+    List<String> findInactiveCandidates(
+            @Param("inactiveBefore") LocalDateTime inactiveBefore,
+            @Param("batchSize") int batchSize
+    );
+
     @Modifying(
             flushAutomatically = true,
             clearAutomatically = true
     )
     @Query(
             value = """
-                    delete from login_ip_rate_limits
-                    where updated_at <= :inactiveBefore
-                    order by updated_at, identifier_hash
-                    limit :batchSize
-                    """,
+                delete rate_limit
+                from login_ip_rate_limits as rate_limit
+                    force index (PRIMARY)
+                where rate_limit.identifier_hash = :identifierHash
+                    and rate_limit.updated_at <= :inactiveBefore
+                """,
             nativeQuery = true
     )
-    int deleteInactiveBatch(
-            @Param("inactiveBefore")
-            LocalDateTime inactiveBefore,
-            @Param("batchSize")
-            int batchSize
+    int deleteInactiveByIdentifierHash(
+            @Param("identifierHash") String identifierHash,
+            @Param("inactiveBefore") LocalDateTime inactiveBefore
     );
 }

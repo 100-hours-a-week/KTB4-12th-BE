@@ -3,6 +3,7 @@ package com.gift.gift.domain.auth.repository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -138,26 +139,16 @@ class AuthenticationDataCleanupRepositoryTest {
         insertIpLimit(hash('j'), cutoff);
         insertIpLimit(hash('k'), cutoff.plusSeconds(1));
 
-        assertThat(
-                loginIpRateLimitRepository.deleteInactiveBatch(
-                        cutoff,
-                        1
-                )
-        ).isEqualTo(1);
+        List<String> first = loginIpRateLimitRepository.findInactiveCandidates(cutoff, 1);
+        assertThat(first).containsExactly(hash('i'));
+        assertThat(loginIpRateLimitRepository.deleteInactiveByIdentifierHash(first.getFirst(), cutoff))
+                .isEqualTo(1);
 
-        assertThat(
-                loginIpRateLimitRepository.deleteInactiveBatch(
-                        cutoff,
-                        1
-                )
-        ).isEqualTo(1);
-
-        assertThat(
-                loginIpRateLimitRepository.deleteInactiveBatch(
-                        cutoff,
-                        1
-                )
-        ).isZero();
+        List<String> second = loginIpRateLimitRepository.findInactiveCandidates(cutoff, 1);
+        assertThat(second).containsExactly(hash('j'));
+        assertThat(loginIpRateLimitRepository.deleteInactiveByIdentifierHash(second.getFirst(), cutoff))
+                .isEqualTo(1);
+        assertThat(loginIpRateLimitRepository.findInactiveCandidates(cutoff, 1)).isEmpty();
 
         assertThat(ipLimitExists(hash('k'))).isTrue();
     }
@@ -191,13 +182,12 @@ class AuthenticationDataCleanupRepositoryTest {
                 null
         );
 
-        int deleted =
-                loginEmailFailureLimitRepository
-                        .deleteInactiveBatch(
-                                cutoff,
-                                NOW,
-                                1_000
-                        );
+        List<String> candidates = loginEmailFailureLimitRepository
+                .findInactiveCandidates(cutoff, NOW, 1_000);
+        assertThat(candidates).containsExactly(hash('l'), hash('m'));
+        int deleted = candidates.stream().mapToInt(identifier ->
+                loginEmailFailureLimitRepository.deleteInactiveByIdentifierHash(identifier, cutoff, NOW)
+        ).sum();
 
         assertThat(deleted).isEqualTo(2);
         assertThat(emailLimitExists(hash('l')))
@@ -222,6 +212,67 @@ class AuthenticationDataCleanupRepositoryTest {
                 "login_email_failure_limits",
                 "idx_login_email_failure_limits_cleanup"
         )).isTrue();
+    }
+
+    @Test
+    @DisplayName("IP 후보 조회 뒤 갱신된 행은 조건부 삭제에서 보존한다")
+    void deleteIp_rechecksUpdatedAt() {
+        LocalDateTime cutoff = NOW.minusHours(24);
+        insertIpLimit(hash('a'), cutoff);
+        assertThat(loginIpRateLimitRepository.findInactiveCandidates(cutoff, 10))
+                .containsExactly(hash('a'));
+
+        jdbcTemplate.update("update login_ip_rate_limits set updated_at = ? where identifier_hash = ?",
+                NOW, hash('a'));
+
+        assertThat(loginIpRateLimitRepository.deleteInactiveByIdentifierHash(hash('a'), cutoff))
+                .isZero();
+        assertThat(ipLimitExists(hash('a'))).isTrue();
+    }
+
+    @Test
+    @DisplayName("이메일 후보 조회 뒤 갱신된 행은 조건부 삭제에서 보존한다")
+    void deleteEmail_rechecksUpdatedAt() {
+        LocalDateTime cutoff = NOW.minusHours(24);
+        insertEmailLimit(hash('a'), cutoff, null);
+        assertThat(loginEmailFailureLimitRepository.findInactiveCandidates(cutoff, NOW, 10))
+                .containsExactly(hash('a'));
+
+        jdbcTemplate.update("update login_email_failure_limits set updated_at = ? where identifier_hash = ?",
+                NOW, hash('a'));
+
+        assertThat(loginEmailFailureLimitRepository
+                .deleteInactiveByIdentifierHash(hash('a'), cutoff, NOW)).isZero();
+        assertThat(emailLimitExists(hash('a'))).isTrue();
+    }
+
+    @Test
+    @DisplayName("이메일 후보 조회 뒤 차단이 시작되면 오래된 updated_at이어도 보존한다")
+    void deleteEmail_rechecksBlockedUntil() {
+        LocalDateTime cutoff = NOW.minusHours(24);
+        insertEmailLimit(hash('a'), cutoff, null);
+        assertThat(loginEmailFailureLimitRepository.findInactiveCandidates(cutoff, NOW, 10))
+                .containsExactly(hash('a'));
+
+        jdbcTemplate.update("update login_email_failure_limits set blocked_until = ? where identifier_hash = ?",
+                NOW.plusMinutes(5), hash('a'));
+
+        assertThat(loginEmailFailureLimitRepository
+                .deleteInactiveByIdentifierHash(hash('a'), cutoff, NOW)).isZero();
+        assertThat(emailLimitExists(hash('a'))).isTrue();
+    }
+
+    @Test
+    @DisplayName("이메일 차단 종료 경계는 삭제하고 이미 사라진 후보는 0건 처리한다")
+    void deleteEmail_handlesBlockBoundaryAndMissingCandidate() {
+        LocalDateTime cutoff = NOW.minusHours(24);
+        insertEmailLimit(hash('a'), cutoff, NOW);
+        assertThat(loginEmailFailureLimitRepository.findInactiveCandidates(cutoff, NOW, 1))
+                .containsExactly(hash('a'));
+        assertThat(loginEmailFailureLimitRepository
+                .deleteInactiveByIdentifierHash(hash('a'), cutoff, NOW)).isEqualTo(1);
+        assertThat(loginEmailFailureLimitRepository
+                .deleteInactiveByIdentifierHash(hash('a'), cutoff, NOW)).isZero();
     }
 
     private User saveUser() {
