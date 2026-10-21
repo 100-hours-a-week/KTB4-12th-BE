@@ -1,6 +1,167 @@
 # KTB4-12th-BE
 KTB4 12th team backend application
 
+## Gradle modules
+
+```text
+backend
+├── build.gradle
+├── settings.gradle
+├── main-backend
+│   ├── build.gradle
+│   ├── Dockerfile
+│   └── src
+└── payment-server
+    ├── build.gradle
+    ├── Dockerfile
+    └── src
+```
+
+저장소 루트에서 전체 프로젝트를 빌드할 수 있습니다.
+
+```bash
+./gradlew build
+```
+
+각 애플리케이션을 실행하거나 테스트할 때에는 모듈 경로를 지정합니다.
+
+```bash
+./gradlew :main-backend:bootRun
+./gradlew :main-backend:test
+
+./gradlew :payment-server:bootRun
+./gradlew :payment-server:test
+```
+
+Main Backend는 기본 포트 `8080`, Payment Server는 기본 포트 `8090`을 사용합니다.
+
+## Docker
+
+Docker 빌드 Context는 두 이미지 모두 저장소 루트를 사용합니다.
+
+```bash
+docker build \
+  --file main-backend/Dockerfile \
+  --tag seonjalal-main-backend:local \
+  .
+
+docker build \
+  --file payment-server/Dockerfile \
+  --tag seonjalal-payment-server:local \
+  .
+```
+
+Health Check 경로는 두 애플리케이션 모두 `/actuator/health`입니다. Payment Server는 외부에
+공개하지 않고 Main Backend가 접근할 수 있는 내부 네트워크에서 실행합니다.
+
+## 상품 검색 배포 설정
+
+현재 배포는 `PRODUCT_SEARCH_ENABLED=false`로 기존 MySQL 검색을 사용합니다.
+Main Backend 이미지의 기본값과 CI 검증 컨테이너에도 `false`를 적용하며 ES Health 검사는 제외합니다.
+서버의 Docker/Compose/SSM 환경 설정에서 이 값을 덮어쓰는 경우에도 `false`로 유지해야 합니다.
+실제 서버의 SSM 배포 문서는 이 저장소에서 관리하지 않으므로 배포 담당자가 주입값을 확인해야 합니다.
+
+로컬 ES 검증 시에만 `PRODUCT_SEARCH_ENABLED=true`와 `ELASTICSEARCH_URIS`를 지정합니다.
+운영 활성화는 최신 상품 적재·변경 동기화·운영 검증을 완료한 후 별도로 결정합니다.
+
+ES 사용 시 `PRODUCT_SEARCH_INDEX`로 서비스 DB에 대응하는 인덱스를 지정합니다.
+초기 매핑은 `main-backend/src/main/resources/elasticsearch/products-index.json`에 있으며,
+현재 로컬 검증 인덱스는 `gift-products-local-v1`입니다. 인덱스 생성·상품 적재는 자동 실행하지 않습니다.
+현재 적재 데이터의 MySQL DATETIME은 한국 시간(+09:00)으로 해석하며 커서도 같은 기준으로 변환합니다.
+
+ES는 두 글자 이상 일반 상품 검색에만 사용합니다. 검색어 없음·한 글자·AI 추천 요청은 기존 경로를 유지합니다.
+활성화된 ES 검색이 실패하면 503을 반환하며 MySQL로 자동 재검색하지 않습니다.
+변경 동기화는 별도 작업자를 활성화해야 동작하며 비동기로 반영됩니다.
+PIT는 적용하지 않아 데이터 갱신 중에는 검색 결과·페이지 순서가 달라질 수 있습니다.
+모든 부분 문자열·영문 대소문자·특수문자에 대한 기존 검색과의 동등성은 추가 검증이 필요합니다.
+
+ES가 없어도 실행되는 검증은 일반 테스트에 포함됩니다. 실제 ES 통합 테스트는 해당 인덱스에
+상품을 적재한 로컬 환경에서만 다음과 같이 실행합니다.
+
+```bash
+RUN_LOCAL_ES_TEST=true ./gradlew :main-backend:test \
+  --tests 'com.gift.gift.domain.product.search.ProductSearchRepositoryIntegrationTest'
+```
+
+## 상품 검색 Outbox 기록 설정
+
+`PRODUCT_SEARCH_OUTBOX_ENABLED=false`가 기본값입니다. 운영 환경에서는
+`PRODUCT_SEARCH_ENABLED=false`와 함께 유지합니다. Outbox 비활성 상태에서는
+동기화 작업을 기록하지 않으며 ES 연결도 필요하지 않습니다.
+
+비활성화 여부와 관계없이 Flyway `V34`가 `products.search_version`과
+`product_search_outbox` 테이블을 추가합니다. 조회수 배치 집계·재고 차감·재고 복구가
+실제 성공하면 검색 버전은 증가합니다. 배포 시 마이그레이션 실행 권한과 소요 시간을 확인해야 합니다.
+
+활성화하면 위 세 변경 경로에서 상품 변경과 Outbox 기록이 같은 트랜잭션으로 저장됩니다.
+조회수는 `product_view_stats.views`, 검색 버전은 `products.search_version`에서 관리합니다.
+조회 요청은 이벤트만 저장하며 검색 버전 증가와 Outbox 기록은 실제 배치 집계 트랜잭션에서 수행합니다.
+ES 반영 워커는 `PRODUCT_SEARCH_SYNC_ENABLED=false`가 기본값이며 검색 활성화와 별도로 제어합니다.
+운영 동기화를 검증하기 전에는 기록과 작업자를 활성화하지 않습니다. 완료·실패 기록 정리는 후속 작업입니다. 직접 SQL·외부 적재 경로의 변경은 기록하지 않으며,
+비활성 기간의 변경도 쌓이지 않으므로 ES 검색 활성화 전 최신 데이터 재적재가 필요합니다.
+
+## 상품 검색 동기화 작업자 설정 및 복구
+
+팀원 로컬·현재 배포에서는 다음 세 값을 모두 `false`로 유지합니다. 미설정 시에도 기본값은 `false`이며,
+ES 실행이나 추가 환경변수 없이 기존 MySQL 검색을 사용합니다. 이번 PR에는 추가 DB 마이그레이션이 없습니다.
+
+```dotenv
+PRODUCT_SEARCH_ENABLED=false
+PRODUCT_SEARCH_OUTBOX_ENABLED=false
+PRODUCT_SEARCH_SYNC_ENABLED=false
+```
+
+동기화 검증 환경에서는 서비스 DB에 대응하는 인덱스를 먼저 생성·적재하고, 다음 추가 매핑을 적용합니다.
+`products-index.json`은 `dynamic: strict`이므로 이 단계 없이 작업자를 켜면 `search_version` 색인이 실패합니다.
+아래 명령은 저장소 루트에서 실행하며 인증이 필요한 ES에서는 인증·TLS 옵션을 함께 지정합니다.
+
+```bash
+curl --fail-with-body -X PUT \
+  "${ELASTICSEARCH_URIS:-http://127.0.0.1:9201}/${PRODUCT_SEARCH_INDEX:-gift-products-local-v1}/_mapping" \
+  -H 'Content-Type: application/json' \
+  --data-binary @main-backend/src/main/resources/elasticsearch/products-sync-mapping.json
+```
+
+이후 `PRODUCT_SEARCH_OUTBOX_ENABLED=true`와 `PRODUCT_SEARCH_SYNC_ENABLED=true`를 지정하고 재시작합니다.
+검색 전환 없이 동기화만 검증하려면 `PRODUCT_SEARCH_ENABLED=false`를 유지합니다.
+`SCHEDULING_ENABLED=false`이면 자동 실행하지 않습니다. 폴링·배치·임대·재시도 설정은 `.env.example`을 따릅니다.
+검색 노출은 ES refresh 이후이므로 Bulk 성공 즉시 검색에 보이는 것은 아닙니다.
+운영 최초 적재와 변경분 연결·검색 전환은 별도 검증 후 진행합니다.
+
+- 일시적 실패는 지수 백오프로 재시도합니다. 작업자가 중단되면 임대 만료 후 다른 실행에서 회수합니다.
+- 재시도 한도 초과 또는 재시도 불가능한 오류는 `FAILED`로 보존하고 자동 재시도를 중단합니다.
+  `last_error_type`으로 원인을 확인·해결한 뒤 아래처럼 **확인한 작업 ID만** 재등록합니다.
+  `:job_id`는 실제 작업 ID로 교체하며 이 SQL은 자동 실행하지 않습니다.
+
+```sql
+UPDATE product_search_outbox
+SET status = 'PENDING', failure_count = 0,
+    next_attempt_at = CURRENT_TIMESTAMP(6), last_error_type = NULL,
+    claim_token = NULL, lease_until = NULL, processed_at = NULL,
+    updated_at = CURRENT_TIMESTAMP(6)
+WHERE id = :job_id AND status = 'FAILED';
+```
+
+삭제는 Outbox 작업에 대응하는 원본의 삭제 상태를 반영합니다. 삭제 변경 자체를 기록하지 않는 경로는 자동 감지하지 않습니다.
+물리 삭제 상품은 최대 버전의 삭제 표시 문서를 남겨 과거 작업에 의한 복원을 막습니다.
+따라서 상품 ID를 재사용하거나 삭제 표시 문서를 임의로 제거하지 않습니다.
+현재 기록 경로는 조회수 배치 집계·재고 차감·재고 복구이며, 다른 변경 경로의 기록과 완료 기록 정리는 후속 범위입니다.
+
+## 상품 검색 동기화 테스트
+
+단위 테스트와 MySQL 통합 테스트는 일반 테스트에 포함됩니다. MySQL은 Testcontainers를 사용하므로
+로컬 서비스 DB를 변경하지 않습니다. 실제 ES 테스트는 기본 제외하며 다음 명령으로 별도 실행합니다.
+
+```bash
+RUN_LOCAL_ES_SYNC_TEST=true ELASTICSEARCH_URIS=http://127.0.0.1:9201 \
+./gradlew :main-backend:test \
+  --tests 'com.gift.gift.domain.product.search.ProductSearchSyncElasticsearchTest'
+```
+
+ES 테스트는 UUID가 포함된 `test-product-sync-*` 인덱스를 생성하고 종료 시 해당 인덱스만 삭제합니다.
+서비스 인덱스에는 쓰지 않습니다. 작업 선점·임대 회수·독립 트랜잭션·재시도 한도·부분 실패와
+최신 조회수·중복·역순·삭제·소프트 삭제 복구를 검증합니다.
+
 ## IntelliJ IDEA formatter
 
 프로젝트에 포함된 `.editorconfig`와 Project Code Style을 사용합니다.

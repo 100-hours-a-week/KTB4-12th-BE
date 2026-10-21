@@ -1,0 +1,146 @@
+{
+  "info": {
+    "name": "AI Chat JSON API PR2",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "채팅 전용 오류·메시지는 BE ChatErrorCode에서 관리합니다. 공개 error.code는 기존 INVALID_REQUEST, RECIPIENT_NOT_FOUND, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, TOO_MANY_REQUESTS, SERVICE_UNAVAILABLE를 유지합니다. 토큰 누락·위변조·만료·소유권 불일치는 404 / NOT_FOUND와 동일한 메시지(대화 또는 질문을 찾을 수 없습니다.)를 반환합니다. 로그인 실패는 401 / UNAUTHORIZED이며 message 입력 오류의 details를 유지합니다."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 대화 생성·복구",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if ([200, 201].includes(pm.response.code)) {",
+              "  pm.environment.set('conversationToken', pm.response.json().data.conversationToken);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"recipientUserId\":{{recipientUserId}}}"
+        },
+        "url": "{{baseUrl}}/recommendations/conversations/{{conversationId}}"
+      },
+      "response": [
+        {
+          "name": "신규 생성",
+          "status": "Created",
+          "code": 201,
+          "header": [
+            {"key": "Content-Type", "value": "application/json"}
+          ],
+          "body": "{\"message\":\"대화를 생성했습니다.\",\"data\":{\"conversationId\":\"22222222-2222-4222-8222-222222222222\",\"turns\":[],\"conversationToken\":\"<BE 발급 토큰>\"}}"
+        }
+      ]
+    },
+    {
+      "name": "02 대화 조회",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "X-Conversation-Token", "value": "{{conversationToken}}"}
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{conversationId}}"
+      },
+      "response": [
+        {
+          "name": "대화 조회",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {"key": "Content-Type", "value": "application/json"}
+          ],
+          "body": "{\"message\":\"대화를 조회했습니다.\",\"data\":{\"conversationId\":\"22222222-2222-4222-8222-222222222222\",\"turns\":[]}}"
+        }
+      ]
+    },
+    {
+      "name": "03 질문 접수·복구",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key": "X-Conversation-Token", "value": "{{conversationToken}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"message\":\"선물 추천\"}"
+        },
+        "url": "{{baseUrl}}/recommendations/conversations/{{conversationId}}/turns/{{turnId}}"
+      },
+      "response": [
+        {
+          "name": "질문 접수",
+          "status": "Accepted",
+          "code": 202,
+          "header": [
+            {"key": "Content-Type", "value": "application/json"}
+          ],
+          "body": "{\"message\":\"질문을 접수했습니다.\",\"data\":{\"turnId\":\"11111111-1111-4111-8111-111111111111\",\"status\":\"PROCESSING\",\"message\":\"선물 추천\",\"blocks\":[],\"lastEventId\":0}}"
+        }
+      ]
+    },
+    {
+      "name": "04 질문 조회",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "X-Conversation-Token", "value": "{{conversationToken}}"}
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{conversationId}}/turns/{{turnId}}"
+      },
+      "response": [
+        {
+          "name": "완료된 질문",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {"key": "Content-Type", "value": "application/json"}
+          ],
+          "body": "{\"message\":\"질문 상태를 조회했습니다.\",\"data\":{\"turnId\":\"11111111-1111-4111-8111-111111111111\",\"status\":\"COMPLETED\",\"message\":\"선물 추천\",\"blocks\":[{\"type\":\"text\",\"text\":\"추천 결과\"}],\"lastEventId\":1}}"
+        }
+      ]
+    },
+    {
+      "name": "05 답변 생성 취소",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key": "X-Conversation-Token", "value": "{{conversationToken}}"}
+        ],
+        "url": "{{baseUrl}}/recommendations/conversations/{{conversationId}}/turns/{{turnId}}/cancellation"
+      },
+      "response": [
+        {
+          "name": "취소된 질문",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {"key": "Content-Type", "value": "application/json"}
+          ],
+          "body": "{\"message\":\"질문 상태를 조회했습니다.\",\"data\":{\"turnId\":\"11111111-1111-4111-8111-111111111111\",\"status\":\"CANCELLED\",\"message\":\"선물 추천\",\"blocks\":[],\"lastEventId\":1}}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "1s",
+    "analysis": {
+      "tokenizer": {
+        "product_bigram": {
+          "type": "ngram",
+          "min_gram": 2,
+          "max_gram": 2,
+          "token_chars": []
+        }
+      },
+      "analyzer": {
+        "product_bigram": {
+          "type": "custom",
+          "tokenizer": "product_bigram",
+          "filter": []
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "_meta": {
+      "purpose": "local-product-search-v1"
+    },
+    "properties": {
+      "id": {
+        "type": "long"
+      },
+      "category_id": {
+        "type": "keyword"
+      },
+      "name": {
+        "type": "text",
+        "analyzer": "product_bigram",
+        "search_analyzer": "product_bigram"
+      },
+      "brand": {
+        "type": "text",
+        "analyzer": "product_bigram",
+        "search_analyzer": "product_bigram"
+      },
+      "description": {
+        "type": "text",
+        "index": false
+      },
+      "price": {
+        "type": "long"
+      },
+      "quantity": {
+        "type": "integer"
+      },
+      "views": {
+        "type": "integer",
+        "index": true,
+        "doc_values": true
+      },
+      "sales": {
+        "type": "integer",
+        "index": true,
+        "doc_values": true
+      },
+      "created_at": {
+        "type": "date_nanos"
+      },
+      "updated_at": {
+        "type": "date_nanos"
+      },
+      "deleted_at": {
+        "type": "date_nanos"
+      }
+    }
+  }
+}

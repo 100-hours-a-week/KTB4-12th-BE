@@ -1,0 +1,154 @@
+spring:
+  application:
+    name: gift
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      data-source-properties:
+        useAffectedRows: true
+        compensateOnDuplicateKeyUpdateCounts: false
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # 스키마 변경은 Flyway가 담당하고 Hibernate는 검증만 수행한다.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration,classpath:db/seed
+    # 이미 테이블이 존재하는 기존 로컬 DB에서도 Flyway를 도입할 수 있도록 기준선을 0으로 둔다.
+    # V1은 IF NOT EXISTS라 기존 테이블이 있어도 그대로 적용되고, 새 DB에서는 전체 스키마가 생성된다.
+    baseline-on-migrate: true
+    baseline-version: 0
+
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 10MB
+
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://127.0.0.1:9201}
+    connection-timeout: 3s
+    socket-timeout: 10s
+
+  data:
+    elasticsearch:
+      repositories:
+        enabled: false
+
+storage:
+  s3:
+    region: ${AWS_REGION}
+    bucket: ${PRODUCT_IMAGE_BUCKET}
+
+app:
+  scheduling:
+    enabled: ${SCHEDULING_ENABLED:true}
+
+  security:
+    jwt:
+      secret-base64: ${JWT_SECRET_BASE64}
+      issuer: ${JWT_ISSUER}
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS}
+    login-rate-limit:
+      hmac-secret-base64: ${LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64}
+
+  product-search:
+    enabled: ${PRODUCT_SEARCH_ENABLED:false}
+    index-name: ${PRODUCT_SEARCH_INDEX:gift-products-local-v1}
+
+    outbox:
+      enabled: ${PRODUCT_SEARCH_OUTBOX_ENABLED:false}
+
+    sync:
+      enabled: ${PRODUCT_SEARCH_SYNC_ENABLED:false}
+      poll-interval-ms: ${PRODUCT_SEARCH_SYNC_POLL_INTERVAL_MS:5000}
+      batch-size: ${PRODUCT_SEARCH_SYNC_BATCH_SIZE:100}
+      lease-seconds: ${PRODUCT_SEARCH_SYNC_LEASE_SECONDS:60}
+      max-failures: ${PRODUCT_SEARCH_SYNC_MAX_FAILURES:10}
+      retry-base-seconds: ${PRODUCT_SEARCH_SYNC_RETRY_BASE_SECONDS:2}
+      retry-max-seconds: ${PRODUCT_SEARCH_SYNC_RETRY_MAX_SECONDS:300}
+
+  ai-chat:
+    client:
+      base-url: ${AI_CHAT_BASE_URL}
+      service-token: ${AI_CHAT_SERVICE_TOKEN}
+      connect-timeout: ${AI_CHAT_CONNECT_TIMEOUT}
+      read-timeout: ${AI_CHAT_READ_TIMEOUT}
+
+    conversation-token:
+      secret-base64: ${CHAT_CONVERSATION_TOKEN_SECRET_BASE64}
+      issuer: ${CHAT_CONVERSATION_TOKEN_ISSUER}
+
+    sse:
+      idle-timeout: ${AI_CHAT_SSE_IDLE_TIMEOUT}
+      total-timeout: ${AI_CHAT_SSE_TOTAL_TIMEOUT}
+      max-connections: ${AI_CHAT_SSE_MAX_CONNECTIONS}
+
+  ai-profile:
+    scheduling-enabled: ${AI_PROFILE_SCHEDULING_ENABLED:false}
+    base-url: ${AI_PROFILE_BASE_URL}
+    service-token: ${PROFILING_SERVICE_TOKEN}
+    connect-timeout: ${AI_PROFILE_CONNECT_TIMEOUT:3s}
+    read-timeout: ${AI_PROFILE_READ_TIMEOUT:10s}
+    quiet-period: 60s
+    maximum-window: 300s
+    batch-size: ${AI_PROFILE_BATCH_SIZE:100}
+    recovery-batch-size: ${AI_PROFILE_RECOVERY_BATCH_SIZE:50}
+    dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
+    dispatch-claim-timeout: ${AI_PROFILE_DISPATCH_CLAIM_TIMEOUT:2m}
+
+  payment:
+    client:
+      base-url: ${PAYMENT_SERVER_BASE_URL}
+      api-key: ${PAYMENT_SERVER_API_KEY}
+      connect-timeout: ${PAYMENT_CONNECT_TIMEOUT:1s}
+      command-timeout: ${PAYMENT_COMMAND_TIMEOUT:3s}
+      query-timeout: ${PAYMENT_QUERY_TIMEOUT:2s}
+    reconciliation:
+      interval: ${PAYMENT_RECONCILIATION_INTERVAL:1m}
+      batch-size: ${PAYMENT_RECONCILIATION_BATCH_SIZE:100}
+      stale-age: ${PAYMENT_RECONCILIATION_STALE_AGE:1m}
+      timeout: ${PAYMENT_RECONCILIATION_TIMEOUT:10m}
+
+  bug-report:
+    webhook-url: ${DISCORD_WEBHOOK_URL:}
+    google-sheets:
+      credentials-json-base64: ${GOOGLE_SERVICE_ACCOUNT_JSON_BASE64:}
+      spreadsheet-id: ${GOOGLE_SHEET_ID:}
+      sheet-name: ${GOOGLE_SHEET_TAB:}
+
+management:
+  health:
+    elasticsearch:
+      enabled: ${app.product-search.enabled:false}
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.gift.gift: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
+
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:local}
+  send-default-pii: ${SENTRY_SEND_DEFAULT_PII:false}
+  traces-sample-rate: ${SENTRY_TRACES_SAMPLE_RATE:0.0}

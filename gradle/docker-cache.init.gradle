@@ -1,0 +1,15 @@
+// Docker 빌드 전용: 소스 COPY 전에 실제 컴파일·런타임 JAR까지 준비한다.
+// 일반 개발/CI Gradle 실행에는 --init-script를 지정하지 않으므로 적용되지 않는다.
+gradle.beforeProject { project ->
+    project.pluginManager.withPlugin('java') {
+        project.tasks.register('resolveDockerDependencies') {
+            group = 'build setup'
+            description = 'Resolve source-independent artifacts for the Docker build layer'
+            doLast {
+                ['compileClasspath', 'runtimeClasspath', 'annotationProcessor'].each { name ->
+                    project.configurations.getByName(name).resolve()
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,745 @@
+{
+  "uid": "gift-jvm",
+  "title": "Gift / JVM",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "tags": [
+    "gift",
+    "monitoring"
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Load tests",
+        "type": "dashboard",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 160, 0, 1)",
+        "target": {
+          "type": "tags",
+          "tags": [
+            "loadtest"
+          ],
+          "matchAny": false
+        }
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "App instance",
+        "query": "label_values(up{job=\"spring\"}, instance)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "uri",
+        "label": "API route",
+        "query": "label_values(http_server_requests_seconds_count{job=\"spring\"}, uri)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "mysql_instance",
+        "label": "MySQL exporter",
+        "query": "label_values(mysql_up, instance)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "container",
+        "label": "Container",
+        "query": "label_values(container_cpu_usage_seconds_total{job=\"cadvisor\",name!=\"\"}, name)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "JVM heap used / max",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (jvm_memory_used_bytes{job=\"spring\",instance=~\"$instance\",area=\"heap\"})",
+          "legendFormat": "used {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum by(instance) (jvm_memory_max_bytes{job=\"spring\",instance=~\"$instance\",area=\"heap\"} > 0)",
+          "legendFormat": "max {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM non-heap used",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (jvm_memory_used_bytes{job=\"spring\",instance=~\"$instance\",area=\"nonheap\"})",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Post-GC long-lived heap",
+      "description": "Live data depends on collector/old-generation events. Sampled heap low is not exact post-GC heap. Rising baseline alone does not prove a leak.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "jvm_gc_live_data_size_bytes{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "live data {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "min_over_time((sum by(instance) (jvm_memory_used_bytes{job=\"spring\",instance=~\"$instance\",area=\"heap\"}))[5m:15s])",
+          "legendFormat": "sampled 5m low {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Post-GC long-lived usage ratio",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "jvm_memory_usage_after_gc{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GC pause time / second",
+      "description": "Seconds spent in pauses per wall-clock second; compare peaks with API latency.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (rate(jvm_gc_pause_seconds_sum{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GC pause window maximum",
+      "description": "Micrometer time-window maximum, not lifetime maximum.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by(instance) (jvm_gc_pause_seconds_max{job=\"spring\",instance=~\"$instance\"})",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Observed GC pause events / second",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (rate(jvm_gc_pause_seconds_count{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GC pause events in selected range",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (increase(jvm_gc_pause_seconds_count{job=\"spring\",instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM live / daemon / peak threads",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "jvm_threads_live_threads{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "live {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "jvm_threads_daemon_threads{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "daemon {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "jvm_threads_peak_threads{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "peak {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tomcat busy / current / max threads",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tomcat_threads_busy_threads{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "busy {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "tomcat_threads_current_threads{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "current {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "tomcat_threads_config_max_threads{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "max {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM process / system CPU",
+      "description": "System CPU is the OS/cgroup view seen by the JVM, not a macOS host measurement.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "process_cpu_usage{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "process {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "system_cpu_usage{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "JVM-visible system {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "text",
+      "title": "Request Queue: additional instrumentation required",
+      "options": {
+        "mode": "markdown",
+        "content": "Tomcat exposes busy/current/max threads here, but no measured request queue depth. `max - busy` is not queue depth. `accept-count` is a configured limit, not the current backlog. Use thread dumps and socket backlog inspection when investigating waiting requests."
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 12,
+        "y": 45,
+        "w": 12,
+        "h": 9
+      }
+    }
+  ]
+}

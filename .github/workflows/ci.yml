@@ -10,6 +10,7 @@ on:
       - 'docs/**'
   push:
     branches:
+      - develop
       - main
     paths-ignore:
       - '**/*.md'
@@ -24,15 +25,36 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_NAME: peterj0117/seonjalal-be
+  RELEASE_ECR_REPOSITORY: seonjalal/production/backend
+  DEV_AWS_REGION: ap-northeast-2
+  DEV_ECR_REPOSITORY: seonjalal/develop/backend
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      PRODUCT_SEARCH_ENABLED: 'false'
+      PRODUCT_SEARCH_OUTBOX_ENABLED: 'false'
+      PRODUCT_SEARCH_SYNC_ENABLED: 'false'
+      RUN_LOCAL_ES_TEST: 'false'
+      RUN_LOCAL_ES_SYNC_TEST: 'false'
+      PAYMENT_SERVER_API_KEY: ci-payment-server-api-key
+      PAYMENT_SERVER_BASE_URL: http://payment-server:8090
+      PAYMENT_CONNECT_TIMEOUT: 1s
+      PAYMENT_COMMAND_TIMEOUT: 3s
+      PAYMENT_QUERY_TIMEOUT: 2s
+
       AWS_REGION: ap-northeast-2
       PRODUCT_IMAGE_BUCKET: ci-test-product-images
+
+      AI_CHAT_BASE_URL: http://localhost:8000/v1/chat/conversations
+      AI_CHAT_SERVICE_TOKEN: ci-chat-service-token
+      AI_CHAT_CONNECT_TIMEOUT: 3s
+      AI_CHAT_READ_TIMEOUT: 10s
+      AI_CHAT_SSE_IDLE_TIMEOUT: 60s
+      AI_CHAT_SSE_TOTAL_TIMEOUT: 240s
+      AI_CHAT_SSE_MAX_CONNECTIONS: 10
       AI_PROFILE_BASE_URL: http://localhost:8000
       PROFILING_SERVICE_TOKEN: ci-profiling-token
       AI_PROFILE_CONNECT_TIMEOUT: 3s
@@ -40,6 +62,7 @@ jobs:
       AI_PROFILE_BATCH_SIZE: 100
       AI_PROFILE_DISPATCH_INTERVAL: 1m
       AI_PROFILE_SCHEDULING_ENABLED: 'false'
+
       SCHEDULING_ENABLED: 'true'
 
     steps:
@@ -65,23 +88,29 @@ jobs:
           docker info
 
       - name: Run unit tests
-        run: ./gradlew --no-daemon test
+        run: ./gradlew --no-daemon :main-backend:test :payment-server:test
 
-      - name: Build executable JAR
-        run: ./gradlew --no-daemon bootJar
+      - name: Build executable JARs
+        run: ./gradlew --no-daemon :main-backend:bootJar :payment-server:bootJar
 
-      - name: Build Docker image
-        run: docker build --tag seonjalal-be:ci .
+      - name: Build Main Backend Docker image
+        run: docker build --file main-backend/Dockerfile --tag seonjalal-main-backend:ci .
+
+      - name: Build Payment Server Docker image
+        run: docker build --file payment-server/Dockerfile --tag seonjalal-payment-server:ci .
 
       - name: Run containers and smoke test
         shell: bash
         run: |
           NETWORK="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          APP_CONTAINER="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MAIN_BACKEND_CONTAINER="seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          PAYMENT_SERVER_CONTAINER="seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           export JWT_SECRET_BASE64="$(openssl rand -base64 32)"
           export JWT_ISSUER="https://ci.seonjalal.test"
+          export CHAT_CONVERSATION_TOKEN_SECRET_BASE64="$(openssl rand -base64 32)"
+          export CHAT_CONVERSATION_TOKEN_ISSUER="https://ci.seonjalal.test/ai-chat"
           export CORS_ALLOWED_ORIGINS="http://localhost:3000"
           export LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64="$(openssl rand -base64 32)"
 
@@ -98,7 +127,7 @@ jobs:
             --health-interval=5s \
             --health-timeout=5s \
             --health-retries=20 \
-            mysql:8.4
+            mysql:8.4 --log-bin-trust-function-creators=1
 
           for attempt in {1..30}; do
             STATUS="$(docker inspect --format '{{.State.Health.Status}}' "$MYSQL_CONTAINER")"
@@ -115,18 +144,30 @@ jobs:
           test "$(docker inspect --format '{{.State.Health.Status}}' "$MYSQL_CONTAINER")" = healthy
 
           docker run --detach \
-            --name "$APP_CONTAINER" \
+            --name "$MAIN_BACKEND_CONTAINER" \
             --network "$NETWORK" \
             --publish 127.0.0.1::8080 \
             --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
             --env DB_USERNAME=gift_smoke \
             --env DB_PASSWORD=gift_smoke_password \
+            --env PRODUCT_SEARCH_ENABLED \
+            --env PRODUCT_SEARCH_OUTBOX_ENABLED \
+            --env PRODUCT_SEARCH_SYNC_ENABLED \
             --env AWS_REGION \
             --env PRODUCT_IMAGE_BUCKET \
             --env JWT_SECRET_BASE64 \
             --env LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64 \
             --env JWT_ISSUER \
+            --env CHAT_CONVERSATION_TOKEN_SECRET_BASE64 \
+            --env CHAT_CONVERSATION_TOKEN_ISSUER \
             --env CORS_ALLOWED_ORIGINS \
+            --env AI_CHAT_BASE_URL \
+            --env AI_CHAT_SERVICE_TOKEN \
+            --env AI_CHAT_CONNECT_TIMEOUT \
+            --env AI_CHAT_READ_TIMEOUT \
+            --env AI_CHAT_SSE_IDLE_TIMEOUT \
+            --env AI_CHAT_SSE_TOTAL_TIMEOUT \
+            --env AI_CHAT_SSE_MAX_CONNECTIONS \
             --env AI_PROFILE_BASE_URL \
             --env PROFILING_SERVICE_TOKEN \
             --env AI_PROFILE_CONNECT_TIMEOUT \
@@ -135,36 +176,76 @@ jobs:
             --env AI_PROFILE_DISPATCH_INTERVAL \
             --env AI_PROFILE_SCHEDULING_ENABLED \
             --env SCHEDULING_ENABLED \
-            seonjalal-be:ci
+            --env PAYMENT_SERVER_BASE_URL \
+            --env PAYMENT_SERVER_API_KEY \
+            --env PAYMENT_CONNECT_TIMEOUT \
+            --env PAYMENT_COMMAND_TIMEOUT \
+            --env PAYMENT_QUERY_TIMEOUT \
+            seonjalal-main-backend:ci
 
-          HOST_PORT="$(docker port "$APP_CONTAINER" 8080/tcp | sed 's/.*://')"
-          if ! HEALTH_RESPONSE="$(
+          MAIN_BACKEND_HOST_PORT="$(docker port "$MAIN_BACKEND_CONTAINER" 8080/tcp | sed 's/.*://')"
+          if ! MAIN_BACKEND_HEALTH_RESPONSE="$(
             curl --fail-with-body --silent --show-error \
               --retry 30 \
               --retry-all-errors \
               --retry-connrefused \
               --retry-delay 2 \
-              "http://127.0.0.1:${HOST_PORT}/actuator/health"
+              "http://127.0.0.1:${MAIN_BACKEND_HOST_PORT}/actuator/health"
           )"; then
-            echo "$HEALTH_RESPONSE"
+            echo "$MAIN_BACKEND_HEALTH_RESPONSE"
             exit 1
           fi
 
-          echo "$HEALTH_RESPONSE"
+          echo "$MAIN_BACKEND_HEALTH_RESPONSE"
           grep --quiet --extended-regexp \
             '"status"[[:space:]]*:[[:space:]]*"UP"' \
-            <<< "$HEALTH_RESPONSE"
+            <<< "$MAIN_BACKEND_HEALTH_RESPONSE"
+
+          docker run --detach \
+            --name "$PAYMENT_SERVER_CONTAINER" \
+            --network "$NETWORK" \
+            --network-alias payment-server \
+            --publish 127.0.0.1::8090 \
+            --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
+            --env DB_USERNAME=gift_smoke \
+            --env DB_PASSWORD=gift_smoke_password \
+            --env PAYMENT_SERVER_API_KEY \
+            seonjalal-payment-server:ci
+
+          PAYMENT_SERVER_HOST_PORT="$(docker port "$PAYMENT_SERVER_CONTAINER" 8090/tcp | sed 's/.*://')"
+          if ! PAYMENT_SERVER_HEALTH_RESPONSE="$(
+            curl --fail-with-body --silent --show-error \
+              --retry 30 \
+              --retry-all-errors \
+              --retry-connrefused \
+              --retry-delay 2 \
+              "http://127.0.0.1:${PAYMENT_SERVER_HOST_PORT}/actuator/health"
+          )"; then
+            echo "$PAYMENT_SERVER_HEALTH_RESPONSE"
+            exit 1
+          fi
+
+          echo "$PAYMENT_SERVER_HEALTH_RESPONSE"
+          grep --quiet --extended-regexp \
+            '"status"[[:space:]]*:[[:space:]]*"UP"' \
+            <<< "$PAYMENT_SERVER_HEALTH_RESPONSE"
 
       - name: Print validation logs
         if: failure()
         shell: bash
         run: |
-          APP_CONTAINER="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MAIN_BACKEND_CONTAINER="seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          PAYMENT_SERVER_CONTAINER="seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          if docker inspect "$APP_CONTAINER" > /dev/null 2>&1; then
-            echo "Backend container logs:"
-            docker logs "$APP_CONTAINER" || true
+          if docker inspect "$MAIN_BACKEND_CONTAINER" > /dev/null 2>&1; then
+            echo "Main Backend container logs:"
+            docker logs "$MAIN_BACKEND_CONTAINER" || true
+          fi
+
+          if docker inspect "$PAYMENT_SERVER_CONTAINER" > /dev/null 2>&1; then
+            echo "Payment Server container logs:"
+            docker logs "$PAYMENT_SERVER_CONTAINER" || true
           fi
 
           if docker inspect "$MYSQL_CONTAINER" > /dev/null 2>&1; then
@@ -177,10 +258,255 @@ jobs:
         shell: bash
         run: |
           docker rm --force \
-            "seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             "seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             2>/dev/null || true
           docker network rm "seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" 2>/dev/null || true
+
+  publish-develop:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: ${{ github.workflow }}-publish-develop
+      cancel-in-progress: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.DEV_ECR_ROLE_ARN }}
+          aws-region: ${{ env.DEV_AWS_REGION }}
+          role-session-name: seonjalal-develop-be-publish
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve immutable images
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for SERVICE in main-backend payment-server; do
+            OUTPUT_PREFIX="${SERVICE//-/_}"
+            IMAGE_TAG="develop-${SERVICE}-${GITHUB_SHA}"
+            IMAGE_URI="${{ steps.ecr.outputs.registry }}/${DEV_ECR_REPOSITORY}:${IMAGE_TAG}"
+
+            if aws ecr describe-images \
+              --region "${DEV_AWS_REGION}" \
+              --repository-name "${DEV_ECR_REPOSITORY}" \
+              --image-ids "imageTag=${IMAGE_TAG}" \
+              >/dev/null 2>&1; then
+              echo "${OUTPUT_PREFIX}_publish=false" >> "${GITHUB_OUTPUT}"
+            else
+              echo "${OUTPUT_PREFIX}_publish=true" >> "${GITHUB_OUTPUT}"
+            fi
+
+            echo "${OUTPUT_PREFIX}_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          done
+
+      - name: Set up Docker Buildx
+        if: steps.images.outputs.main_backend_publish == 'true' || steps.images.outputs.payment_server_publish == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Main Backend develop image
+        if: steps.images.outputs.main_backend_publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: main-backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.main_backend_uri }}
+          cache-from: type=gha,scope=develop-main-backend
+          cache-to: type=gha,mode=max,scope=develop-main-backend
+
+      - name: Build and push Payment Server develop image
+        if: steps.images.outputs.payment_server_publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: payment-server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.payment_server_uri }}
+          cache-from: type=gha,scope=develop-payment-server
+          cache-to: type=gha,mode=max,scope=develop-payment-server
+
+      - name: Record develop images
+        shell: bash
+        run: |
+          {
+            echo "## Develop backend images"
+            echo
+            echo "- Main Backend: \`${{ steps.images.outputs.main_backend_uri }}\`"
+            echo "- Main Backend published in this run: \`${{ steps.images.outputs.main_backend_publish }}\`"
+            echo "- Payment Server: \`${{ steps.images.outputs.payment_server_uri }}\`"
+            echo "- Payment Server published in this run: \`${{ steps.images.outputs.payment_server_publish }}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  deploy-develop:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: publish-develop
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: ${{ github.workflow }}-deploy-develop-backend
+      cancel-in-progress: false
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.DEV_CD_ROLE_ARN }}
+          aws-region: ${{ env.DEV_AWS_REGION }}
+          role-session-name: seonjalal-develop-be-deploy
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
+
+      - name: Reconcile backend on Develop runtime
+        shell: bash
+        env:
+          DEV_EC2_INSTANCE_ID: ${{ vars.DEV_EC2_INSTANCE_ID }}
+          DESIRED_SHA_PARAMETER: /seonjalal/develop/release/backend_sha
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${DEV_EC2_INSTANCE_ID}" =~ ^i-[0-9a-f]+$ ]]; then
+            echo "DEV_EC2_INSTANCE_ID is invalid." >&2
+            exit 1
+          fi
+
+          if [[ ! "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GITHUB_SHA is invalid." >&2
+            exit 1
+          fi
+
+          PREVIOUS_SHA="$(
+            aws ssm get-parameter \
+              --region "${DEV_AWS_REGION}" \
+              --name "${DESIRED_SHA_PARAMETER}" \
+              --query 'Parameter.Value' \
+              --output text
+          )"
+
+          if [[ ! "${PREVIOUS_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Previous backend SHA parameter is invalid." >&2
+            exit 1
+          fi
+
+          aws ssm put-parameter \
+            --region "${DEV_AWS_REGION}" \
+            --name "${DESIRED_SHA_PARAMETER}" \
+            --type String \
+            --value "${GITHUB_SHA}" \
+            --overwrite \
+            >/dev/null
+
+          PING_STATUS="$(
+            aws ssm describe-instance-information \
+              --region "${DEV_AWS_REGION}" \
+              --filters "Key=InstanceIds,Values=${DEV_EC2_INSTANCE_ID}" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text
+          )"
+
+          if [[ "${PING_STATUS}" != "Online" ]]; then
+            {
+              echo "## Develop backend deployment"
+              echo
+              echo "- Desired commit: \`${GITHUB_SHA}\`"
+              echo "- Runtime: offline"
+              echo "- Result: next instance boot reconciliation pending"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          COMMAND_ID="$(
+            aws ssm send-command \
+              --region "${DEV_AWS_REGION}" \
+              --instance-ids "${DEV_EC2_INSTANCE_ID}" \
+              --document-name seonjalal-v2-develop-reconcile \
+              --comment "Reconcile Develop backend ${GITHUB_SHA}" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+
+          COMMAND_STATUS=Pending
+          for ATTEMPT in {1..72}; do
+            set +e
+            COMMAND_STATUS="$(
+              aws ssm get-command-invocation \
+                --region "${DEV_AWS_REGION}" \
+                --command-id "${COMMAND_ID}" \
+                --instance-id "${DEV_EC2_INSTANCE_ID}" \
+                --query Status \
+                --output text \
+                2>/dev/null
+            )"
+            LOOKUP_STATUS=$?
+            set -e
+
+            if [[ "${LOOKUP_STATUS}" -ne 0 ]]; then
+              sleep 10
+              continue
+            fi
+
+            case "${COMMAND_STATUS}" in
+              Success|Cancelled|Failed|TimedOut|Cancelling)
+                break
+                ;;
+              Pending|InProgress|Delayed)
+                sleep 10
+                ;;
+              *)
+                echo "Unexpected SSM command status: ${COMMAND_STATUS}" >&2
+                break
+                ;;
+            esac
+          done
+
+          if [[ "${COMMAND_STATUS}" != "Success" ]]; then
+            aws ssm get-command-invocation \
+              --region "${DEV_AWS_REGION}" \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${DEV_EC2_INSTANCE_ID}" \
+              --query '{Status:Status,Output:StandardOutputContent,Errors:StandardErrorContent}' \
+              --output json || true
+
+            aws ssm put-parameter \
+              --region "${DEV_AWS_REGION}" \
+              --name "${DESIRED_SHA_PARAMETER}" \
+              --type String \
+              --value "${PREVIOUS_SHA}" \
+              --overwrite \
+              >/dev/null
+
+            echo "Develop backend deployment failed; desired SHA restored." >&2
+            exit 1
+          fi
+
+          {
+            echo "## Develop backend deployment"
+            echo
+            echo "- Desired commit: \`${GITHUB_SHA}\`"
+            echo "- Runtime: online"
+            echo "- Result: deployed and verified"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -189,6 +515,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      id-token: write
     concurrency:
       group: ${{ github.workflow }}-publish
       cancel-in-progress: false
@@ -204,12 +531,13 @@ jobs:
         shell: bash
         run: |
           VERSION="$(tr -d '[:space:]' < VERSION)"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
             echo "VERSION must use semantic version format: $VERSION" >&2
             exit 1
           fi
-          if git rev-parse --quiet --verify "refs/tags/v${VERSION}" > /dev/null; then
-            echo "Git tag v${VERSION} already exists." >&2
+          if git rev-parse --quiet --verify "refs/tags/v${VERSION}" > /dev/null && \
+             [[ "$(git rev-list -n 1 "v${VERSION}")" != "$GITHUB_SHA" ]]; then
+            echo "Git tag v${VERSION} points to a different commit." >&2
             exit 1
           fi
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
@@ -220,38 +548,60 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      # main용 별도 OIDC Role. Develop 발행/배포 Role을 운영 릴리스에 재사용하지 않음.
+      - name: Configure release ECR credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          role-to-assume: ${{ vars.RELEASE_ECR_ROLE_ARN }}
+          aws-region: ap-northeast-2
+          allowed-account-ids: '721744297924'
 
-      - name: Ensure Docker version tag is unused
-        shell: bash
-        run: |
-          IMAGE="${IMAGE_NAME}:${{ steps.version.outputs.value }}"
-          if INSPECT_OUTPUT="$(docker buildx imagetools inspect "$IMAGE" 2>&1)"; then
-            echo "Docker image tag already exists: $IMAGE" >&2
-            exit 1
-          fi
-          if ! grep --extended-regexp --ignore-case 'not found|manifest unknown' <<< "$INSPECT_OUTPUT" > /dev/null; then
-            echo "Could not verify Docker image tag availability: $INSPECT_OUTPUT" >&2
-            exit 1
-          fi
+      - name: Log in to release ECR
+        id: release_ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push version image
+      - name: Verify immutable release targets
+        id: release_images
+        env:
+          AWS_REGION: ap-northeast-2
+          RELEASE_COMPONENT: backend
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+          ECR_REGISTRY: ${{ steps.release_ecr.outputs.registry }}
+        run: python3 .github/scripts/prepare-ecr-release.py
+
+      - name: Build and push Main Backend version image
+        if: steps.release_images.outputs.main_backend_exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: main-backend/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.value }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.release_images.outputs.main_backend_uri }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+          cache-from: type=gha,scope=main-backend
+          cache-to: type=gha,mode=max,scope=main-backend
+
+      - name: Build and push Payment Server version image
+        if: steps.release_images.outputs.payment_server_exists != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: payment-server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.release_images.outputs.payment_server_uri }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+          cache-from: type=gha,scope=payment-server
+          cache-to: type=gha,mode=max,scope=payment-server
 
       - name: Create and push Git tag
         shell: bash
         run: |
-          git tag "v${{ steps.version.outputs.value }}" "$GITHUB_SHA"
+          git rev-parse --verify "refs/tags/v${{ steps.version.outputs.value }}" >/dev/null 2>&1 || \
+            git tag "v${{ steps.version.outputs.value }}" "$GITHUB_SHA"
           git push origin "v${{ steps.version.outputs.value }}"

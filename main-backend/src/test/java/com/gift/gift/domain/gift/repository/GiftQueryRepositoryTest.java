@@ -1,0 +1,285 @@
+package com.gift.gift.domain.gift.repository;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+import jakarta.persistence.EntityManager;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.gift.gift.domain.gift.entity.GiftHistory;
+import com.gift.gift.domain.gift.entity.GiftStatus;
+import com.gift.gift.domain.gift.support.GiftCursor;
+import com.gift.gift.domain.order.entity.Order;
+import com.gift.gift.domain.product.entity.Category;
+import com.gift.gift.domain.product.entity.Product;
+import com.gift.gift.domain.user.entity.User;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@SpringBootTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
+@Transactional
+class GiftQueryRepositoryTest {
+
+    @Autowired
+    private GiftQueryRepository giftQueryRepository;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Test
+    @DisplayName("보낸·받은 선물 목록과 상세를 각 사용자 관점으로 조회한다")
+    void findGifts_projectsListAndDetailForEachDirection() {
+        Fixture fixture = persistFixture();
+
+        List<GiftQueryRow> sentGifts = giftQueryRepository.findSentGifts(fixture.senderId(), null);
+        List<GiftQueryRow> receivedGifts = giftQueryRepository.findReceivedGifts(fixture.recipientId(), null);
+
+        assertThat(sentGifts).singleElement().satisfies(row -> {
+            assertThat(row.giftId()).isEqualTo(fixture.giftId());
+            assertThat(row.orderRecordId()).isEqualTo(fixture.orderRecordId());
+            assertThat(row.giftStatus()).isEqualTo(GiftStatus.COMPLETED);
+            assertThat(row.expiresAt()).isEqualTo(fixture.expiresAt());
+            assertThat(row.counterpartUserId()).isEqualTo(fixture.recipientId());
+            assertThat(row.counterpartName()).isEqualTo("받는사람");
+            assertThat(row.productId()).isEqualTo(fixture.productId());
+            assertThat(row.productNameSnapshot()).isEqualTo("선물 상품");
+            assertThat(row.productPriceSnapshot()).isEqualByComparingTo("10000");
+            assertThat(row.quantity()).isEqualTo(2);
+            assertThat(row.productBrand()).isEqualTo("선물 브랜드");
+        });
+        assertThat(receivedGifts).singleElement().satisfies(row -> {
+            assertThat(row.giftId()).isEqualTo(fixture.giftId());
+            assertThat(row.counterpartUserId()).isEqualTo(fixture.senderId());
+            assertThat(row.counterpartName()).isEqualTo("보낸사람");
+        });
+        assertThat(giftQueryRepository.findSentGiftDetail(fixture.giftId(), fixture.senderId())).isPresent();
+        assertThat(giftQueryRepository.findReceivedGiftDetail(fixture.giftId(), fixture.recipientId())).isPresent();
+        assertThat(giftQueryRepository.findSentGiftDetail(fixture.giftId(), fixture.recipientId())).isEmpty();
+        assertThat(giftQueryRepository.findReceivedGiftDetail(fixture.giftId(), fixture.senderId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("복합 커서 이후의 선물만 조회한다")
+    void findGifts_excludesCursorAndNewerRows() {
+        Fixture fixture = persistFixture();
+
+        GiftCursor cursor = new GiftCursor(fixture.createdAt(), fixture.giftId());
+
+        assertThat(giftQueryRepository.findSentGifts(fixture.senderId(), cursor)).isEmpty();
+        assertThat(giftQueryRepository.findReceivedGifts(fixture.recipientId(), cursor)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("결제 선물의 수락 대기·완료·취소 상태만 목록에 포함한다")
+    void findGifts_includesOnlyPaymentVisibleStatuses() {
+        Fixture fixture = persistFixture();
+
+        assertThat(giftQueryRepository.findSentGifts(fixture.senderId(), null)).hasSize(1);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'WAITING_FOR_ACCEPTANCE', completed_at = NULL WHERE id = ?",
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertThat(giftQueryRepository.findSentGifts(fixture.senderId(), null)).hasSize(1);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'CANCELED', canceled_at = ?, completed_at = NULL WHERE id = ?",
+                LocalDateTime.now(),
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertThat(giftQueryRepository.findSentGifts(fixture.senderId(), null)).hasSize(1);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'PROCESSING', canceled_at = NULL WHERE id = ?",
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertThat(giftQueryRepository.findSentGifts(fixture.senderId(), null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("탈퇴 사용자와 삭제 상품이 포함된 과거 선물 이력을 유지한다")
+    void findGifts_keepsHistoryForDeletedCounterpartAndProduct() {
+        Fixture fixture = persistFixture();
+        LocalDateTime deletedAt = LocalDateTime.now();
+        jdbcTemplate.update("UPDATE users SET deleted_at = ? WHERE id = ?", deletedAt, fixture.recipientId());
+        jdbcTemplate.update("UPDATE products SET deleted_at = ? WHERE id = ?", deletedAt, fixture.productId());
+        entityManager.clear();
+
+        GiftQueryRow row = giftQueryRepository.findSentGiftDetail(fixture.giftId(), fixture.senderId()).orElseThrow();
+
+        assertThat(row.counterpartName()).isEqualTo("받는사람");
+        assertThat(row.counterpartDeletedAt()).isNotNull();
+        assertThat(row.productNameSnapshot()).isEqualTo("선물 상품");
+        assertThat(row.productBrand()).isNull();
+    }
+
+    @Test
+    @DisplayName("목록에 표시되는 선물 건수를 기간 제한 없이 집계한다")
+    void countSentAndReceivedGifts_matchesVisibleListsRegardlessOfDate() {
+        Fixture fixture = persistFixture();
+
+        LocalDateTime oldCompletedAt = LocalDateTime.of(2020, 1, 1, 0, 0);
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET completed_at = ? WHERE id = ?",
+                oldCompletedAt,
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'WAITING_FOR_ACCEPTANCE', completed_at = NULL WHERE id = ?",
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'CANCELED', canceled_at = ?, completed_at = NULL WHERE id = ?",
+                LocalDateTime.now(),
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'PROCESSING', canceled_at = NULL WHERE id = ?",
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'CANCELED', canceled_at = ?, deleted_at = ? WHERE id = ?",
+                LocalDateTime.now(),
+                LocalDateTime.now(),
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
+    }
+
+    private void assertCountMatchesGiftLists(Fixture fixture) {
+        List<GiftQueryRow> sentGifts =
+                giftQueryRepository.findSentGifts(fixture.senderId(), null);
+        List<GiftQueryRow> receivedGifts =
+                giftQueryRepository.findReceivedGifts(fixture.recipientId(), null);
+
+        assertThat(giftQueryRepository.countSentAndReceivedGifts(fixture.senderId()))
+                .isEqualTo(new GiftCountRow((long) sentGifts.size(), 0L));
+        assertThat(giftQueryRepository.countSentAndReceivedGifts(fixture.recipientId()))
+                .isEqualTo(new GiftCountRow(0L, (long) receivedGifts.size()));
+    }
+
+    private Fixture persistFixture() {
+        String uniqueSuffix = UUID.randomUUID().toString();
+        Category rootCategory = new Category("대분류-" + uniqueSuffix, null);
+        Category leafCategory = new Category("소분류-" + uniqueSuffix, rootCategory);
+        User sender = new User(
+                "sender-" + uniqueSuffix + "@example.com",
+                "$2a$10$" + "a".repeat(53),
+                "보낸사람",
+                LocalDate.of(1990, 1, 1)
+        );
+        User recipient = new User(
+                "recipient-" + uniqueSuffix + "@example.com",
+                "$2a$10$" + "b".repeat(53),
+                "받는사람",
+                LocalDate.of(1991, 1, 1)
+        );
+        Product product = new Product(
+                leafCategory,
+                "선물 상품",
+                "선물 브랜드",
+                null,
+                BigDecimal.valueOf(10_000),
+                10
+        );
+
+        entityManager.persist(rootCategory);
+        entityManager.persist(leafCategory);
+        entityManager.persist(sender);
+        entityManager.persist(recipient);
+        entityManager.persist(product);
+        entityManager.flush();
+
+        String orderId = UUID.randomUUID().toString();
+        Order order = new Order(
+                orderId,
+                sender.getId(),
+                recipient.getId(),
+                product.getId(),
+                2,
+                10_000L,
+                20_000L,
+                UUID.randomUUID().toString(),
+                "a".repeat(64)
+        );
+        LocalDateTime expiresAt = LocalDateTime.of(2026, 9, 24, 20, 0);
+
+        entityManager.persist(order);
+        entityManager.flush();
+
+        GiftHistory giftHistory = GiftHistory.waitingForAcceptance(
+                order.getId(),
+                sender,
+                recipient,
+                product,
+                2,
+                BigDecimal.valueOf(10_000),
+                "선물 상품",
+                UUID.fromString(orderId),
+                "a".repeat(64),
+                expiresAt
+        );
+
+        entityManager.persist(giftHistory);
+        entityManager.flush();
+        LocalDateTime completedAt = LocalDateTime.of(2026, 9, 18, 20, 0);
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'COMPLETED', completed_at = ? WHERE id = ?",
+                completedAt,
+                giftHistory.getId()
+        );
+        LocalDateTime createdAt = giftHistory.getCreatedAt();
+        entityManager.clear();
+
+        return new Fixture(
+                giftHistory.getId(),
+                order.getId(),
+                createdAt,
+                completedAt,
+                expiresAt,
+                sender.getId(),
+                recipient.getId(),
+                product.getId()
+        );
+    }
+
+    private record Fixture(
+            Long giftId,
+            Long orderRecordId,
+            LocalDateTime createdAt,
+            LocalDateTime completedAt,
+            LocalDateTime expiresAt,
+            Long senderId,
+            Long recipientId,
+            Long productId
+    ) {
+    }
+}
