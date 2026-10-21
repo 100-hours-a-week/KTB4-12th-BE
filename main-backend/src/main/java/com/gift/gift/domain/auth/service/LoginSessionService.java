@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.user.entity.User;
@@ -18,7 +19,7 @@ public class LoginSessionService {
     private final UserSessionRepository sessionRepository;
     private final RefreshTokenProvider refreshTokenProvider;
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void saveLoginSession(
             User user,
             String existingRefreshToken,
