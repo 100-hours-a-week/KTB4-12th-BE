@@ -92,12 +92,8 @@ public class GiftQueryService {
         );
     }
 
-    public GiftCountRow getYearlyGiftCount(Long userId, LocalDate today) {
-        return giftQueryRepository.countSentAndReceivedGifts(
-                userId,
-                today.withDayOfYear(1).atStartOfDay(),
-                today.plusDays(1).atStartOfDay()
-        );
+    public GiftCountRow getGiftCount(Long userId) {
+        return giftQueryRepository.countSentAndReceivedGifts(userId);
     }
 
     private Map<Long, String> loadImageUrls(List<GiftQueryRow> rows) {

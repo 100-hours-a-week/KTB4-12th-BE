@@ -31,20 +31,12 @@ public class UserProfileService {
     @Transactional(readOnly = true)
     public UserProfileResponse getMyProfile(Long userId) {
         User user = findActiveUser(userId);
-        LocalDate today = LocalDate.now(clock);
-
-        GiftCountRow giftCount =
-                giftQueryService.getYearlyGiftCount(
-                        userId,
-                        today
-                );
+        GiftCountRow giftCount = giftQueryService.getGiftCount(userId);
 
         return UserProfileResponse.from(
                 user,
                 creditQueryService.getBalance(userId).balance(),
-                giftCount,
-                today,
-                clock.getZone()
+                giftCount
         );
     }
 
