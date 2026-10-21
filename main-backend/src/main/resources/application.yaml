@@ -101,8 +101,8 @@ app:
     service-token: ${PROFILING_SERVICE_TOKEN}
     connect-timeout: ${AI_PROFILE_CONNECT_TIMEOUT:3s}
     read-timeout: ${AI_PROFILE_READ_TIMEOUT:10s}
-    quiet-period: 1h
-    maximum-window: 6h
+    quiet-period: 60s
+    maximum-window: 300s
     batch-size: ${AI_PROFILE_BATCH_SIZE:100}
     recovery-batch-size: ${AI_PROFILE_RECOVERY_BATCH_SIZE:50}
     dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
