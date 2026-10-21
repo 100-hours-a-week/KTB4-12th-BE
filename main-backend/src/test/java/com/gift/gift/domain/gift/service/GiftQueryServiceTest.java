@@ -157,15 +157,12 @@ class GiftQueryServiceTest {
     }
 
     @Test
-    @DisplayName("올해 선물 건수는 해당 연도 1월 1일부터 요청일 당일까지의 범위로 조회한다")
-    void getYearlyGiftCount_queriesFromStartOfYearThroughToday() {
-        when(giftQueryRepository.countSentAndReceivedGifts(
-                1L,
-                LocalDateTime.of(2026, 1, 1, 0, 0),
-                LocalDateTime.of(2026, 9, 22, 0, 0)
-        )).thenReturn(new GiftCountRow(3L, 5L));
+    @DisplayName("보낸·받은 선물 건수를 Repository에서 조회한다")
+    void getGiftCount_returnsCountsFromRepository() {
+        when(giftQueryRepository.countSentAndReceivedGifts(1L))
+                .thenReturn(new GiftCountRow(3L, 5L));
 
-        GiftCountRow result = giftQueryService.getYearlyGiftCount(1L, LocalDate.of(2026, 9, 21));
+        GiftCountRow result = giftQueryService.getGiftCount(1L);
 
         assertThat(result.sentCount()).isEqualTo(3L);
         assertThat(result.receivedCount()).isEqualTo(5L);

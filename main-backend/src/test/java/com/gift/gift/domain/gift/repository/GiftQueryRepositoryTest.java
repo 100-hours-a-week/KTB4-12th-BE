@@ -129,34 +129,61 @@ class GiftQueryRepositoryTest {
     }
 
     @Test
-    @DisplayName("기간 내 완료된 선물의 보낸 건수와 받은 건수를 사용자 관점으로 센다")
-    void countSentAndReceivedGifts_countsCompletedGiftsInPeriodForEachDirection() {
+    @DisplayName("목록에 표시되는 선물 건수를 기간 제한 없이 집계한다")
+    void countSentAndReceivedGifts_matchesVisibleListsRegardlessOfDate() {
         Fixture fixture = persistFixture();
-        LocalDateTime from = fixture.completedAt().minusDays(1);
-        LocalDateTime toExclusive = fixture.completedAt().plusDays(1);
 
-        GiftCountRow senderCount = giftQueryRepository.countSentAndReceivedGifts(fixture.senderId(), from, toExclusive);
-        GiftCountRow recipientCount =
-                giftQueryRepository.countSentAndReceivedGifts(fixture.recipientId(), from, toExclusive);
+        LocalDateTime oldCompletedAt = LocalDateTime.of(2020, 1, 1, 0, 0);
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET completed_at = ? WHERE id = ?",
+                oldCompletedAt,
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
 
-        assertThat(senderCount).isEqualTo(new GiftCountRow(1L, 0L));
-        assertThat(recipientCount).isEqualTo(new GiftCountRow(0L, 1L));
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'WAITING_FOR_ACCEPTANCE', completed_at = NULL WHERE id = ?",
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'CANCELED', canceled_at = ?, completed_at = NULL WHERE id = ?",
+                LocalDateTime.now(),
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'PROCESSING', canceled_at = NULL WHERE id = ?",
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
+
+        jdbcTemplate.update(
+                "UPDATE gift_histories SET status = 'CANCELED', canceled_at = ?, deleted_at = ? WHERE id = ?",
+                LocalDateTime.now(),
+                LocalDateTime.now(),
+                fixture.giftId()
+        );
+        entityManager.clear();
+        assertCountMatchesGiftLists(fixture);
     }
 
-    @Test
-    @DisplayName("기간 밖이거나 삭제된 선물은 건수에 포함하지 않는다")
-    void countSentAndReceivedGifts_excludesOutOfPeriodAndDeletedGifts() {
-        Fixture fixture = persistFixture();
-        LocalDateTime toExclusive = fixture.completedAt();
+    private void assertCountMatchesGiftLists(Fixture fixture) {
+        List<GiftQueryRow> sentGifts =
+                giftQueryRepository.findSentGifts(fixture.senderId(), null);
+        List<GiftQueryRow> receivedGifts =
+                giftQueryRepository.findReceivedGifts(fixture.recipientId(), null);
 
-        GiftCountRow outOfPeriod = giftQueryRepository.countSentAndReceivedGifts(
-                fixture.senderId(), fixture.completedAt().minusDays(1), toExclusive);
-        jdbcTemplate.update("UPDATE gift_histories SET deleted_at = ? WHERE id = ?", LocalDateTime.now(), fixture.giftId());
-        GiftCountRow deleted = giftQueryRepository.countSentAndReceivedGifts(
-                fixture.senderId(), fixture.completedAt().minusDays(1), fixture.completedAt().plusDays(1));
-
-        assertThat(outOfPeriod).isEqualTo(new GiftCountRow(0L, 0L));
-        assertThat(deleted).isEqualTo(new GiftCountRow(0L, 0L));
+        assertThat(giftQueryRepository.countSentAndReceivedGifts(fixture.senderId()))
+                .isEqualTo(new GiftCountRow((long) sentGifts.size(), 0L));
+        assertThat(giftQueryRepository.countSentAndReceivedGifts(fixture.recipientId()))
+                .isEqualTo(new GiftCountRow(0L, (long) receivedGifts.size()));
     }
 
     private Fixture persistFixture() {
