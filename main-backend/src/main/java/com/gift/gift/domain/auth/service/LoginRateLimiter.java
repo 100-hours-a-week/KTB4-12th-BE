@@ -17,21 +17,29 @@ import com.gift.gift.domain.auth.support.RateLimitIdentifierHasher;
 public class LoginRateLimiter {
 
     private final LoginRateLimitTransactionService transactionService;
+    private final LoginIpRateLimitRedisService redisService;
     private final RateLimitIdentifierHasher identifierHasher;
 
     public void checkIpAttempt(String clientIp) {
         String ipHash = identifierHasher.hashIp(clientIp);
+        LoginRateLimitDecision decision;
 
         try {
-            LoginRateLimitDecision decision =
-                    transactionService.consumeIpToken(ipHash);
+            decision = redisService.consume(ipHash);
+        } catch (DataAccessException redisException) {
+            log.warn(
+                    "Redis IP 요청 제한을 사용할 수 없어 MySQL fallback을 사용합니다.",
+                    redisException
+            );
 
-            rejectWhenLimited(decision);
-        } catch (LoginRateLimitExceededException exception) {
-            throw exception;
-        } catch (DataAccessException exception) {
-            throw storageUnavailable(exception);
+            try {
+                decision = transactionService.consumeIpToken(ipHash);
+            } catch (DataAccessException databaseException) {
+                throw storageUnavailable(databaseException);
+            }
         }
+
+        rejectWhenLimited(decision);
     }
 
     public void checkEmailAttempt(String email) {
