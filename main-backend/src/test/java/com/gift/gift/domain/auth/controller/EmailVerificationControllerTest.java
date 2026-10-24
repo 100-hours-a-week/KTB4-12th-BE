@@ -18,6 +18,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -53,7 +54,11 @@ class EmailVerificationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message")
                         .value("이메일 인증번호를 전송했습니다."))
-                .andExpect(jsonPath("$.data").value(java.util.Map.of()))
+                .andExpect(content().json("""
+                        {
+                          "data": {}
+                        }
+                        """, false))
                 .andExpect(jsonPath("$.error").doesNotExist());
 
         verify(emailVerificationService)

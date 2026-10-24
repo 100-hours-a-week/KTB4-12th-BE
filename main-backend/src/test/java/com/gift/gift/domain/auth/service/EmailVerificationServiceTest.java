@@ -2,6 +2,7 @@ package com.gift.gift.domain.auth.service;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -13,6 +14,7 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.stubbing.Answer;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -130,7 +132,7 @@ class EmailVerificationServiceTest {
         }).when(redisTemplate).execute(
                 ArgumentMatchers.<RedisScript<Long>>any(),
                 ArgumentMatchers.<String>anyList(),
-                ArgumentMatchers.<Object[]>any()
+                any()
         );
 
         AuthException exception = assertThrows(
@@ -155,7 +157,7 @@ class EmailVerificationServiceTest {
         }).when(redisTemplate).execute(
                 ArgumentMatchers.<RedisScript<Long>>any(),
                 ArgumentMatchers.<String>anyList(),
-                ArgumentMatchers.<Object[]>any()
+                any()
         );
 
         AuthException exception = assertThrows(
@@ -202,7 +204,7 @@ class EmailVerificationServiceTest {
     @DisplayName("Redis에서 인증번호를 확인하면 가입용 토큰을 발급한다")
     void verifyCode_returnsRegistrationTokenWhenRedisVerifiesCode() {
         when(identifierHasher.hashEmail(EMAIL)).thenReturn(EMAIL_HASH);
-        stubVerificationScript("VERIFIED");
+        stubVerificationScript("VERIFIED", 4);
 
         String token = emailVerificationService.verifyCode(EMAIL, CODE);
 
@@ -221,7 +223,7 @@ class EmailVerificationServiceTest {
     @DisplayName("Redis에서 인증번호를 거절하면 INVALID_REQUEST를 반환한다")
     void verifyCode_rejectsCodeWhenRedisDoesNotVerifyIt() {
         when(identifierHasher.hashEmail(EMAIL)).thenReturn(EMAIL_HASH);
-        stubVerificationScript("INVALID");
+        stubVerificationScript("INVALID", 4);
 
         AuthException exception = assertThrows(
                 AuthException.class,
@@ -232,7 +234,10 @@ class EmailVerificationServiceTest {
         verify(redisTemplate).execute(
                 ArgumentMatchers.<RedisScript<String>>any(),
                 ArgumentMatchers.<String>anyList(),
-                ArgumentMatchers.<Object[]>any()
+                any(),
+                any(),
+                any(),
+                any()
         );
     }
 
@@ -240,7 +245,7 @@ class EmailVerificationServiceTest {
     @DisplayName("Redis가 유효하지 않은 가입용 토큰을 반환하면 이메일 인증 오류를 발생시킨다")
     void validateRegistrationToken_throwsErrorWhenRedisReturnsInvalidToken() {
         when(identifierHasher.hashEmail(EMAIL)).thenReturn(EMAIL_HASH);
-        stubVerificationScript("INVALID");
+        stubVerificationScript("INVALID", 1);
 
         AuthException exception = assertThrows(
                 AuthException.class,
@@ -254,7 +259,7 @@ class EmailVerificationServiceTest {
         verify(redisTemplate).execute(
                 ArgumentMatchers.<RedisScript<String>>any(),
                 ArgumentMatchers.<String>anyList(),
-                ArgumentMatchers.<Object[]>any()
+                any()
         );
     }
 
@@ -274,34 +279,57 @@ class EmailVerificationServiceTest {
     }
 
     private void stubIssuanceScripts(Long result) {
-        doAnswer(invocation -> {
+        Answer<Long> answer = invocation -> {
+            Object[] arguments = invocation.getArguments();
             List<String> keys = invocation.getArgument(1);
-            Object[] arguments = invocation.getArgument(2);
             String key = keys.get(0);
             executedKeys.add(key);
 
             if (key.contains(":state:")) {
-                savedCode.set(arguments[0].toString());
+                savedCode.set(arguments[2].toString());
             }
 
             return result;
-        }).when(redisTemplate).execute(
+        };
+
+        doAnswer(answer).when(redisTemplate).execute(
                 ArgumentMatchers.<RedisScript<Long>>any(),
                 ArgumentMatchers.<String>anyList(),
-                ArgumentMatchers.<Object[]>any()
+                any()
+        );
+        doAnswer(answer).when(redisTemplate).execute(
+                ArgumentMatchers.<RedisScript<Long>>any(),
+                ArgumentMatchers.<String>anyList(),
+                any(),
+                any()
         );
     }
 
-    private void stubVerificationScript(String result) {
-        doAnswer(invocation -> {
+    private void stubVerificationScript(String result, int argumentCount) {
+        Answer<String> answer = invocation -> {
+            Object[] arguments = invocation.getArguments();
             List<String> keys = invocation.getArgument(1);
             executedKeys.add(keys.get(0));
-            scriptArguments.set(invocation.getArgument(2));
+            scriptArguments.set(Arrays.copyOfRange(arguments, 2, arguments.length));
             return result;
-        }).when(redisTemplate).execute(
+        };
+
+        if (argumentCount == 1) {
+            doAnswer(answer).when(redisTemplate).execute(
+                    ArgumentMatchers.<RedisScript<String>>any(),
+                    ArgumentMatchers.<String>anyList(),
+                    any()
+            );
+            return;
+        }
+
+        doAnswer(answer).when(redisTemplate).execute(
                 ArgumentMatchers.<RedisScript<String>>any(),
                 ArgumentMatchers.<String>anyList(),
-                ArgumentMatchers.<Object[]>any()
+                any(),
+                any(),
+                any(),
+                any()
         );
     }
 }

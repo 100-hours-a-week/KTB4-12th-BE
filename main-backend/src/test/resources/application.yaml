@@ -6,6 +6,10 @@ spring:
   application:
     name: gift
 
+  mail:
+    host: localhost
+    port: 1025
+
   data:
     elasticsearch:
       repositories:
@@ -64,6 +68,9 @@ logging:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
 
 app:
+  email:
+    from-address: no-reply@example.com
+
   product-search:
     enabled: ${PRODUCT_SEARCH_ENABLED:false}
     index-name: ${PRODUCT_SEARCH_INDEX:gift-products-local-v1}
