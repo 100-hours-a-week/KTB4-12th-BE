@@ -104,6 +104,8 @@ jobs:
         run: |
           NETWORK="seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REDIS_CONTAINER="seonjalal-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MAILPIT_CONTAINER="seonjalal-mailpit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           MAIN_BACKEND_CONTAINER="seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           PAYMENT_SERVER_CONTAINER="seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
@@ -144,12 +146,61 @@ jobs:
           test "$(docker inspect --format '{{.State.Health.Status}}' "$MYSQL_CONTAINER")" = healthy
 
           docker run --detach \
+            --name "$REDIS_CONTAINER" \
+            --network "$NETWORK" \
+            --network-alias redis \
+            --health-cmd="redis-cli ping" \
+            --health-interval=5s \
+            --health-timeout=3s \
+            --health-retries=20 \
+            redis:7-alpine
+
+          for attempt in {1..30}; do
+            STATUS="$(docker inspect --format '{{.State.Health.Status}}' "$REDIS_CONTAINER")"
+            if [ "$STATUS" = healthy ]; then
+              break
+            fi
+            if [ "$STATUS" = unhealthy ]; then
+              docker logs "$REDIS_CONTAINER"
+              exit 1
+            fi
+            echo "Waiting for Redis health check (${attempt}/30)..."
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$REDIS_CONTAINER")" = healthy
+
+          docker run --detach \
+            --name "$MAILPIT_CONTAINER" \
+            --network "$NETWORK" \
+            --network-alias mailpit \
+            --publish 127.0.0.1::8025 \
+            axllent/mailpit:v1.27.4
+
+          MAILPIT_HOST_PORT="$(docker port "$MAILPIT_CONTAINER" 8025/tcp | sed 's/.*://')"
+          for attempt in {1..30}; do
+            if curl --fail --silent \
+              "http://127.0.0.1:${MAILPIT_HOST_PORT}/readyz" >/dev/null; then
+              break
+            fi
+            echo "Waiting for Mailpit readiness (${attempt}/30)..."
+            sleep 2
+          done
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:${MAILPIT_HOST_PORT}/readyz" >/dev/null
+
+          docker run --detach \
             --name "$MAIN_BACKEND_CONTAINER" \
             --network "$NETWORK" \
             --publish 127.0.0.1::8080 \
             --env DB_URL='jdbc:mysql://mysql:3306/gift_smoke?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
             --env DB_USERNAME=gift_smoke \
             --env DB_PASSWORD=gift_smoke_password \
+            --env REDIS_HOST=redis \
+            --env REDIS_PORT=6379 \
+            --env SMTP_HOST=mailpit \
+            --env SMTP_PORT=1025 \
+            --env SMTP_AUTH=false \
+            --env SMTP_STARTTLS_ENABLE=false \
             --env PRODUCT_SEARCH_ENABLED \
             --env PRODUCT_SEARCH_OUTBOX_ENABLED \
             --env PRODUCT_SEARCH_SYNC_ENABLED \
@@ -237,6 +288,8 @@ jobs:
           MAIN_BACKEND_CONTAINER="seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           PAYMENT_SERVER_CONTAINER="seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           MYSQL_CONTAINER="seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REDIS_CONTAINER="seonjalal-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          MAILPIT_CONTAINER="seonjalal-mailpit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           if docker inspect "$MAIN_BACKEND_CONTAINER" > /dev/null 2>&1; then
             echo "Main Backend container logs:"
@@ -253,6 +306,16 @@ jobs:
             docker logs "$MYSQL_CONTAINER" || true
           fi
 
+          if docker inspect "$REDIS_CONTAINER" > /dev/null 2>&1; then
+            echo "Redis container logs:"
+            docker logs "$REDIS_CONTAINER" || true
+          fi
+
+          if docker inspect "$MAILPIT_CONTAINER" > /dev/null 2>&1; then
+            echo "Mailpit container logs:"
+            docker logs "$MAILPIT_CONTAINER" || true
+          fi
+
       - name: Clean up validation resources
         if: always()
         shell: bash
@@ -260,6 +323,8 @@ jobs:
           docker rm --force \
             "seonjalal-main-backend-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             "seonjalal-payment-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "seonjalal-mailpit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "seonjalal-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             "seonjalal-mysql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             2>/dev/null || true
           docker network rm "seonjalal-be-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" 2>/dev/null || true

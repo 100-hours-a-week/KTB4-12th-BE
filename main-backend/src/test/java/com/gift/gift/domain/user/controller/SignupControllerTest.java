@@ -77,6 +77,26 @@ class SignupControllerTest {
     }
 
     @Test
+    @DisplayName("토큰 누락은 Service 호출 전에 400으로 거절한다")
+    void signup_rejectsMissingEmailVerificationToken() throws Exception {
+        mockMvc.perform(post("/auth/signup")
+                        .contentType(APPLICATION_JSON)
+                        .content(body().replace(
+                                "\"emailVerificationToken\": \"registration-token\",\n",
+                                ""
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.error.details[0].field")
+                        .value("emailVerificationToken"))
+                .andExpect(jsonPath("$.error.details[0].reason")
+                        .value("REQUIRED"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
     @DisplayName("선택 약관 미동의 값도 가입 서비스에 전달한다")
     void signup_acceptsOptionalTermNotAgreed() throws Exception {
         User user = new User(
@@ -104,6 +124,10 @@ class SignupControllerTest {
         SignupRequest request = requestCaptor.getValue();
         assertTrue(request.termConsents().getFirst().isAgreed());
         assertFalse(request.termConsents().get(1).isAgreed());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "registration-token",
+                request.emailVerificationToken()
+        );
     }
 
     @Test
@@ -224,6 +248,7 @@ class SignupControllerTest {
                   "name": "김선물",
                   "birth": "2000-01-01",
                   "email": "user@example.com",
+                  "emailVerificationToken": "registration-token",
                   "password": "Password1!",
                   "termConsents": [
                     {"termId": 1, "version": 3, "isAgreed": true}

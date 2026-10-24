@@ -1,6 +1,7 @@
 package com.gift.gift.domain.user.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class SignupTransactionService {
                 request.name(),
                 birth
         );
+        user.markEmailVerified(LocalDateTime.now());
 
         User savedUser = saveUser(user);
 

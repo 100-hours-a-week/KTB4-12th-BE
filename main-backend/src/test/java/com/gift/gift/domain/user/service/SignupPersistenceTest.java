@@ -21,6 +21,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
+import com.gift.gift.domain.auth.service.EmailVerificationService;
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
 import com.gift.gift.domain.user.dto.response.SignupResponse;
@@ -35,16 +36,20 @@ import com.gift.gift.global.exception.ErrorCode;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
 @SpringBootTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 class SignupPersistenceTest {
+
+    private static final String REGISTRATION_TOKEN = "registration-token";
 
     @Autowired
     private SignupService service;
@@ -63,6 +68,9 @@ class SignupPersistenceTest {
 
     @MockitoSpyBean
     private PasswordEncoder passwordEncoder;
+
+    @MockitoSpyBean
+    private EmailVerificationService emailVerificationService;
 
     private String email;
     private List<Long> createdTermIds;
@@ -95,11 +103,14 @@ class SignupPersistenceTest {
         requiredTerms = termRepository.findCurrentTerms().stream()
                 .filter(Term::isRequired)
                 .toList();
+
+        doNothing().when(emailVerificationService)
+                .consumeRegistrationToken(anyString(), anyString());
     }
 
     @AfterEach
     void cleanUp() {
-        reset(consentRepository, passwordEncoder);
+        reset(consentRepository, passwordEncoder, emailVerificationService);
 
         jdbcTemplate.update("""
             DELETE FROM credit_transactions
@@ -147,13 +158,14 @@ class SignupPersistenceTest {
     }
 
     @Test
-    @DisplayName("회원과 필수 약관 동의를 실제 MySQL에 저장한다")
+    @DisplayName("회원과 필수 약관 동의를 실제 MySQL에 저장하고 인증 시각을 기록한다")
     void signup_persistsUserAndConsentsWithBcryptHash() {
         SignupResponse response = service.signup(request());
         User user = userRepository.findById(response.userId()).orElseThrow();
 
         assertEquals(email, user.getEmail());
         assertNotEquals("Password1!", user.getPasswordHash());
+        assertNotNull(user.getEmailVerifiedAt());
 
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(12);
         assertTrue(encoder.matches("Password1!", user.getPasswordHash()));
@@ -235,7 +247,7 @@ class SignupPersistenceTest {
     }
 
     @Test
-    @DisplayName("동시에 같은 이메일로 가입하면 하나만 성공한다")
+    @DisplayName("동시에 같은 이메일로 가입하면 DB UNIQUE 제약으로 하나만 성공한다")
     void signup_allowsOnlyOneConcurrentSignupForSameEmail() throws Exception {
         CyclicBarrier barrier = new CyclicBarrier(2);
 
@@ -321,6 +333,7 @@ class SignupPersistenceTest {
                 "김선물",
                 "2000-01-01",
                 email,
+                REGISTRATION_TOKEN,
                 "Password1!",
                 consents
         );

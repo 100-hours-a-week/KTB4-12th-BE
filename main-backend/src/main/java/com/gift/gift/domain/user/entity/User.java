@@ -52,6 +52,9 @@ public class User extends BaseTimeEntity {
     @Column(name = "email", nullable = false, length = 255, updatable = false)
     private String email;
 
+    @Column(name = "email_verified_at")
+    private LocalDateTime emailVerifiedAt;
+
     @NotBlank
     @Pattern(
             regexp = "^\\$2[aby]\\$(0[4-9]|[12][0-9]|3[01])\\$[./A-Za-z0-9]{53}$"
@@ -96,6 +99,13 @@ public class User extends BaseTimeEntity {
         this.passwordHash = passwordHash;
         this.name = name;
         this.birth = birth;
+    }
+
+    public void markEmailVerified(LocalDateTime verifiedAt) {
+        this.emailVerifiedAt = Objects.requireNonNull(
+                verifiedAt,
+                "이메일 인증 시각은 null일 수 없습니다."
+        );
     }
 
     public boolean isActive() {
