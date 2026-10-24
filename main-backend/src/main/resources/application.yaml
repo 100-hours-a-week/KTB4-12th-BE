@@ -52,15 +52,15 @@ spring:
 
   mail:
     host: ${SMTP_HOST:localhost}
-    port: ${SMTP_PORT:587}
+    port: ${SMTP_PORT:1025}
     username: ${SMTP_USERNAME:}
     password: ${SMTP_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: ${SMTP_AUTH:true}
+          auth: ${SMTP_AUTH:false}
           starttls:
-            enable: ${SMTP_STARTTLS_ENABLE:true}
+            enable: ${SMTP_STARTTLS_ENABLE:false}
           connectiontimeout: ${SMTP_CONNECTION_TIMEOUT_MS:3000}
           timeout: ${SMTP_READ_TIMEOUT_MS:5000}
           writetimeout: ${SMTP_WRITE_TIMEOUT_MS:5000}
