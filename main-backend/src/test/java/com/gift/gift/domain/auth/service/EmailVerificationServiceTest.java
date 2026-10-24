@@ -38,7 +38,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -201,7 +200,7 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    @DisplayName("Redis에서 인증번호를 확인하면 가입용 토큰을 발급한다")
+    @DisplayName("인증번호 검증에 성공하면 가입용 토큰을 발급한다")
     void verifyCode_returnsRegistrationTokenWhenRedisVerifiesCode() {
         when(identifierHasher.hashEmail(EMAIL)).thenReturn(EMAIL_HASH);
         stubVerificationScript("VERIFIED", 4);
@@ -211,8 +210,10 @@ class EmailVerificationServiceTest {
         assertNotNull(token);
         assertTrue(token.matches("^[A-Za-z0-9_-]{43}$"));
         assertNotEquals(CODE, token);
-        assertEquals("gift:auth:email-verification:state:" + EMAIL_HASH,
-                executedKeys.get(0));
+        assertEquals(
+                "gift:auth:email-verification:state:" + EMAIL_HASH,
+                executedKeys.getFirst()
+        );
         assertEquals(CODE, scriptArguments.get()[0]);
         assertTrue(scriptArguments.get()[1].toString()
                 .matches("^[0-9a-f]{64}$"));
@@ -220,7 +221,7 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    @DisplayName("Redis에서 인증번호를 거절하면 INVALID_REQUEST를 반환한다")
+    @DisplayName("Redis가 인증번호를 거절하면 INVALID_REQUEST를 반환한다")
     void verifyCode_rejectsCodeWhenRedisDoesNotVerifyIt() {
         when(identifierHasher.hashEmail(EMAIL)).thenReturn(EMAIL_HASH);
         stubVerificationScript("INVALID", 4);
@@ -242,14 +243,34 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    @DisplayName("Redis가 유효하지 않은 가입용 토큰을 반환하면 이메일 인증 오류를 발생시킨다")
-    void validateRegistrationToken_throwsErrorWhenRedisReturnsInvalidToken() {
+    @DisplayName("가입용 토큰은 일치할 때 Redis에서 소비한다")
+    void consumeRegistrationToken_deletesMatchingToken() {
+        when(identifierHasher.hashEmail(EMAIL)).thenReturn(EMAIL_HASH);
+        stubVerificationScript("CONSUMED", 1);
+
+        emailVerificationService.consumeRegistrationToken(
+                EMAIL,
+                REGISTRATION_TOKEN
+        );
+
+        assertEquals(
+                "gift:auth:email-verification:state:" + EMAIL_HASH,
+                executedKeys.getFirst()
+        );
+        assertTrue(scriptArguments.get()[0].toString()
+                .matches("^[0-9a-f]{64}$"));
+        assertNotEquals(REGISTRATION_TOKEN, scriptArguments.get()[0]);
+    }
+
+    @Test
+    @DisplayName("이미 소비됐거나 이메일에 묶이지 않은 가입용 토큰은 거절한다")
+    void consumeRegistrationToken_rejectsInvalidToken() {
         when(identifierHasher.hashEmail(EMAIL)).thenReturn(EMAIL_HASH);
         stubVerificationScript("INVALID", 1);
 
         AuthException exception = assertThrows(
                 AuthException.class,
-                () -> emailVerificationService.validateRegistrationToken(
+                () -> emailVerificationService.consumeRegistrationToken(
                         EMAIL,
                         REGISTRATION_TOKEN
                 )
@@ -260,6 +281,32 @@ class EmailVerificationServiceTest {
                 ArgumentMatchers.<RedisScript<String>>any(),
                 ArgumentMatchers.<String>anyList(),
                 any()
+        );
+    }
+
+    @Test
+    @DisplayName("가입 토큰 확인 중 Redis 장애는 503 오류로 변환한다")
+    void consumeRegistrationToken_mapsRedisFailureToServiceUnavailable() {
+        when(identifierHasher.hashEmail(EMAIL)).thenReturn(EMAIL_HASH);
+        doAnswer(invocation -> {
+            throw new DataAccessResourceFailureException("Redis unavailable");
+        }).when(redisTemplate).execute(
+                ArgumentMatchers.<RedisScript<String>>any(),
+                ArgumentMatchers.<String>anyList(),
+                any()
+        );
+
+        AuthException exception = assertThrows(
+                AuthException.class,
+                () -> emailVerificationService.consumeRegistrationToken(
+                        EMAIL,
+                        REGISTRATION_TOKEN
+                )
+        );
+
+        assertEquals(
+                ErrorCode.AUTHENTICATION_TEMPORARILY_UNAVAILABLE,
+                exception.getErrorCode()
         );
     }
 
@@ -282,7 +329,7 @@ class EmailVerificationServiceTest {
         Answer<Long> answer = invocation -> {
             Object[] arguments = invocation.getArguments();
             List<String> keys = invocation.getArgument(1);
-            String key = keys.get(0);
+            String key = keys.getFirst();
             executedKeys.add(key);
 
             if (key.contains(":state:")) {
@@ -309,7 +356,7 @@ class EmailVerificationServiceTest {
         Answer<String> answer = invocation -> {
             Object[] arguments = invocation.getArguments();
             List<String> keys = invocation.getArgument(1);
-            executedKeys.add(keys.get(0));
+            executedKeys.add(keys.getFirst());
             scriptArguments.set(Arrays.copyOfRange(arguments, 2, arguments.length));
             return result;
         };

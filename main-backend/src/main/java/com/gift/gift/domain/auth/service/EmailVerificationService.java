@@ -104,7 +104,7 @@ public class EmailVerificationService {
                     return 'VERIFIED'
                     """, String.class);
 
-    private static final DefaultRedisScript<String> VALIDATE_TOKEN_SCRIPT =
+    private static final DefaultRedisScript<String> CONSUME_TOKEN_SCRIPT =
             new DefaultRedisScript<>("""
                     local tokenHash = redis.call(
                       'HGET',
@@ -112,7 +112,8 @@ public class EmailVerificationService {
                       'tokenHash'
                     )
                     if tokenHash and tokenHash == ARGV[1] then
-                      return 'VALID'
+                      redis.call('DEL', KEYS[1])
+                      return 'CONSUMED'
                     end
                     return 'INVALID'
                     """, String.class);
@@ -229,7 +230,7 @@ public class EmailVerificationService {
         }
     }
 
-    public void validateRegistrationToken(
+    public void consumeRegistrationToken(
             String email,
             String registrationToken
     ) {
@@ -244,12 +245,12 @@ public class EmailVerificationService {
 
         try {
             String result = redisTemplate.execute(
-                    VALIDATE_TOKEN_SCRIPT,
+                    CONSUME_TOKEN_SCRIPT,
                     List.of(challengeKey(emailHash)),
                     sha256(registrationToken)
             );
 
-            if (!"VALID".equals(result)) {
+            if (!"CONSUMED".equals(result)) {
                 throw invalidRegistrationToken();
             }
         } catch (DataAccessException exception) {

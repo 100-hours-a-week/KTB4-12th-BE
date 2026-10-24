@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SignupRequestTest {
 
+    private static final String REGISTRATION_TOKEN = "registration-token";
+
     private static LocalValidatorFactoryBean validator;
 
     @BeforeAll
@@ -39,6 +41,44 @@ class SignupRequestTest {
         assertTrue(validator.validate(request).isEmpty());
         assertEquals("user@example.com", request.email());
         assertEquals("SignupRequest[REDACTED]", request.toString());
+    }
+
+    @Test
+    @DisplayName("가입용 이메일 인증 토큰은 필수다")
+    void validate_rejectsBlankEmailVerificationToken() {
+        SignupRequest request = new SignupRequest(
+                "김선물",
+                "2000-01-01",
+                "user@example.com",
+                " ",
+                "Password1!",
+                List.of(new SignupTermConsentRequest(1L, 1, true))
+        );
+
+        assertViolation(
+                request,
+                "emailVerificationToken",
+                "REQUIRED"
+        );
+    }
+
+    @Test
+    @DisplayName("가입용 이메일 인증 토큰 길이 제한을 검증한다")
+    void validate_rejectsEmailVerificationTokenLongerThan128Characters() {
+        SignupRequest request = new SignupRequest(
+                "김선물",
+                "2000-01-01",
+                "user@example.com",
+                "a".repeat(129),
+                "Password1!",
+                List.of(new SignupTermConsentRequest(1L, 1, true))
+        );
+
+        assertViolation(
+                request,
+                "emailVerificationToken",
+                "TOO_LONG"
+        );
     }
 
     @ParameterizedTest
@@ -136,7 +176,11 @@ class SignupRequestTest {
     @DisplayName("중복 약관 ID는 목록 검증 오류로 처리한다")
     void validate_rejectsDuplicateTermIds() {
         SignupRequest request = new SignupRequest(
-                "김선물", "2000-01-01", "user@example.com", "Password1!",
+                "김선물",
+                "2000-01-01",
+                "user@example.com",
+                REGISTRATION_TOKEN,
+                "Password1!",
                 List.of(
                         new SignupTermConsentRequest(1L, 1, true),
                         new SignupTermConsentRequest(1L, 1, true)
@@ -150,7 +194,11 @@ class SignupRequestTest {
     @DisplayName("중첩 약관 버전은 양수여야 한다")
     void validate_rejectsNonPositiveConsentVersion() {
         SignupRequest request = new SignupRequest(
-                "김선물", "2000-01-01", "user@example.com", "Password1!",
+                "김선물",
+                "2000-01-01",
+                "user@example.com",
+                REGISTRATION_TOKEN,
+                "Password1!",
                 List.of(new SignupTermConsentRequest(1L, 0, true))
         );
 
@@ -160,10 +208,17 @@ class SignupRequestTest {
     @Test
     @DisplayName("필수 입력 누락을 거부한다")
     void validate_rejectsMissingRequiredFields() {
-        SignupRequest request = new SignupRequest(null, null, null, null, null);
+        SignupRequest request = new SignupRequest(
+                null, null, null, null, null, null
+        );
 
         for (String field : List.of(
-                "name", "birth", "email", "password", "termConsents"
+                "name",
+                "birth",
+                "email",
+                "emailVerificationToken",
+                "password",
+                "termConsents"
         )) {
             assertViolation(request, field, "REQUIRED");
         }
@@ -173,7 +228,11 @@ class SignupRequestTest {
             String name, String birth, String email, String password
     ) {
         return new SignupRequest(
-                name, birth, email, password,
+                name,
+                birth,
+                email,
+                REGISTRATION_TOKEN,
+                password,
                 List.of(new SignupTermConsentRequest(1L, 1, true))
         );
     }

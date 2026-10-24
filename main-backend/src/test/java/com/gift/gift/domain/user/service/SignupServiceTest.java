@@ -13,6 +13,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.gift.gift.domain.auth.exception.AuthErrorCode;
+import com.gift.gift.domain.auth.exception.AuthException;
+import com.gift.gift.domain.auth.service.EmailVerificationService;
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
 import com.gift.gift.domain.user.dto.response.SignupResponse;
@@ -27,7 +30,9 @@ import com.gift.gift.global.exception.ErrorCode;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +40,7 @@ import static org.mockito.Mockito.when;
 class SignupServiceTest {
 
     private static final String PASSWORD_HASH = "$2a$10$" + "a".repeat(53);
+    private static final String REGISTRATION_TOKEN = "registration-token";
 
     @Mock
     private UserRepository userRepository;
@@ -44,6 +50,9 @@ class SignupServiceTest {
 
     @Mock
     private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private EmailVerificationService emailVerificationService;
 
     @Mock
     private SignupTransactionService transactionService;
@@ -58,11 +67,11 @@ class SignupServiceTest {
                 userRepository,
                 termRepository,
                 passwordEncoder,
+                emailVerificationService,
                 transactionService
         );
 
         requiredTerm = term(1L, "TERMS", 3, true);
-
         optionalTerm = term(2L, "MARKETING", 2, false);
     }
 
@@ -80,7 +89,12 @@ class SignupServiceTest {
 
         assertEquals(ErrorCode.INVALID_TERM_VERSION, exception.getErrorCode());
 
-        verifyNoInteractions(userRepository, passwordEncoder, transactionService);
+        verifyNoInteractions(
+                userRepository,
+                passwordEncoder,
+                emailVerificationService,
+                transactionService
+        );
     }
 
     @Test
@@ -98,7 +112,12 @@ class SignupServiceTest {
 
         assertEquals(ErrorCode.INVALID_TERM_VERSION, exception.getErrorCode());
 
-        verifyNoInteractions(userRepository, passwordEncoder, transactionService);
+        verifyNoInteractions(
+                userRepository,
+                passwordEncoder,
+                emailVerificationService,
+                transactionService
+        );
     }
 
     @Test
@@ -115,7 +134,12 @@ class SignupServiceTest {
 
         assertEquals(ErrorCode.REQUIRED_TERMS_NOT_AGREED, exception.getErrorCode());
 
-        verifyNoInteractions(userRepository, passwordEncoder, transactionService);
+        verifyNoInteractions(
+                userRepository,
+                passwordEncoder,
+                emailVerificationService,
+                transactionService
+        );
     }
 
     @Test
@@ -132,7 +156,12 @@ class SignupServiceTest {
 
         assertEquals(ErrorCode.REQUIRED_TERMS_NOT_AGREED, exception.getErrorCode());
 
-        verifyNoInteractions(userRepository, passwordEncoder, transactionService);
+        verifyNoInteractions(
+                userRepository,
+                passwordEncoder,
+                emailVerificationService,
+                transactionService
+        );
     }
 
     @Test
@@ -148,7 +177,42 @@ class SignupServiceTest {
                 )))
         );
 
-        verifyNoInteractions(userRepository, passwordEncoder, transactionService);
+        verifyNoInteractions(
+                userRepository,
+                passwordEncoder,
+                emailVerificationService,
+                transactionService
+        );
+    }
+
+    @Test
+    @DisplayName("유효하지 않은 가입용 토큰은 해싱과 저장 전에 거부한다")
+    void signup_rejectsInvalidRegistrationToken() {
+        stubCurrentTerms();
+
+        SignupRequest request = request(List.of(
+                consent(1L, 3, true)
+        ));
+
+        doThrow(new AuthException(AuthErrorCode.EMAIL_VERIFICATION_TOKEN_INVALID))
+                .when(emailVerificationService)
+                .consumeRegistrationToken(
+                        request.email(),
+                        request.emailVerificationToken()
+                );
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> service.signup(request)
+        );
+
+        assertEquals(ErrorCode.INVALID_REQUEST, exception.getErrorCode());
+        verify(userRepository).existsByEmail(request.email());
+        verify(emailVerificationService).consumeRegistrationToken(
+                request.email(),
+                request.emailVerificationToken()
+        );
+        verifyNoInteractions(passwordEncoder, transactionService);
     }
 
     @Test
@@ -199,15 +263,15 @@ class SignupServiceTest {
         assertEquals(ErrorCode.EMAIL_ALREADY_IN_USE, exception.getErrorCode());
 
         verifyNoInteractions(passwordEncoder, transactionService);
+        verifyNoInteractions(emailVerificationService);
     }
 
     @Test
-    @DisplayName("검증 후 비밀번호를 해싱하고 저장 트랜잭션을 호출한다")
-    void signup_encodesPasswordBeforePersistence() {
+    @DisplayName("이메일 인증 후 중복 확인, 해싱, 저장 순서로 처리한다")
+    void signup_validatesEmailBeforeEncodingAndPersistence() {
         stubCurrentTerms();
 
         when(userRepository.existsByEmail("user@example.com")).thenReturn(false);
-
         when(passwordEncoder.encode("Password1!")).thenReturn(PASSWORD_HASH);
 
         SignupRequest request = request(List.of(
@@ -227,16 +291,24 @@ class SignupServiceTest {
 
         assertEquals(10L, response.userId());
 
-        InOrder order = inOrder(passwordEncoder, transactionService);
+        InOrder order = inOrder(
+                userRepository,
+                emailVerificationService,
+                passwordEncoder,
+                transactionService
+        );
 
+        order.verify(userRepository).existsByEmail("user@example.com");
+        order.verify(emailVerificationService).consumeRegistrationToken(
+                request.email(),
+                request.emailVerificationToken()
+        );
         order.verify(passwordEncoder).encode("Password1!");
-
-        order.verify(transactionService)
-                .create(
-                        request,
-                        LocalDate.of(2000, 1, 1),
-                        PASSWORD_HASH
-                );
+        order.verify(transactionService).create(
+                request,
+                LocalDate.of(2000, 1, 1),
+                PASSWORD_HASH
+        );
     }
 
     private void stubCurrentTerms() {
@@ -298,6 +370,7 @@ class SignupServiceTest {
                 "김선물",
                 "2000-01-01",
                 "USER@example.com",
+                REGISTRATION_TOKEN,
                 "Password1!",
                 consents
         );

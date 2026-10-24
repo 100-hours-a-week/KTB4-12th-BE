@@ -39,6 +39,13 @@ public record SignupRequest(
         String email,
 
         @NotBlank(message = ValidationErrorReason.Message.REQUIRED)
+        @Size(
+                max = 128,
+                message = ValidationErrorReason.Message.TOO_LONG
+        )
+        String emailVerificationToken,
+
+        @NotBlank(message = ValidationErrorReason.Message.REQUIRED)
         @Size(min = 8, message = ValidationErrorReason.Message.TOO_SHORT)
         @Size(max = 64, message = ValidationErrorReason.Message.TOO_LONG)
         @Pattern(
