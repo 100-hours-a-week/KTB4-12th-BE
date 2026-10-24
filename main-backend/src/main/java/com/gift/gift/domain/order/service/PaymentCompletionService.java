@@ -24,6 +24,7 @@ import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.event.PaymentCompletedEvent;
+import com.gift.gift.domain.order.event.PaymentReceiptEmailEvent;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
@@ -165,6 +166,20 @@ public class PaymentCompletionService {
                         savedGift.getProductNameSnapshot()
                 )
         );
+
+        if (sender.getEmailVerifiedAt() != null) {
+            eventPublisher.publishEvent(
+                    new PaymentReceiptEmailEvent(
+                            sender.getEmail(),
+                            completedOrder.getOrderId(),
+                            savedGift.getProductNameSnapshot(),
+                            order.getQuantity(),
+                            order.getAmount(),
+                            account.getBalance(),
+                            completedAt
+                    )
+            );
+        }
 
         return toCompletion(
                 completedOrder,
