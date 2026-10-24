@@ -44,6 +44,26 @@ spring:
     elasticsearch:
       repositories:
         enabled: false
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS_ENABLE:true}
+          connectiontimeout: ${SMTP_CONNECTION_TIMEOUT_MS:3000}
+          timeout: ${SMTP_READ_TIMEOUT_MS:5000}
+          writetimeout: ${SMTP_WRITE_TIMEOUT_MS:5000}
 
 storage:
   s3:
@@ -53,6 +73,8 @@ storage:
 app:
   scheduling:
     enabled: ${SCHEDULING_ENABLED:true}
+  email:
+    from-address: ${SMTP_FROM_ADDRESS:no-reply@seonjalal.com}
 
   security:
     jwt:

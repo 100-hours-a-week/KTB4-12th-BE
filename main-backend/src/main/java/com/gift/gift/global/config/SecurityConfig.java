@@ -71,6 +71,8 @@ public class SecurityConfig {
                 .permitAll()
                 .requestMatchers(
                         HttpMethod.POST,
+                        "/auth/email-verification-codes",
+                        "/auth/email-verifications",
                         "/auth/email-availability",
                         "/auth/signup",
                         "/auth/login",
