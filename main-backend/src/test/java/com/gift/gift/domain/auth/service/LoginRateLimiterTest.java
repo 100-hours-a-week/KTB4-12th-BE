@@ -46,6 +46,9 @@ class LoginRateLimiterTest {
     private LoginIpRateLimitRedisService redisService;
 
     @Mock
+    private LoginEmailFailureLimitRedisService emailRedisService;
+
+    @Mock
     private RateLimitIdentifierHasher identifierHasher;
 
     private LoginRateLimiter loginRateLimiter;
@@ -55,19 +58,20 @@ class LoginRateLimiterTest {
         loginRateLimiter = new LoginRateLimiter(
                 transactionService,
                 redisService,
+                emailRedisService,
                 identifierHasher
         );
     }
 
     @Test
-    @DisplayName("Redis와 이메일 제한을 통과하면 로그인 처리를 계속한다")
+    @DisplayName("IP와 이메일 Redis 제한을 통과하면 로그인을 계속한다")
     void checkAttempts_allowWhenBothLimitsPermit() {
         stubIdentifiers();
 
         when(redisService.consume(IP_HASH))
                 .thenReturn(LoginRateLimitDecision.permit());
 
-        when(transactionService.inspectEmail(EMAIL_HASH))
+        when(emailRedisService.inspect(EMAIL_HASH))
                 .thenReturn(LoginRateLimitDecision.permit());
 
         assertDoesNotThrow(
@@ -79,6 +83,8 @@ class LoginRateLimiterTest {
 
         verify(transactionService, never())
                 .consumeIpToken(IP_HASH);
+        verify(transactionService, never())
+                .inspectEmail(EMAIL_HASH);
     }
 
     @Test
@@ -100,12 +106,13 @@ class LoginRateLimiterTest {
                 ErrorCode.TOO_MANY_REQUESTS,
                 exception.getErrorCode()
         );
+
         verify(transactionService, never())
                 .consumeIpToken(IP_HASH);
     }
 
     @Test
-    @DisplayName("Redis 오류 시 MySQL Token Bucket으로 제한을 이어간다")
+    @DisplayName("IP Redis 장애 시 MySQL Token Bucket으로 폴백한다")
     void checkIpAttempt_usesDatabaseWhenRedisIsUnavailable() {
         givenIpHash();
 
@@ -127,7 +134,7 @@ class LoginRateLimiterTest {
     }
 
     @Test
-    @DisplayName("Redis 장애 중 MySQL Token Bucket이 제한하면 429를 반환한다")
+    @DisplayName("IP MySQL fallback이 제한하면 429를 반환한다")
     void checkIpAttempt_rejectsWhenDatabaseFallbackIsLimited() {
         givenIpHash();
 
@@ -155,7 +162,7 @@ class LoginRateLimiterTest {
     }
 
     @Test
-    @DisplayName("Redis가 복구되면 다음 요청부터 Redis를 즉시 사용한다")
+    @DisplayName("Redis가 복구되면 다음 IP 요청부터 Redis를 사용한다")
     void checkIpAttempt_returnsToRedisAfterRecovery() {
         givenIpHash();
 
@@ -178,10 +185,57 @@ class LoginRateLimiterTest {
     }
 
     @Test
-    @DisplayName("이메일이 차단 중이면 기존 이메일 재시도 시간으로 요청을 제한한다")
-    void checkEmailAttempt_rejectsWhenEmailLimitRejects() {
-        when(identifierHasher.hashEmail(EMAIL))
-                .thenReturn(EMAIL_HASH);
+    @DisplayName("Redis가 이메일을 차단하면 MySQL 조회 없이 요청을 제한한다")
+    void checkEmailAttempt_rejectsFromRedisWithoutDatabaseFallback() {
+        givenEmailHash();
+
+        when(emailRedisService.inspect(EMAIL_HASH))
+                .thenReturn(LoginRateLimitDecision.reject(30));
+
+        LoginRateLimitExceededException exception =
+                assertThrows(
+                        LoginRateLimitExceededException.class,
+                        () -> loginRateLimiter.checkEmailAttempt(EMAIL)
+                );
+
+        assertEquals(30, exception.getRetryAfterSeconds());
+        verify(transactionService, never())
+                .inspectEmail(EMAIL_HASH);
+    }
+
+    @Test
+    @DisplayName("이메일 제한 Redis 장애 시 MySQL 검사로 폴백한다")
+    void checkEmailAttempt_usesDatabaseWhenRedisIsUnavailable() {
+        givenEmailHash();
+
+        when(emailRedisService.inspect(EMAIL_HASH))
+                .thenThrow(
+                        new DataAccessResourceFailureException(
+                                "Redis unavailable"
+                        )
+                );
+
+        when(transactionService.inspectEmail(EMAIL_HASH))
+                .thenReturn(LoginRateLimitDecision.permit());
+
+        assertDoesNotThrow(
+                () -> loginRateLimiter.checkEmailAttempt(EMAIL)
+        );
+
+        verify(transactionService).inspectEmail(EMAIL_HASH);
+    }
+
+    @Test
+    @DisplayName("이메일 MySQL fallback이 차단 중이면 429를 반환한다")
+    void checkEmailAttempt_rejectsWhenDatabaseFallbackIsLimited() {
+        givenEmailHash();
+
+        when(emailRedisService.inspect(EMAIL_HASH))
+                .thenThrow(
+                        new DataAccessResourceFailureException(
+                                "Redis unavailable"
+                        )
+                );
 
         when(transactionService.inspectEmail(EMAIL_HASH))
                 .thenReturn(LoginRateLimitDecision.reject(30));
@@ -193,11 +247,43 @@ class LoginRateLimiterTest {
                 );
 
         assertEquals(30, exception.getRetryAfterSeconds());
-        verify(redisService, never()).consume(IP_HASH);
     }
 
     @Test
-    @DisplayName("IP 제한이 거부되면 이후 이메일 제한 검사는 실행하지 않는다")
+    @DisplayName("이메일 제한 검사에서 Redis와 MySQL이 모두 실패하면 503을 반환한다")
+    void checkEmailAttempt_returnsServiceUnavailableWhenBothStoresFail() {
+        givenEmailHash();
+
+        when(emailRedisService.inspect(EMAIL_HASH))
+                .thenThrow(
+                        new DataAccessResourceFailureException(
+                                "Redis unavailable"
+                        )
+                );
+
+        when(transactionService.inspectEmail(EMAIL_HASH))
+                .thenThrow(
+                        new DataAccessResourceFailureException(
+                                "MySQL unavailable"
+                        )
+                );
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> loginRateLimiter.checkEmailAttempt(EMAIL)
+        );
+
+        assertEquals(
+                ErrorCode.AUTHENTICATION_TEMPORARILY_UNAVAILABLE,
+                exception.getErrorCode()
+        );
+
+        verify(emailRedisService).inspect(EMAIL_HASH);
+        verify(transactionService).inspectEmail(EMAIL_HASH);
+    }
+
+    @Test
+    @DisplayName("IP 제한이 거부되면 이메일 제한 검사는 실행하지 않는다")
     void separatedChecks_stopBeforeEmailInspectionWhenIpRejects() {
         givenIpHash();
 
@@ -214,17 +300,18 @@ class LoginRateLimiterTest {
                 );
 
         assertEquals(6, exception.getRetryAfterSeconds());
+        verify(emailRedisService, never())
+                .inspect(EMAIL_HASH);
         verify(transactionService, never())
                 .inspectEmail(EMAIL_HASH);
     }
 
     @Test
-    @DisplayName("이메일 실패 기록 결과가 제한이면 요청 제한 예외를 발생시킨다")
+    @DisplayName("Redis 기록 결과가 제한이면 제한 예외를 발생시킨다")
     void recordFailure_rejectsWhenEmailIsAlreadyBlocked() {
-        when(identifierHasher.hashEmail(EMAIL))
-                .thenReturn(EMAIL_HASH);
+        givenEmailHash();
 
-        when(transactionService.recordEmailFailure(EMAIL_HASH))
+        when(emailRedisService.recordFailure(EMAIL_HASH))
                 .thenReturn(LoginRateLimitDecision.reject(29));
 
         LoginRateLimitExceededException exception =
@@ -234,13 +321,55 @@ class LoginRateLimiterTest {
                 );
 
         assertEquals(29, exception.getRetryAfterSeconds());
+        verify(transactionService, never())
+                .recordEmailFailure(EMAIL_HASH);
     }
 
     @Test
-    @DisplayName("로그인 성공 시 정규화 이메일의 실패 상태를 초기화한다")
-    void resetAfterSuccess_deletesEmailFailureState() {
-        when(identifierHasher.hashEmail(EMAIL))
-                .thenReturn(EMAIL_HASH);
+    @DisplayName("실패 기록 중 Redis 장애가 발생하면 MySQL에 기록한다")
+    void recordFailure_usesDatabaseWhenRedisIsUnavailable() {
+        givenEmailHash();
+
+        when(emailRedisService.recordFailure(EMAIL_HASH))
+                .thenThrow(
+                        new DataAccessResourceFailureException(
+                                "Redis unavailable"
+                        )
+                );
+
+        when(transactionService.recordEmailFailure(EMAIL_HASH))
+                .thenReturn(LoginRateLimitDecision.permit());
+
+        assertDoesNotThrow(
+                () -> loginRateLimiter.recordFailure(EMAIL)
+        );
+
+        verify(transactionService).recordEmailFailure(EMAIL_HASH);
+    }
+
+    @Test
+    @DisplayName("로그인 성공 시 Redis 이메일 실패 상태를 삭제한다")
+    void resetAfterSuccess_deletesRedisEmailFailureState() {
+        givenEmailHash();
+
+        loginRateLimiter.resetAfterSuccess(EMAIL);
+
+        verify(emailRedisService).reset(EMAIL_HASH);
+        verify(transactionService, never())
+                .resetEmailFailure(EMAIL_HASH);
+    }
+
+    @Test
+    @DisplayName("성공 초기화 중 Redis 장애가 발생하면 MySQL 상태를 삭제한다")
+    void resetAfterSuccess_usesDatabaseWhenRedisIsUnavailable() {
+        givenEmailHash();
+
+        doThrow(
+                new DataAccessResourceFailureException(
+                        "Redis unavailable"
+                )
+        ).when(emailRedisService)
+                .reset(EMAIL_HASH);
 
         loginRateLimiter.resetAfterSuccess(EMAIL);
 
@@ -249,7 +378,37 @@ class LoginRateLimiterTest {
     }
 
     @Test
-    @DisplayName("Redis와 MySQL이 모두 실패하면 인증 서비스 일시 불가 오류를 반환한다")
+    @DisplayName("이메일 초기화에서 Redis와 MySQL이 모두 실패하면 503을 반환한다")
+    void resetAfterSuccess_returnsServiceUnavailableWhenBothStoresFail() {
+        givenEmailHash();
+
+        doThrow(
+                new DataAccessResourceFailureException(
+                        "Redis unavailable"
+                )
+        ).when(emailRedisService)
+                .reset(EMAIL_HASH);
+
+        doThrow(
+                new DataAccessResourceFailureException(
+                        "MySQL unavailable"
+                )
+        ).when(transactionService)
+                .resetEmailFailure(EMAIL_HASH);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> loginRateLimiter.resetAfterSuccess(EMAIL)
+        );
+
+        assertEquals(
+                ErrorCode.AUTHENTICATION_TEMPORARILY_UNAVAILABLE,
+                exception.getErrorCode()
+        );
+    }
+
+    @Test
+    @DisplayName("IP 제한 검사에서 Redis와 MySQL이 모두 실패하면 503을 반환한다")
     void checkIpAttempt_returnsServiceUnavailableWhenBothStoresFail() {
         givenIpHash();
 
@@ -276,53 +435,30 @@ class LoginRateLimiterTest {
                 ErrorCode.AUTHENTICATION_TEMPORARILY_UNAVAILABLE,
                 exception.getErrorCode()
         );
+
         verify(redisService).consume(IP_HASH);
         verify(transactionService).consumeIpToken(IP_HASH);
     }
 
     @Test
-    @DisplayName("이메일 실패 상태 초기화 중 저장소 장애는 503으로 변환한다")
-    void resetAfterSuccess_convertsDataAccessFailureToServiceUnavailable() {
-        when(identifierHasher.hashEmail(EMAIL))
-                .thenReturn(EMAIL_HASH);
-
-        doThrow(
-                new DataAccessResourceFailureException(
-                        "database unavailable"
-                )
-        ).when(transactionService)
-                .resetEmailFailure(EMAIL_HASH);
-
-        BusinessException exception = assertThrows(
-                BusinessException.class,
-                () -> loginRateLimiter.resetAfterSuccess(EMAIL)
-        );
-
-        assertEquals(
-                ErrorCode.AUTHENTICATION_TEMPORARILY_UNAVAILABLE,
-                exception.getErrorCode()
-        );
-    }
-
-    @Test
-    @DisplayName("예상하지 못한 Redis 프로그래밍 오류는 MySQL 장애 fallback으로 바꾸지 않는다")
-    void checkIpAttempt_doesNotFallbackForProgrammingError() {
-        givenIpHash();
+    @DisplayName("예상하지 못한 Redis 프로그래밍 오류는 MySQL fallback으로 바꾸지 않는다")
+    void checkEmailAttempt_doesNotFallbackForProgrammingError() {
+        givenEmailHash();
 
         IllegalStateException failure =
                 new IllegalStateException("unexpected state");
 
-        when(redisService.consume(IP_HASH))
+        when(emailRedisService.inspect(EMAIL_HASH))
                 .thenThrow(failure);
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> loginRateLimiter.checkIpAttempt(CLIENT_IP)
+                () -> loginRateLimiter.checkEmailAttempt(EMAIL)
         );
 
         assertSame(failure, thrown);
         verify(transactionService, never())
-                .consumeIpToken(IP_HASH);
+                .inspectEmail(EMAIL_HASH);
     }
 
     private void givenIpHash() {
@@ -330,10 +466,13 @@ class LoginRateLimiterTest {
                 .thenReturn(IP_HASH);
     }
 
-    private void stubIdentifiers() {
-        givenIpHash();
-
+    private void givenEmailHash() {
         when(identifierHasher.hashEmail(EMAIL))
                 .thenReturn(EMAIL_HASH);
+    }
+
+    private void stubIdentifiers() {
+        givenIpHash();
+        givenEmailHash();
     }
 }
