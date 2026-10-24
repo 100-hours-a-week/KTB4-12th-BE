@@ -50,6 +50,8 @@ storage:
 
 management:
   health:
+    mail:
+      enabled: false
     elasticsearch:
       enabled: ${app.product-search.enabled:false}
   endpoints:
