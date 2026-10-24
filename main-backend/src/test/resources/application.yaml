@@ -52,6 +52,8 @@ management:
   health:
     mail:
       enabled: false
+    redis:
+      enabled: false
     elasticsearch:
       enabled: ${app.product-search.enabled:false}
   endpoints:
