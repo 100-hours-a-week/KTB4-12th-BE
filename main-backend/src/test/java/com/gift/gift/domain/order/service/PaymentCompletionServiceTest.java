@@ -14,6 +14,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.gift.gift.domain.credit.entity.CreditAccount;
 import com.gift.gift.domain.credit.entity.CreditTransaction;
 import com.gift.gift.domain.credit.repository.CreditAccountRepository;
@@ -33,13 +35,12 @@ import com.gift.gift.domain.product.service.ProductStockService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserQueryService;
 
-import org.springframework.context.ApplicationEventPublisher;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -135,20 +136,16 @@ class PaymentCompletionServiceTest {
 
         when(completedOrder.getId()).thenReturn(ORDER_RECORD_ID);
         when(completedOrder.getOrderId()).thenReturn(ORDER_ID);
-        when(completedOrder.getPayerId()).thenReturn(PAYER_ID);
-        when(completedOrder.getRecipientId()).thenReturn(RECIPIENT_ID);
         when(completedOrder.getPaymentKey()).thenReturn("payment-key");
-        when(completedOrder.getApprovedTransactionKey()).thenReturn("transaction-key");
+        when(completedOrder.getApprovedTransactionKey())
+                .thenReturn("transaction-key");
         when(completedOrder.getStatus()).thenReturn(OrderStatus.COMPLETED);
         when(completedOrder.getAmount()).thenReturn(CREDIT_AMOUNT);
         when(completedOrder.getApprovedAt()).thenReturn(COMPLETED_AT);
 
         when(savedGift.getId()).thenReturn(GIFT_ID);
-        when(savedGift.getProductNameSnapshot()).thenReturn("테스트 선물");
         when(savedGift.getStatus()).thenReturn(GiftStatus.WAITING_FOR_ACCEPTANCE);
         when(savedGift.getExpiresAt()).thenReturn(COMPLETED_AT.plusDays(7));
-
-        when(account.getBalance()).thenReturn(BALANCE_AFTER);
     }
 
     @Test
@@ -203,7 +200,9 @@ class PaymentCompletionServiceTest {
     @Test
     @DisplayName("이미 완료된 주문의 재요청은 영수증 이벤트를 다시 발행하지 않는다")
     void complete_doesNotRepublishReceiptForCompletedOrder() {
-        givenCompletedOrderRestore();
+        when(orderRepository.findById(ORDER_RECORD_ID))
+                .thenReturn(Optional.of(completedOrder));
+        givenRestoreData();
 
         paymentCompletionService.complete(ORDER_RECORD_ID);
 
@@ -214,7 +213,20 @@ class PaymentCompletionServiceTest {
     @Test
     @DisplayName("다른 인스턴스가 먼저 주문 완료에 성공한 경우 영수증 이벤트를 발행하지 않는다")
     void complete_doesNotPublishReceiptWhenConcurrentCompletionAlreadyWon() {
-        givenConcurrentCompletionAlreadyWon();
+        when(orderRepository.findById(ORDER_RECORD_ID))
+                .thenReturn(Optional.of(pendingOrder), Optional.of(completedOrder));
+        when(pendingOrder.getStatus()).thenReturn(OrderStatus.PENDING);
+        when(pendingOrder.getApprovalResult())
+                .thenReturn(PaymentApprovalResult.APPROVED);
+        when(orderRepository.complete(
+                eq(ORDER_RECORD_ID),
+                eq(OrderStatus.PENDING),
+                eq(OrderStatus.COMPLETED),
+                eq(PaymentApprovalResult.APPROVED),
+                eq(OrderFailureCode.AUTO_CANCELLATION_PROCESSING),
+                any(LocalDateTime.class)
+        )).thenReturn(0);
+        givenRestoreData();
 
         paymentCompletionService.complete(ORDER_RECORD_ID);
 
@@ -259,13 +271,18 @@ class PaymentCompletionServiceTest {
         when(userQueryService.getReference(PAYER_ID)).thenReturn(sender);
         when(userQueryService.getReference(RECIPIENT_ID)).thenReturn(recipient);
         when(product.getName()).thenReturn("테스트 선물");
-        when(giftHistoryRepository.saveAndFlush(any(GiftHistory.class)))
-                .thenReturn(savedGift);
+
+        when(completedOrder.getPayerId()).thenReturn(PAYER_ID);
+        when(completedOrder.getRecipientId()).thenReturn(RECIPIENT_ID);
+        when(savedGift.getProductNameSnapshot()).thenReturn("테스트 선물");
+        when(account.getBalance()).thenReturn(BALANCE_AFTER);
+
+        doReturn(savedGift)
+                .when(giftHistoryRepository)
+                .saveAndFlush(any(GiftHistory.class));
     }
 
-    private void givenCompletedOrderRestore() {
-        when(orderRepository.findById(ORDER_RECORD_ID))
-                .thenReturn(Optional.of(completedOrder));
+    private void givenRestoreData() {
         when(giftHistoryRepository.findByOrderRecordId(ORDER_RECORD_ID))
                 .thenReturn(Optional.of(savedGift));
         when(creditTransactionRepository.findByDeduplicationKey(
@@ -273,23 +290,5 @@ class PaymentCompletionServiceTest {
         )).thenReturn(Optional.of(savedCreditTransaction));
         when(savedCreditTransaction.getBalanceAfter())
                 .thenReturn(BALANCE_AFTER);
-    }
-
-    private void givenConcurrentCompletionAlreadyWon() {
-        when(orderRepository.findById(ORDER_RECORD_ID))
-                .thenReturn(Optional.of(pendingOrder), Optional.of(completedOrder));
-        when(pendingOrder.getStatus()).thenReturn(OrderStatus.PENDING);
-        when(pendingOrder.getApprovalResult())
-                .thenReturn(PaymentApprovalResult.APPROVED);
-        when(orderRepository.complete(
-                eq(ORDER_RECORD_ID),
-                eq(OrderStatus.PENDING),
-                eq(OrderStatus.COMPLETED),
-                eq(PaymentApprovalResult.APPROVED),
-                eq(OrderFailureCode.AUTO_CANCELLATION_PROCESSING),
-                any(LocalDateTime.class)
-        )).thenReturn(0);
-
-        givenCompletedOrderRestore();
     }
 }
