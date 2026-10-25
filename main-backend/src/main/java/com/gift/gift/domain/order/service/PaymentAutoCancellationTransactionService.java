@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.coupon.service.OrderCouponService;
 import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
@@ -25,6 +26,7 @@ public class PaymentAutoCancellationTransactionService {
 
     private final OrderRepository orderRepository;
     private final PaymentCancellationRepository cancellationRepository;
+    private final OrderCouponService orderCouponService;
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -34,6 +36,7 @@ public class PaymentAutoCancellationTransactionService {
                 .orElseThrow(() -> new IllegalStateException(
                         "자동 보상 취소 원장을 찾을 수 없습니다."
                 ));
+
         Order order = orderRepository
                 .findById(cancellation.getOrderRecordId())
                 .orElseThrow(() -> new IllegalStateException(
@@ -42,6 +45,7 @@ public class PaymentAutoCancellationTransactionService {
 
         if (cancellation.getStatus() == PaymentCancellationStatus.COMPLETED
                 && order.getStatus() == OrderStatus.CANCELED) {
+            orderCouponService.restoreAfterFailure(order.getId());
             return;
         }
 
@@ -55,6 +59,7 @@ public class PaymentAutoCancellationTransactionService {
                 OrderFailureCode.LOCAL_PROCESSING_FAILED,
                 approval.canceledAt()
         );
+
         int cancellationCompleted = cancellationRepository.complete(
                 cancellation.getId(),
                 PaymentCancellationStatus.PENDING,
@@ -69,6 +74,8 @@ public class PaymentAutoCancellationTransactionService {
                     "자동 보상 취소 상태를 완료로 변경할 수 없습니다."
             );
         }
+
+        orderCouponService.restoreAfterFailure(order.getId());
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

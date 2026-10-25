@@ -239,6 +239,10 @@ public enum ErrorCode {
     RECIPIENT_ID_MISMATCH(
             HttpStatus.BAD_REQUEST,
             "요청 경로와 본문의 수신자 ID가 일치하지 않습니다."
+    ),
+    COUPON_NOT_AVAILABLE(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+        "선택한 쿠폰의 사용 가능 수량이 부족합니다."
     );
 
     private final HttpStatus status;

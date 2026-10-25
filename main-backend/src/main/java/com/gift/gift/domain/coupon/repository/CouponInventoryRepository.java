@@ -2,6 +2,7 @@ package com.gift.gift.domain.coupon.repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -41,5 +42,36 @@ public interface CouponInventoryRepository
             """)
     List<CouponResponse> findAvailableCoupons(
             @Param("userId") Long userId
+    );
+
+    Optional<CouponInventory> findByUserIdAndMultiplier(
+            Long userId,
+            Integer multiplier
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+        update CouponInventory inventory
+        set inventory.quantity = inventory.quantity - 1,
+            inventory.updatedAt = :updatedAt
+        where inventory.id = :inventoryId
+          and inventory.quantity > 0
+        """)
+    int decreaseQuantity(
+            @Param("inventoryId") Long inventoryId,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update CouponInventory inventory
+            set inventory.quantity = inventory.quantity + 1,
+                inventory.updatedAt = :updatedAt
+            where inventory.id = :inventoryId
+              and inventory.quantity <
+            """ + Integer.MAX_VALUE)
+    int restoreQuantity(
+            @Param("inventoryId") Long inventoryId,
+            @Param("updatedAt") LocalDateTime updatedAt
     );
 }
