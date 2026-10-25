@@ -198,8 +198,7 @@ class PaymentCancellationCompensationServiceTest {
     @Test
     @DisplayName("다른 요청이 선물을 먼저 취소한 경우 영수증 이벤트를 발행하지 않는다")
     void compensate_doesNotPublishReceiptWhenGiftCancellationLosesRace() {
-        PaymentCancellationApproval approval =
-                givenGiftCancellationRaceLost();
+        PaymentCancellationApproval approval = givenGiftCancellationRaceLost();
 
         assertThatThrownBy(() -> service.compensate(approval))
                 .isInstanceOf(OrderException.class);
@@ -239,8 +238,6 @@ class PaymentCancellationCompensationServiceTest {
         when(completedOrder.getPayerId()).thenReturn(PAYER_ID);
         when(completedOrder.getProductId()).thenReturn(PRODUCT_ID);
         when(completedOrder.getQuantity()).thenReturn(QUANTITY);
-        when(completedOrder.getOrderId()).thenReturn(ORDER_ID);
-        when(completedOrder.getPaymentKey()).thenReturn(PAYMENT_KEY);
 
         when(canceledOrder.getId()).thenReturn(ORDER_RECORD_ID);
         when(canceledOrder.getStatus()).thenReturn(OrderStatus.CANCELED);
@@ -253,11 +250,13 @@ class PaymentCancellationCompensationServiceTest {
         when(gift.getStatus())
                 .thenReturn(GiftStatus.WAITING_FOR_ACCEPTANCE, GiftStatus.CANCELED);
         when(gift.getProductNameSnapshot()).thenReturn("테스트 선물");
-        when(gift.getQuantity()).thenReturn(QUANTITY);
         when(gift.getSender()).thenReturn(sender);
         when(sender.getEmailVerifiedAt())
                 .thenReturn(emailVerified ? EMAIL_VERIFIED_AT : null);
+
         if (emailVerified) {
+            when(completedOrder.getOrderId()).thenReturn(ORDER_ID);
+            when(gift.getQuantity()).thenReturn(QUANTITY);
             when(sender.getEmail()).thenReturn("payer@example.com");
         }
 
@@ -344,6 +343,7 @@ class PaymentCancellationCompensationServiceTest {
 
         when(orderRepository.findById(ORDER_RECORD_ID))
                 .thenReturn(Optional.of(completedOrder));
+        when(completedOrder.getId()).thenReturn(ORDER_RECORD_ID);
         when(completedOrder.getStatus()).thenReturn(OrderStatus.COMPLETED);
         when(completedOrder.getAmount()).thenReturn(CREDIT_AMOUNT);
 
