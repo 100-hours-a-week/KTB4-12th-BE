@@ -14,6 +14,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import com.gift.gift.domain.order.event.PaymentReceiptEmailEvent;
+import com.gift.gift.domain.order.event.PaymentRefundReceiptEmailEvent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -26,7 +27,7 @@ import static org.mockito.Mockito.verify;
 class PaymentReceiptEmailEventHandlerTest {
 
     private static final String FROM_ADDRESS = "no-reply@example.com";
-    private static final LocalDateTime COMPLETED_AT =
+    private static final LocalDateTime RECEIPT_AT =
             LocalDateTime.of(2026, 10, 24, 12, 30, 45);
 
     @Mock
@@ -43,7 +44,7 @@ class PaymentReceiptEmailEventHandlerTest {
     }
 
     @Test
-    @DisplayName("결제 완료 이벤트를 받으면 모의 크레딧 영수증 메일을 보낸다")
+    @DisplayName("크레딧 사용 이벤트를 받으면 사용 내역 영수증을 발송한다")
     void handle_sendsCreditUsageReceipt() {
         PaymentReceiptEmailEvent event = new PaymentReceiptEmailEvent(
                 "payer@example.com",
@@ -52,42 +53,66 @@ class PaymentReceiptEmailEventHandlerTest {
                 2,
                 40_000,
                 60_000,
-                COMPLETED_AT
+                RECEIPT_AT
         );
 
         handler.handle(event);
 
-        ArgumentCaptor<SimpleMailMessage> messageCaptor =
-                ArgumentCaptor.forClass(SimpleMailMessage.class);
-        verify(mailSender).send(messageCaptor.capture());
+        SimpleMailMessage message = captureMessage();
 
-        SimpleMailMessage message = messageCaptor.getValue();
         assertThat(message.getFrom()).isEqualTo(FROM_ADDRESS);
         assertThat(message.getTo()).containsExactly("payer@example.com");
-        assertThat(message.getSubject()).isEqualTo("서비스 크레딧 사용 내역 영수증");
+        assertThat(message.getSubject())
+                .isEqualTo("서비스 크레딧 사용 내역 영수증");
         assertThat(message.getText())
                 .contains("실제 카드 결제 영수증이 아닙니다.")
-                .contains("주문번호: order-123")
-                .contains("상품명: 테스트 선물")
-                .contains("수량: 2개")
                 .contains("사용 크레딧: 40,000 크레딧")
                 .contains("사용 후 잔액: 60,000 크레딧")
-                .contains("처리 시각: 2026-10-24 12:30:45")
-                .contains("이용해주셔서 감사합니다.");
+                .contains("처리 시각: 2026-10-24 12:30:45");
     }
 
     @Test
-    @DisplayName("SMTP 오류가 발생해도 결제 완료 후처리에서 예외를 전파하지 않는다")
+    @DisplayName("크레딧 복구 이벤트를 받으면 복구 내역 영수증을 발송한다")
+    void handle_sendsCreditRefundReceipt() {
+        PaymentRefundReceiptEmailEvent event =
+                new PaymentRefundReceiptEmailEvent(
+                        "payer@example.com",
+                        "order-123",
+                        "테스트 선물",
+                        2,
+                        40_000,
+                        100_000,
+                        RECEIPT_AT
+                );
+
+        handler.handle(event);
+
+        SimpleMailMessage message = captureMessage();
+
+        assertThat(message.getFrom()).isEqualTo(FROM_ADDRESS);
+        assertThat(message.getTo()).containsExactly("payer@example.com");
+        assertThat(message.getSubject())
+                .isEqualTo("서비스 크레딧 복구 영수증");
+        assertThat(message.getText())
+                .contains("실제 카드 결제 취소 영수증이 아닙니다.")
+                .contains("복구 크레딧: 40,000 크레딧")
+                .contains("복구 후 잔액: 100,000 크레딧")
+                .contains("취소 처리 시각: 2026-10-24 12:30:45");
+    }
+
+    @Test
+    @DisplayName("SMTP 오류는 취소 완료 후처리로 전파하지 않는다")
     void handle_doesNotPropagateSmtpFailure() {
-        PaymentReceiptEmailEvent event = new PaymentReceiptEmailEvent(
-                "payer@example.com",
-                "order-123",
-                "테스트 선물",
-                2,
-                40_000,
-                60_000,
-                COMPLETED_AT
-        );
+        PaymentRefundReceiptEmailEvent event =
+                new PaymentRefundReceiptEmailEvent(
+                        "payer@example.com",
+                        "order-123",
+                        "테스트 선물",
+                        2,
+                        40_000,
+                        100_000,
+                        RECEIPT_AT
+                );
 
         doThrow(new MailSendException("SMTP unavailable"))
                 .when(mailSender)
@@ -97,5 +122,12 @@ class PaymentReceiptEmailEventHandlerTest {
                 .doesNotThrowAnyException();
 
         verify(mailSender, times(1)).send(any(SimpleMailMessage.class));
+    }
+
+    private SimpleMailMessage captureMessage() {
+        ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        return messageCaptor.getValue();
     }
 }

@@ -18,11 +18,13 @@ import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 import com.gift.gift.domain.order.event.PaymentCanceledEvent;
+import com.gift.gift.domain.order.event.PaymentRefundReceiptEmailEvent;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 import com.gift.gift.domain.product.service.ProductStockService;
+import com.gift.gift.domain.user.entity.User;
 
 @Service
 @RequiredArgsConstructor
@@ -60,6 +62,12 @@ public class PaymentCancellationCompensationService {
                 ));
 
         validate(order, gift, approval);
+
+        // 취소 bulk update가 persistence context를 비우므로 수신 정보를 먼저 읽는다.
+        User sender = gift.getSender();
+        String recipientEmail = sender.getEmailVerifiedAt() == null
+                ? null
+                : sender.getEmail();
 
         int giftCanceled = giftHistoryRepository.cancel(gift.getId(), approval.canceledAt());
 
@@ -138,6 +146,20 @@ public class PaymentCancellationCompensationService {
                         gift.getProductNameSnapshot()
                 )
         );
+
+        if (recipientEmail != null) {
+            eventPublisher.publishEvent(
+                    new PaymentRefundReceiptEmailEvent(
+                            recipientEmail,
+                            order.getOrderId(),
+                            gift.getProductNameSnapshot(),
+                            gift.getQuantity(),
+                            refund.getAmount(),
+                            refund.getBalanceAfter(),
+                            approval.canceledAt()
+                    )
+            );
+        }
 
         return result;
     }
