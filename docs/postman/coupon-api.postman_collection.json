@@ -1,0 +1,204 @@
+{
+  "info": {
+    "name": "Coupon API Test",
+    "description": "PR 1 사용자별 2배·3배 쿠폰 수량 조회 검증. 쿠폰 지급 API는 제공하지 않는다. coupon-local 환경의 email/password를 입력해 순서대로 실행한다. expectedCoupons를 비우면 공통 응답만 검증하며 [] 또는 실제 목록 JSON을 넣으면 수량도 검증한다.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 로그인 및 토큰 저장",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        },
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"로그인 성공\", function () { pm.response.to.have.status(200); });",
+              "if (pm.response.code === 200) {",
+              "  pm.environment.set(\"accessToken\", pm.response.json().data.accessToken);",
+              "} else { pm.environment.unset(\"accessToken\"); }"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "02 본인 보유 쿠폰 조회",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/coupons",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "coupons"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 및 공통 성공 응답\", function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.message).to.eql(\"보유 쿠폰을 조회했습니다.\");",
+              "  pm.expect(body).not.to.have.property(\"error\");",
+              "  pm.expect(body.data).to.have.all.keys(\"coupons\");",
+              "});",
+              "pm.test(\"배수별 양수 수량과 정렬·중복·응답 크기\", function () {",
+              "  const coupons = pm.response.json().data.coupons;",
+              "  pm.expect(coupons).to.be.an(\"array\");",
+              "  pm.expect(coupons.length).to.be.at.most(2);",
+              "  coupons.forEach(function (coupon) {",
+              "    pm.expect(coupon).to.have.all.keys(\"multiplier\", \"quantity\");",
+              "    pm.expect(coupon.multiplier).to.be.oneOf([2, 3]);",
+              "    pm.expect(Number.isInteger(coupon.quantity)).to.eql(true);",
+              "    pm.expect(coupon.quantity).to.be.within(1, 2147483647);",
+              "  });",
+              "  const multipliers = coupons.map(c => c.multiplier);",
+              "  pm.expect(multipliers).to.eql([...multipliers].sort((a, b) => a - b));",
+              "  pm.expect(new Set(multipliers).size).to.eql(multipliers.length);",
+              "});",
+              "const expected = pm.environment.get(\"expectedCoupons\");",
+              "if (expected && expected.trim()) {",
+              "  pm.test(\"준비한 사용자 보유 수량과 일치\", function () {",
+              "    pm.expect(pm.response.json().data.coupons).to.eql(JSON.parse(expected));",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "03 인증 토큰 없이 조회",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/coupons",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "coupons"
+          ]
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"401 공통 오류 응답\", function () {",
+              "  pm.response.to.have.status(401);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.error.code).to.eql(\"UNAUTHORIZED\");",
+              "  pm.expect(body.error.traceId).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(body).not.to.have.property(\"data\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "04 잘못된 토큰으로 조회",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/coupons",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "coupons"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "invalid-token",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"401 공통 오류 응답\", function () {",
+              "  pm.response.to.have.status(401);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.error.code).to.eql(\"UNAUTHORIZED\");",
+              "  pm.expect(body.error.traceId).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(body).not.to.have.property(\"data\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    }
+  ]
+}
