@@ -20,8 +20,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.AopTestUtils;
 
 import com.gift.gift.domain.auth.service.EmailVerificationService;
+import com.gift.gift.domain.coupon.service.CouponInitializationService;
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
 import com.gift.gift.domain.user.dto.response.SignupResponse;
@@ -40,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
@@ -71,6 +74,9 @@ class SignupPersistenceTest {
 
     @MockitoSpyBean
     private EmailVerificationService emailVerificationService;
+
+    @MockitoSpyBean
+    private CouponInitializationService couponInitializationService;
 
     private String email;
     private List<Long> createdTermIds;
@@ -110,7 +116,7 @@ class SignupPersistenceTest {
 
     @AfterEach
     void cleanUp() {
-        reset(consentRepository, passwordEncoder, emailVerificationService);
+        reset(consentRepository, passwordEncoder, emailVerificationService, couponInitializationService);
 
         jdbcTemplate.update("""
             DELETE FROM credit_transactions
@@ -144,6 +150,11 @@ class SignupPersistenceTest {
                 email
         );
 
+        jdbcTemplate.update("""
+                DELETE FROM coupon_inventories
+                WHERE user_id IN (SELECT id FROM users WHERE email = ?)
+                """, email);
+
         jdbcTemplate.update(
                 "DELETE FROM users WHERE email = ?",
                 email
@@ -158,10 +169,47 @@ class SignupPersistenceTest {
     }
 
     @Test
+    @DisplayName("쿠폰 초기화 후 오류가 발생하면 실제 회원가입의 회원·쿠폰·크레딧을 모두 롤백한다")
+    void signup_rollsBackWhenCouponInitializationFails() {
+        Long[] attemptedUserId = new Long[1];
+        doAnswer(invocation -> {
+            attemptedUserId[0] = invocation.getArgument(0);
+            invocation.callRealMethod();
+            throw new IllegalStateException("쿠폰 초기화 후 실패");
+        }).when((CouponInitializationService) AopTestUtils.getUltimateTargetObject(
+                couponInitializationService
+        )).initialize(anyLong());
+
+        assertThrows(IllegalStateException.class, () -> service.signup(request()));
+        assertNotNull(attemptedUserId[0]);
+        assertFalse(userRepository.existsByEmail(email));
+        for (String table : List.of("coupon_inventories", "credit_accounts", "credit_transactions", "term_consents")) {
+            assertEquals(0L, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + table + " WHERE user_id = ?",
+                    Long.class,
+                    attemptedUserId[0]
+            ));
+        }
+        assertEquals(0L, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM recipient_profiles WHERE recipient_id = ?",
+                Long.class,
+                attemptedUserId[0]
+        ));
+    }
+
+    @Test
     @DisplayName("회원과 필수 약관 동의를 실제 MySQL에 저장하고 인증 시각을 기록한다")
     void signup_persistsUserAndConsentsWithBcryptHash() {
         SignupResponse response = service.signup(request());
         User user = userRepository.findById(response.userId()).orElseThrow();
+
+        assertEquals(List.of(2, 3), jdbcTemplate.queryForList("""
+                SELECT multiplier FROM coupon_inventories
+                WHERE user_id = ? ORDER BY multiplier
+                """, Integer.class, user.getId()));
+        assertEquals(0L, jdbcTemplate.queryForObject("""
+                SELECT SUM(quantity) FROM coupon_inventories WHERE user_id = ?
+                """, Long.class, user.getId()));
 
         assertEquals(email, user.getEmail());
         assertNotEquals("Password1!", user.getPasswordHash());
