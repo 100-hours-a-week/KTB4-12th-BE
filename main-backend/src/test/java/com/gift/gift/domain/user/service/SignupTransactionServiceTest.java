@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.gift.gift.domain.coupon.service.CouponInitializationService;
 import com.gift.gift.domain.credit.service.SignupCreditService;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
@@ -61,6 +62,9 @@ class SignupTransactionServiceTest {
     @Mock
     private RecipientProfileRepository profileRepository;
 
+    @Mock
+    private CouponInitializationService couponInitializationService;
+
     @Captor
     private ArgumentCaptor<User> userCaptor;
 
@@ -78,7 +82,8 @@ class SignupTransactionServiceTest {
                 termRepository,
                 consentRepository,
                 signupCreditService,
-                profileRepository
+                profileRepository,
+                couponInitializationService
         );
 
         requiredTerm = term(1L, "TERMS", 3, true);
@@ -112,6 +117,7 @@ class SignupTransactionServiceTest {
         verify(userRepository).saveAndFlush(userCaptor.capture());
         verify(consentRepository).saveAllAndFlush(consentCaptor.capture());
         verify(signupCreditService).grant(10L);
+        verify(couponInitializationService).initialize(10L);
 
         ArgumentCaptor<RecipientProfile> profileCaptor =
                 ArgumentCaptor.forClass(RecipientProfile.class);
@@ -178,6 +184,7 @@ class SignupTransactionServiceTest {
         assertTrue(savedConsents.getFirst().isAgreed());
 
         verify(signupCreditService).grant(10L);
+        verify(couponInitializationService).initialize(10L);
     }
 
     @Test
@@ -201,7 +208,9 @@ class SignupTransactionServiceTest {
 
         assertEquals(ErrorCode.EMAIL_ALREADY_IN_USE, exception.getErrorCode());
 
-        verifyNoInteractions(termRepository, consentRepository, signupCreditService);
+        verifyNoInteractions(
+                termRepository, consentRepository, signupCreditService, couponInitializationService
+        );
     }
 
     @Test
@@ -225,7 +234,9 @@ class SignupTransactionServiceTest {
 
         assertSame(failure, thrown);
 
-        verifyNoInteractions(termRepository, consentRepository, signupCreditService);
+        verifyNoInteractions(
+                termRepository, consentRepository, signupCreditService, couponInitializationService
+        );
     }
 
     @Test
@@ -249,7 +260,9 @@ class SignupTransactionServiceTest {
 
         assertSame(failure, thrown);
 
-        verifyNoInteractions(termRepository, consentRepository, signupCreditService);
+        verifyNoInteractions(
+                termRepository, consentRepository, signupCreditService, couponInitializationService
+        );
     }
 
     @Test
@@ -273,7 +286,9 @@ class SignupTransactionServiceTest {
 
         assertSame(failure, thrown);
 
-        verifyNoInteractions(termRepository, consentRepository, signupCreditService);
+        verifyNoInteractions(
+                termRepository, consentRepository, signupCreditService, couponInitializationService
+        );
     }
 
     private TermConsent findConsent(List<TermConsent> consents, Long termId) {
