@@ -53,9 +53,9 @@ class LoginIpRateLimitRedisServiceTest {
                 org.mockito.ArgumentMatchers
                         .<RedisScript<Long>>any(),
                 eq(List.of(KEY_PREFIX + IDENTIFIER_HASH)),
-                eq(10),
-                eq(6_000),
-                eq(60_000)
+                eq("10"),
+                eq("6000"),
+                eq("60000")
         );
     }
 

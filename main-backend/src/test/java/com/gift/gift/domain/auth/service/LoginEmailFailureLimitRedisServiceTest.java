@@ -64,10 +64,10 @@ class LoginEmailFailureLimitRedisServiceTest {
                         .<RedisScript<Long>>any(),
                 eq(List.of(KEY_PREFIX + EMAIL_HASH)),
                 eq("inspect"),
-                eq(FAILURE_WINDOW_MILLIS),
-                eq(MAX_FAILURE_COUNT),
-                eq(MAX_BACKOFF_LEVEL),
-                eq(KEY_TTL_MILLIS)
+                eq(Integer.toString(FAILURE_WINDOW_MILLIS)),
+                eq(Integer.toString(MAX_FAILURE_COUNT)),
+                eq(Integer.toString(MAX_BACKOFF_LEVEL)),
+                eq(Integer.toString(KEY_TTL_MILLIS))
         );
     }
 
@@ -96,10 +96,10 @@ class LoginEmailFailureLimitRedisServiceTest {
                         .<RedisScript<Long>>any(),
                 eq(List.of(KEY_PREFIX + EMAIL_HASH)),
                 eq("record"),
-                eq(FAILURE_WINDOW_MILLIS),
-                eq(MAX_FAILURE_COUNT),
-                eq(MAX_BACKOFF_LEVEL),
-                eq(KEY_TTL_MILLIS)
+                eq(Integer.toString(FAILURE_WINDOW_MILLIS)),
+                eq(Integer.toString(MAX_FAILURE_COUNT)),
+                eq(Integer.toString(MAX_BACKOFF_LEVEL)),
+                eq(Integer.toString(KEY_TTL_MILLIS))
         );
     }
 
