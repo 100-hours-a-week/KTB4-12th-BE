@@ -470,8 +470,8 @@ class PaymentFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("미확정 주문 재요청은 같은 주문번호로 승인을 다시 요청한다")
-    void pay_retriesSameApprovalWhenUnknownOrderIsRetried() {
+    @DisplayName("미확정 주문 재요청은 승인 명령을 재전송하지 않고 같은 주문의 결과를 조회한다")
+    void pay_queriesSameApprovalWhenUnknownOrderIsRetried() {
         String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
         PaymentCreateRequest request = request();
 
@@ -480,19 +480,15 @@ class PaymentFlowIntegrationTest {
                 eq("TIMEOUT_AFTER_APPROVAL")
         )).thenThrow(clientFailure(
                 PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
-        )).thenAnswer(invocation -> {
-            PaymentConfirmRequest confirmation = invocation.getArgument(0);
+        ));
 
-            return completedResponse(
-                    confirmation.orderId(),
-                    confirmation.amount()
-            );
+        java.util.concurrent.atomic.AtomicInteger queries = new java.util.concurrent.atomic.AtomicInteger();
+        when(paymentClient.getByOrderId(anyString())).thenAnswer(invocation -> {
+            if (queries.getAndIncrement() == 0) {
+                throw clientFailure(PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE);
+            }
+            return completedResponse(invocation.getArgument(0), AMOUNT);
         });
-
-        when(paymentClient.getByOrderId(anyString()))
-                .thenThrow(clientFailure(
-                        PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE
-                ));
 
         assertThatThrownBy(() -> paymentService.pay(
                 payerId,
@@ -534,12 +530,12 @@ class PaymentFlowIntegrationTest {
         assertThat(readProductQuantity()).isEqualTo(8);
         assertThat(readBalance()).isEqualTo(INITIAL_BALANCE - AMOUNT);
 
-        verify(paymentClient, times(2))
+        verify(paymentClient, times(1))
                 .confirm(
                         any(PaymentConfirmRequest.class),
                         eq("TIMEOUT_AFTER_APPROVAL")
                 );
-        verify(paymentClient, times(1))
+        verify(paymentClient, times(2))
                 .getByOrderId(unknownOrder.getOrderId());
     }
 

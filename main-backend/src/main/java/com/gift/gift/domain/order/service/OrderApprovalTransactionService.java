@@ -25,6 +25,11 @@ public class OrderApprovalTransactionService {
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean claim(Long orderRecordId) {
+        return orderRepository.claimApproval(orderRecordId, LocalDateTime.now(clock)) == 1;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(
             Long orderRecordId,
             String paymentKey,

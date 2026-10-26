@@ -1,6 +1,7 @@
 package com.gift.gift.domain.order.repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,9 +13,13 @@ import com.gift.gift.domain.order.entity.PaymentCancellation;
 import com.gift.gift.domain.order.entity.PaymentCancellationFailureCode;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 
-public interface PaymentCancellationRepository extends JpaRepository<PaymentCancellation, Long> {
+public interface PaymentCancellationRepository
+        extends JpaRepository<PaymentCancellation, Long> {
 
-    Optional<PaymentCancellation> findByRequesterIdAndIdempotencyKey(Long requesterId, String idempotencyKey);
+    Optional<PaymentCancellation> findByRequesterIdAndIdempotencyKey(
+            Long requesterId,
+            String idempotencyKey
+    );
 
     @Modifying(
             flushAutomatically = true,
@@ -55,6 +60,49 @@ public interface PaymentCancellationRepository extends JpaRepository<PaymentCanc
             @Param("cancellationId") Long cancellationId,
             @Param("pendingStatus") PaymentCancellationStatus pendingStatus,
             @Param("failureCode") PaymentCancellationFailureCode failureCode,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    boolean existsByOrderRecordIdAndStatusIn(
+            Long orderRecordId,
+            List<PaymentCancellationStatus> statuses
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update PaymentCancellation cancellation
+            set cancellation.failureCode =
+                    com.gift.gift.domain.order.entity.PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED,
+                cancellation.updatedAt = :updatedAt
+            where cancellation.id = :cancellationId
+              and cancellation.cancellationSource =
+                    com.gift.gift.domain.order.entity.CancellationSource.USER
+              and cancellation.status =
+                    com.gift.gift.domain.order.entity.PaymentCancellationStatus.PENDING
+              and cancellation.failureCode is null
+            """)
+    int claimUserRequest(
+            @Param("cancellationId") Long cancellationId,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query("""
+            update PaymentCancellation cancellation
+            set cancellation.status =
+                    com.gift.gift.domain.order.entity.PaymentCancellationStatus.DECLINED,
+                cancellation.failureCode =
+                    com.gift.gift.domain.order.entity.PaymentCancellationFailureCode.CANCELLATION_DECLINED,
+                cancellation.updatedAt = :updatedAt
+            where cancellation.id = :cancellationId
+              and cancellation.status =
+                    com.gift.gift.domain.order.entity.PaymentCancellationStatus.PENDING
+            """)
+    int decline(
+            @Param("cancellationId") Long cancellationId,
             @Param("updatedAt") LocalDateTime updatedAt
     );
 }

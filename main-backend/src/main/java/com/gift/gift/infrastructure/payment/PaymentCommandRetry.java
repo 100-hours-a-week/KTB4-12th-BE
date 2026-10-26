@@ -55,7 +55,8 @@ public class PaymentCommandRetry {
                 retryReason = "PROCESSING";
             } catch (PaymentClientException exception) {
                 if (!isRetryable(exception.failure()) || attempt == MAX_RETRIES) {
-                    throw exception;
+                    // 이전 시도는 처리됐을 수 있으므로 마지막 거절만으로 실패를 확정하지 않는다.
+                    throw attempt > 0 ? exception.withUncertainOutcome() : exception;
                 }
 
                 retryReason = exception.failure().name();

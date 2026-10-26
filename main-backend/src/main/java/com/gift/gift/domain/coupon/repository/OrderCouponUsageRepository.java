@@ -30,4 +30,24 @@ public interface OrderCouponUsageRepository
             @Param("restoredStatus") OrderCouponUsageStatus restoredStatus,
             @Param("updatedAt") LocalDateTime updatedAt
     );
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update OrderCouponUsage usage
+            set usage.status = com.gift.gift.domain.coupon.entity.OrderCouponUsageStatus.USED,
+                usage.updatedAt = :updatedAt
+            where usage.id = :usageId
+              and usage.status = com.gift.gift.domain.coupon.entity.OrderCouponUsageStatus.RESERVED
+            """)
+    int confirmUsed(@Param("usageId") Long usageId, @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update OrderCouponUsage usage
+            set usage.status = com.gift.gift.domain.coupon.entity.OrderCouponUsageStatus.RESTORED,
+                usage.updatedAt = :updatedAt
+            where usage.id = :usageId
+              and usage.status = com.gift.gift.domain.coupon.entity.OrderCouponUsageStatus.USED
+            """)
+    int restoreUsed(@Param("usageId") Long usageId, @Param("updatedAt") LocalDateTime updatedAt);
 }

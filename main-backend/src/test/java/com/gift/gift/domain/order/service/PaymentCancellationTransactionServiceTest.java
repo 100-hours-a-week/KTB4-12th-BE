@@ -37,6 +37,7 @@ class PaymentCancellationTransactionServiceTest {
         service = new PaymentCancellationTransactionService(
                 repository,
                 orderRepository,
+                mock(com.gift.gift.domain.gift.repository.GiftHistoryRepository.class),
                 clock
         );
     }
