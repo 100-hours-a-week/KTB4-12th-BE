@@ -207,10 +207,10 @@ public class LoginEmailFailureLimitRedisService {
                 PROCESS_SCRIPT,
                 List.of(KEY_PREFIX + identifierHash),
                 operation,
-                FAILURE_WINDOW_MILLIS,
-                MAX_FAILURE_COUNT,
-                MAX_BACKOFF_LEVEL,
-                KEY_TTL_MILLIS
+                Integer.toString(FAILURE_WINDOW_MILLIS),
+                Integer.toString(MAX_FAILURE_COUNT),
+                Integer.toString(MAX_BACKOFF_LEVEL),
+                Integer.toString(KEY_TTL_MILLIS)
         );
 
         if (retryAfterSeconds == null || retryAfterSeconds < 0) {
