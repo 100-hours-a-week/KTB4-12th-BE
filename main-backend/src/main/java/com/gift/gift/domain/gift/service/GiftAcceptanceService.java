@@ -21,6 +21,7 @@ import com.gift.gift.domain.gift.event.GiftCompletedRewardEvent;
 import com.gift.gift.domain.gift.exception.GiftErrorCode;
 import com.gift.gift.domain.gift.exception.GiftException;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
+import com.gift.gift.domain.gift.support.GiftPolicy;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
@@ -30,8 +31,6 @@ import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 @Service
 @RequiredArgsConstructor
 public class GiftAcceptanceService {
-
-    private static final long BASE_REWARD_AMOUNT = 50_000L;
 
     private static final String LEDGER_KEY_PREFIX =
             "GIFT_COMPLETED_REWARD:";
@@ -83,7 +82,7 @@ public class GiftAcceptanceService {
         );
 
         long rewardAmount = Math.multiplyExact(
-                BASE_REWARD_AMOUNT,
+                GiftPolicy.BASE_REWARD_AMOUNT,
                 rewardMultiplier
         );
 

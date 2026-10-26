@@ -50,6 +50,7 @@ public class PaymentCompletionService {
     private final UserQueryService userQueryService;
     private final ApplicationEventPublisher eventPublisher;
     private final OrderCouponService orderCouponService;
+    private final OrderRewardQueryService orderRewardQueryService;
     private final Clock clock;
 
     @Transactional
@@ -263,7 +264,8 @@ public class PaymentCompletionService {
                 order.getAmount(),
                 balanceAfter,
                 order.getApprovedAt(),
-                gift.getExpiresAt()
+                gift.getExpiresAt(),
+                orderRewardQueryService.summarize(order, gift)
         );
     }
 

@@ -16,6 +16,19 @@ public interface OrderCouponUsageRepository
 
     Optional<OrderCouponUsage> findByOrderRecordId(Long orderRecordId);
 
+    @Query("""
+            select inventory.multiplier as multiplier, usage.status as status
+            from OrderCouponUsage usage
+            join CouponInventory inventory on inventory.id = usage.couponInventoryId
+            where usage.orderRecordId = :orderRecordId
+            """)
+    Optional<CouponSelection> findSelectionByOrderRecordId(@Param("orderRecordId") Long orderRecordId);
+
+    interface CouponSelection {
+        int getMultiplier();
+        OrderCouponUsageStatus getStatus();
+    }
+
     @Modifying(flushAutomatically = true)
     @Query("""
             update OrderCouponUsage usage

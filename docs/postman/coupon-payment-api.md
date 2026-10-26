@@ -1,9 +1,9 @@
-# PR3 쿠폰 결제·수락 보상·알림 검증
+# PR3·PR4 쿠폰 결제·수락 보상·알림·결과 재조회 검증
 
 ## 준비
 
 1. `coupon-payment-api.postman_collection.json`과 `coupon-payment-local.postman_environment.json`을 가져온다.
-2. 로컬 main-backend와 payment-server를 실행한다. 검증할 main-backend에 `app.coupon.payment-enabled=true`를 적용한다. 환경변수 이름은 `APP_COUPON_PAYMENT_ENABLED`다. 저장소의 기본 false 설정은 변경하지 않았다.
+2. 로컬 main-backend와 payment-server를 실행한다. 검증할 main-backend에 `app.coupon.payment-enabled=true`를 적용한다. 환경변수 이름은 `APP_COUPON_PAYMENT_ENABLED`다. 현재 코드 기본값은 true이며 배포 환경의 명시적 설정도 확인한다.
 3. 환경에 발신자·수신자의 테스트 계정 이메일/비밀번호와 구매 가능한 `productId`, `quantity`를 설정한다. 두 계정은 서로 다른 사용자이고 친구 관계여야 한다. 실제 비밀번호·토큰을 저장소에 커밋하지 않는다.
 4. 발신자에게 충분한 결제 크레딧과 **2배 쿠폰 2개 이상, 3배 쿠폰 1개 이상**을 준비한다. 쿠폰 초기 행은 회원가입 때 생성된다. 공개 쿠폰 발급 API는 없으며 이 컬렉션은 보유 쿠폰을 사용한다. 반복 실행할 때도 필요한 수량을 다시 준비한다.
 5. 수락용 선물 3건과 취소용 선물 1건을 생성하므로 테스트 전용 계정·상품을 사용하고, 실행 중 같은 계정으로 다른 결제·크레딧 사용을 하지 않는다. 잔액 비교는 다른 크레딧 변경이 없다는 전제다.
@@ -11,6 +11,8 @@
 `quantity=1` 기준 전체 실행의 결제 요청은 4건이다. 취소용 1건은 환불되지만 수락한 3건은 유지된다. 상품 수량이 여러 개여도 주문 한 건당 보상 1회·쿠폰 1개를 적용한다.
 
 ## 실행
+
+PR4에서는 기존 쿠폰 수량·결제·재요청 검사에 baseRewardAmount와 couponMultiplier·couponStatus·expectedRewardAmount·rewardAmount 검사를 추가한다. 각 시나리오에서 수락·취소 전과 처리 후 GET /payments/{orderId}도 조회한다. 환경 파일과 pr3_ 변수는 그대로 재사용하며 상세 의미는 [명세 반영 검토용 변경안](../pr4-coupon-reward-contract-review.md)을 따른다.
 
 `Coupon Payment PR3 Local` 환경을 선택하고 Collection Runner에서 폴더 순서대로 실행한다. 각 폴더의 내부 요청도 순서를 유지한다. 상태를 저장하는 변수는 `pr3_` 접두사를 쓰며 최초 결제/취소 시 새 멱등키를 만들고 재요청에서는 같은 키를 재사용한다.
 

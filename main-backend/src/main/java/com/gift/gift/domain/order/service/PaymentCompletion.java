@@ -15,6 +15,7 @@ public record PaymentCompletion(
         long amount,
         long balanceAfter,
         LocalDateTime approvedAt,
-        LocalDateTime giftExpiresAt
+        LocalDateTime giftExpiresAt,
+        OrderRewardSummary rewardSummary
 ) {
 }
