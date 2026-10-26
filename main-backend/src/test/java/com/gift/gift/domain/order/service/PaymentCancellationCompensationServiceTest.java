@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.context.ApplicationEventPublisher;
 
+import com.gift.gift.domain.coupon.service.OrderCouponService;
 import com.gift.gift.domain.credit.entity.CreditAccount;
 import com.gift.gift.domain.credit.entity.CreditTransaction;
 import com.gift.gift.domain.credit.repository.CreditAccountRepository;
@@ -60,6 +61,9 @@ class PaymentCancellationCompensationServiceTest {
     private static final String TRANSACTION_KEY = "542f1507-e235-47c2-93c1-a30ed5b31d49";
     private static final LocalDateTime CANCELED_AT = LocalDateTime.of(2026, 10, 24, 14, 0);
     private static final LocalDateTime EMAIL_VERIFIED_AT = LocalDateTime.of(2026, 10, 20, 9, 0);
+
+    @Mock
+    private OrderCouponService orderCouponService;
 
     @Mock
     private OrderRepository orderRepository;
@@ -117,6 +121,7 @@ class PaymentCancellationCompensationServiceTest {
                 creditAccountRepository,
                 creditTransactionRepository,
                 productStockService,
+                orderCouponService,
                 eventPublisher
         );
     }

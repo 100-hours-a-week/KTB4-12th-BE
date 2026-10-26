@@ -22,7 +22,7 @@ public class OrderTransactionService {
     private final OrderRepository orderRepository;
     private final OrderCouponService orderCouponService;
 
-    @Value("${app.coupon.payment-enabled:false}")
+    @Value("${app.coupon.payment-enabled:true}")
     private boolean couponPaymentEnabled;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

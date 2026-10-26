@@ -41,7 +41,7 @@ class GiftAcceptanceFlowIntegrationTest {
     private static final String PASSWORD_HASH = "$2a$10$" + "a".repeat(53);
     private static final String REQUEST_HASH = "a".repeat(64);
     private static final long INITIAL_BALANCE = 500_000L;
-    private static final long REWARD_AMOUNT = 100_000L;
+    private static final long REWARD_AMOUNT = 50_000L;
 
     @Autowired
     private GiftAcceptanceService giftAcceptanceService;
@@ -158,6 +158,7 @@ class GiftAcceptanceFlowIntegrationTest {
             orderRecordId = order.getId();
             giftId = gift.getId();
         });
+        jdbcTemplate.update("UPDATE orders SET status = 'COMPLETED' WHERE id = ?", orderRecordId);
     }
 
     @AfterEach

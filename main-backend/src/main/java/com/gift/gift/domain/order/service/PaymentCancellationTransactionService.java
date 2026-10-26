@@ -8,9 +8,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.gift.entity.GiftHistory;
+import com.gift.gift.domain.gift.entity.GiftStatus;
+import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.order.entity.*;
-import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
+import com.gift.gift.domain.order.exception.OrderErrorCode;
+import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
+import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -18,7 +23,7 @@ public class PaymentCancellationTransactionService {
 
     private final PaymentCancellationRepository cancellationRepository;
     private final OrderRepository orderRepository;
-
+    private final GiftHistoryRepository giftHistoryRepository;
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -31,6 +36,8 @@ public class PaymentCancellationTransactionService {
     ) {
         if (source == CancellationSource.LOCAL_PROCESSING_FAILURE) {
             claimAutomaticCancellation(order);
+        } else {
+            claimGiftCancellation(order);
         }
 
         PaymentCancellation cancellation = new PaymentCancellation(
@@ -42,6 +49,46 @@ public class PaymentCancellationTransactionService {
         );
 
         return cancellationRepository.saveAndFlush(cancellation);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean claimUserRequest(Long cancellationId) {
+        return cancellationRepository.claimUserRequest(
+                cancellationId,
+                LocalDateTime.now(clock)
+        ) == 1;
+    }
+
+    private void claimGiftCancellation(Order requestedOrder) {
+        // 외부 취소 호출 전에 수락과 직렬화해 PENDING 취소 기록을 저장한다.
+        GiftHistory gift = giftHistoryRepository
+                .findForCancellation(requestedOrder.getId())
+                .orElseThrow(() -> new OrderException(
+                        OrderErrorCode.PAYMENT_NOT_CANCELABLE
+                ));
+
+        Order order = orderRepository
+                .findByIdForUpdate(requestedOrder.getId())
+                .orElseThrow(() -> new OrderException(
+                        OrderErrorCode.PAYMENT_NOT_CANCELABLE
+                ));
+
+        if (order.getStatus() != OrderStatus.COMPLETED
+                || gift.getStatus()
+                != GiftStatus.WAITING_FOR_ACCEPTANCE
+                || gift.getDeletedAt() != null) {
+            throw new OrderException(
+                    OrderErrorCode.PAYMENT_NOT_CANCELABLE
+            );
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markDeclined(Long cancellationId) {
+        cancellationRepository.decline(
+                cancellationId,
+                LocalDateTime.now(clock)
+        );
     }
 
     private void claimAutomaticCancellation(Order order) {
@@ -57,13 +104,15 @@ public class PaymentCancellationTransactionService {
             return;
         }
 
-        Order current = orderRepository.findById(order.getId())
+        Order current = orderRepository
+                .findById(order.getId())
                 .orElseThrow(() -> new IllegalStateException(
                         "자동 보상 취소 주문을 찾을 수 없습니다."
                 ));
 
         if (current.getStatus() != OrderStatus.PENDING
-                || current.getApprovalResult() != PaymentApprovalResult.APPROVED
+                || current.getApprovalResult()
+                != PaymentApprovalResult.APPROVED
                 || current.getFailureCode()
                 != OrderFailureCode.AUTO_CANCELLATION_PROCESSING) {
             throw new IllegalStateException(

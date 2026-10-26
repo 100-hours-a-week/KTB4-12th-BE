@@ -26,6 +26,20 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByPayerIdAndIdempotencyKey(Long payerId, String idempotencyKey);
 
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update Order orders
+            set orders.approvalResult = com.gift.gift.domain.order.entity.PaymentApprovalResult.UNKNOWN,
+                orders.updatedAt = :updatedAt
+            where orders.id = :orderRecordId
+              and orders.status = com.gift.gift.domain.order.entity.OrderStatus.PENDING
+              and orders.approvalResult is null
+            """)
+    int claimApproval(
+            @Param("orderRecordId") Long orderRecordId,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
     @Query("""
             select orders
             from Order orders

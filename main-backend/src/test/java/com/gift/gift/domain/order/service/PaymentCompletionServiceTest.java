@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.context.ApplicationEventPublisher;
 
+import com.gift.gift.domain.coupon.service.OrderCouponService;
 import com.gift.gift.domain.credit.entity.CreditAccount;
 import com.gift.gift.domain.credit.entity.CreditTransaction;
 import com.gift.gift.domain.credit.repository.CreditAccountRepository;
@@ -64,6 +65,9 @@ class PaymentCompletionServiceTest {
             LocalDateTime.of(2026, 10, 24, 12, 30, 45);
     private static final LocalDateTime EMAIL_VERIFIED_AT =
             LocalDateTime.of(2026, 10, 20, 9, 0);
+
+    @Mock
+    private OrderCouponService orderCouponService;
 
     @Mock
     private OrderRepository orderRepository;
@@ -131,6 +135,7 @@ class PaymentCompletionServiceTest {
                 giftHistoryRepository,
                 userQueryService,
                 eventPublisher,
+                orderCouponService,
                 clock
         );
 
@@ -200,7 +205,7 @@ class PaymentCompletionServiceTest {
     @Test
     @DisplayName("이미 완료된 주문의 재요청은 영수증 이벤트를 다시 발행하지 않는다")
     void complete_doesNotRepublishReceiptForCompletedOrder() {
-        when(orderRepository.findById(ORDER_RECORD_ID))
+        when(orderRepository.findByIdForUpdate(ORDER_RECORD_ID))
                 .thenReturn(Optional.of(completedOrder));
         givenRestoreData();
 
@@ -213,8 +218,10 @@ class PaymentCompletionServiceTest {
     @Test
     @DisplayName("다른 인스턴스가 먼저 주문 완료에 성공한 경우 영수증 이벤트를 발행하지 않는다")
     void complete_doesNotPublishReceiptWhenConcurrentCompletionAlreadyWon() {
+        when(orderRepository.findByIdForUpdate(ORDER_RECORD_ID))
+                .thenReturn(Optional.of(pendingOrder));
         when(orderRepository.findById(ORDER_RECORD_ID))
-                .thenReturn(Optional.of(pendingOrder), Optional.of(completedOrder));
+                .thenReturn(Optional.of(completedOrder));
         when(pendingOrder.getStatus()).thenReturn(OrderStatus.PENDING);
         when(pendingOrder.getApprovalResult())
                 .thenReturn(PaymentApprovalResult.APPROVED);
@@ -235,8 +242,10 @@ class PaymentCompletionServiceTest {
     }
 
     private void givenSuccessfulCompletion() {
+        when(orderRepository.findByIdForUpdate(ORDER_RECORD_ID))
+                .thenReturn(Optional.of(pendingOrder));
         when(orderRepository.findById(ORDER_RECORD_ID))
-                .thenReturn(Optional.of(pendingOrder), Optional.of(completedOrder));
+                .thenReturn(Optional.of(completedOrder));
 
         when(pendingOrder.getId()).thenReturn(ORDER_RECORD_ID);
         when(pendingOrder.getOrderId()).thenReturn(ORDER_ID);

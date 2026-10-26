@@ -630,7 +630,7 @@
                   "const data = pm.response.json().data;",
                   "pm.expect(String(data.giftId)).to.eql(pm.environment.get('acceptGiftId'));",
                   "pm.expect(data.giftStatus).to.eql('COMPLETED');",
-                  "pm.expect(data.rewardAmount).to.eql(100000);",
+                  "pm.expect(data.rewardAmount).to.eql(50000);",
                   "pm.expect(data.completedAt).to.be.a('string').and.not.empty;"
                 ]
               }

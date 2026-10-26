@@ -1,0 +1,2221 @@
+{
+  "info": {
+    "name": "Coupon Payment PR3",
+    "description": "실제 로컬 서버에서 결제 후 미지급·수락 시 5만/10만/15만 보상·쿠폰 배수 알림·재요청·미수락 취소 복구를 검증한다. 쿠폰 결제 활성화와 테스트 전용 친구 계정, 충분한 잔액·재고, 2배 쿠폰 2개 이상·3배 1개 이상이 필요하다. 기본 차단 설정을 검사하는 기존 Payment API 05 폴더와 실행 환경이 다르다.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{senderAccessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 인증",
+      "item": [
+        {
+          "name": "sender 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{senderEmail}}\",\n  \"password\": \"{{senderPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.environment.set('senderAccessToken', data.accessToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "recipient 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{recipientEmail}}\",\n  \"password\": \"{{recipientPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.environment.set('recipientAccessToken', data.accessToken);",
+                  "pm.environment.set('recipientUserId', String(data.user.userId));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 쿠폰 미사용 수락 보상·알림",
+      "description": "전용 로컬 계정으로 폴더 안 요청을 순서대로 실행한다. 다른 결제·크레딧 사용을 동시에 실행하지 않는다.",
+      "item": [
+        {
+          "name": "01 선물 사전 검증",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/gifts/preflight",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.environment.set('expectedUnitPrice', String(data.product.unitPrice));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "02 쿠폰 수량 기록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.collectionVariables.set('pr3_1_couponsBefore', JSON.stringify(data.coupons));",
+                  "const available = data.coupons.find(c => c.multiplier === 1);",
+                  "pm.test('선택 쿠폰 준비', () => pm.expect(1 === 1 || !!available && available.quantity > 0).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "03 결제 전 잔액 기록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.collectionVariables.set('pr3_1_balanceBefore', data.balance);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "04 결제·쿠폰 사용 확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_1_paymentKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('pr3_1_paymentKey', pm.variables.replaceIn('PR3-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('결제 완료·보상 미지급', () => {",
+                  "  pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_1_balanceBefore')) - data.amount);",
+                  "});",
+                  "pm.collectionVariables.set('pr3_1_orderId', data.orderId);",
+                  "pm.collectionVariables.set('pr3_1_giftId', String(data.giftId));",
+                  "pm.collectionVariables.set('pr3_1_paidBalance', data.balanceAfter);",
+                  "pm.collectionVariables.set('pr3_1_amount', data.amount);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "05 같은 결제 재요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_1_paymentKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('같은 주문·잔액 반환', () => {",
+                  "  pm.expect(data.orderId).to.eql(pm.collectionVariables.get('pr3_1_orderId'));",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_1_giftId'));",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_1_paidBalance')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "06 결제 반복 후 쿠폰 수량",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "const before = JSON.parse(pm.collectionVariables.get('pr3_1_couponsBefore'));",
+                  "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 1 && 1 > 1 ? 1 : 0)}))",
+                  "  .filter(c => c.quantity > 0);",
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "07 수락 전 보상 미지급 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('차감 잔액 유지', () => pm.expect(data.balance).to.eql(Number(pm.collectionVariables.get('pr3_1_paidBalance'))));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "08 수락 전 보상 알림 없음",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const giftId = Number(pm.collectionVariables.get('pr3_1_giftId'));",
+                  "const matches = [];",
+                  "const visited = new Set();",
+                  "function inspect(body, pages) {",
+                  "  pm.expect(Array.isArray(body.data.items)).to.eql(true);",
+                  "  matches.push(...body.data.items.filter(n => n.type === 'GIFT_COMPLETED_REWARD'",
+                  "    && n.referenceType === 'GIFT' && Number(n.referenceId) === giftId));",
+                  "  const pagination = body.data.pagination;",
+                  "  if (pagination.hasNext) {",
+                  "    pm.expect(pages < 20).to.eql(true);",
+                  "    pm.expect(typeof pagination.nextCursor).to.eql('string');",
+                  "    pm.expect(visited.has(pagination.nextCursor)).to.eql(false);",
+                  "    visited.add(pagination.nextCursor);",
+                  "    const url = pm.environment.get('mainBaseUrl') + '/notifications?cursor='",
+                  "      + encodeURIComponent(pagination.nextCursor);",
+                  "    pm.sendRequest({url, method: 'GET', header: {Authorization:",
+                  "      'Bearer ' + pm.environment.get('senderAccessToken')}}, (error, response) => {",
+                  "      pm.test('다음 알림 페이지 조회 성공', () => {",
+                  "        pm.expect(error == null).to.eql(true);",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "      });",
+                  "      if (!error && response.code === 200) inspect(response.json(), pages + 1);",
+                  "    });",
+                  "    return;",
+                  "  }",
+                  "  pm.test('현재 선물의 보상 알림 0개', () => {",
+                  "    pm.expect(matches.length).to.eql(0);",
+                  "  });",
+                  "  if (0 === 1) {",
+                  "    pm.test('실제 지급액과 쿠폰 배수 표시', () => {",
+                  "      const notification = matches[0];",
+                  "      const suffix = \"선물 완료 보상 50,000 크레딧이 지급되었습니다.\";",
+                  "      pm.expect(notification.message.endsWith(suffix)).to.eql(true);",
+                  "      pm.expect(notification.title).to.eql(\"보상이 지급되었어요\");",
+                  "    });",
+                  "  }",
+                  "}",
+                  "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "09 상대방 수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{pr3_1_giftId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('수락 시 실제 보상', () => {",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_1_giftId'));",
+                  "  pm.expect(data.giftStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.rewardAmount).to.eql(50000);",
+                  "});",
+                  "pm.collectionVariables.set('pr3_1_completedAt', data.completedAt);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10 같은 선물 재수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{pr3_1_giftId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('수락 시 실제 보상', () => {",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_1_giftId'));",
+                  "  pm.expect(data.giftStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.rewardAmount).to.eql(50000);",
+                  "});",
+                  "pm.test('최초 수락 시각 유지', () => pm.expect(data.completedAt).to.eql(pm.collectionVariables.get('pr3_1_completedAt')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "11 보상 1회 지급 잔액",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('발신자 보상 1회 증가', () => pm.expect(data.balance).to.eql(Number(pm.collectionVariables.get('pr3_1_paidBalance')) + 50000));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "12 보상 알림 금액·배수·중복 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const giftId = Number(pm.collectionVariables.get('pr3_1_giftId'));",
+                  "const matches = [];",
+                  "const visited = new Set();",
+                  "function inspect(body, pages) {",
+                  "  pm.expect(Array.isArray(body.data.items)).to.eql(true);",
+                  "  matches.push(...body.data.items.filter(n => n.type === 'GIFT_COMPLETED_REWARD'",
+                  "    && n.referenceType === 'GIFT' && Number(n.referenceId) === giftId));",
+                  "  const pagination = body.data.pagination;",
+                  "  if (pagination.hasNext) {",
+                  "    pm.expect(pages < 20).to.eql(true);",
+                  "    pm.expect(typeof pagination.nextCursor).to.eql('string');",
+                  "    pm.expect(visited.has(pagination.nextCursor)).to.eql(false);",
+                  "    visited.add(pagination.nextCursor);",
+                  "    const url = pm.environment.get('mainBaseUrl') + '/notifications?cursor='",
+                  "      + encodeURIComponent(pagination.nextCursor);",
+                  "    pm.sendRequest({url, method: 'GET', header: {Authorization:",
+                  "      'Bearer ' + pm.environment.get('senderAccessToken')}}, (error, response) => {",
+                  "      pm.test('다음 알림 페이지 조회 성공', () => {",
+                  "        pm.expect(error == null).to.eql(true);",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "      });",
+                  "      if (!error && response.code === 200) inspect(response.json(), pages + 1);",
+                  "    });",
+                  "    return;",
+                  "  }",
+                  "  pm.test('현재 선물의 보상 알림 1개', () => {",
+                  "    pm.expect(matches.length).to.eql(1);",
+                  "  });",
+                  "  if (1 === 1) {",
+                  "    pm.test('실제 지급액과 쿠폰 배수 표시', () => {",
+                  "      const notification = matches[0];",
+                  "      const suffix = \"선물 완료 보상 50,000 크레딧이 지급되었습니다.\";",
+                  "      pm.expect(notification.message.endsWith(suffix)).to.eql(true);",
+                  "      pm.expect(notification.title).to.eql(\"보상이 지급되었어요\");",
+                  "    });",
+                  "  }",
+                  "}",
+                  "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "13 수락 시 쿠폰 추가 차감 없음",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "const before = JSON.parse(pm.collectionVariables.get('pr3_1_couponsBefore'));",
+                  "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 1 && 1 > 1 ? 1 : 0)}))",
+                  "  .filter(c => c.quantity > 0);",
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 2배 쿠폰 수락 보상·알림",
+      "description": "전용 로컬 계정으로 폴더 안 요청을 순서대로 실행한다. 다른 결제·크레딧 사용을 동시에 실행하지 않는다.",
+      "item": [
+        {
+          "name": "01 선물 사전 검증",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/gifts/preflight",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.environment.set('expectedUnitPrice', String(data.product.unitPrice));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "02 쿠폰 수량 기록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.collectionVariables.set('pr3_2_couponsBefore', JSON.stringify(data.coupons));",
+                  "const available = data.coupons.find(c => c.multiplier === 2);",
+                  "pm.test('선택 쿠폰 준비', () => pm.expect(2 === 1 || !!available && available.quantity > 0).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "03 결제 전 잔액 기록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.collectionVariables.set('pr3_2_balanceBefore', data.balance);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "04 결제·쿠폰 사용 확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_2_paymentKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('pr3_2_paymentKey', pm.variables.replaceIn('PR3-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('결제 완료·보상 미지급', () => {",
+                  "  pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_2_balanceBefore')) - data.amount);",
+                  "});",
+                  "pm.collectionVariables.set('pr3_2_orderId', data.orderId);",
+                  "pm.collectionVariables.set('pr3_2_giftId', String(data.giftId));",
+                  "pm.collectionVariables.set('pr3_2_paidBalance', data.balanceAfter);",
+                  "pm.collectionVariables.set('pr3_2_amount', data.amount);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "05 같은 결제 재요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_2_paymentKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('같은 주문·잔액 반환', () => {",
+                  "  pm.expect(data.orderId).to.eql(pm.collectionVariables.get('pr3_2_orderId'));",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_2_giftId'));",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_2_paidBalance')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "06 결제 반복 후 쿠폰 수량",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "const before = JSON.parse(pm.collectionVariables.get('pr3_2_couponsBefore'));",
+                  "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 2 && 2 > 1 ? 1 : 0)}))",
+                  "  .filter(c => c.quantity > 0);",
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "07 수락 전 보상 미지급 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('차감 잔액 유지', () => pm.expect(data.balance).to.eql(Number(pm.collectionVariables.get('pr3_2_paidBalance'))));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "08 수락 전 보상 알림 없음",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const giftId = Number(pm.collectionVariables.get('pr3_2_giftId'));",
+                  "const matches = [];",
+                  "const visited = new Set();",
+                  "function inspect(body, pages) {",
+                  "  pm.expect(Array.isArray(body.data.items)).to.eql(true);",
+                  "  matches.push(...body.data.items.filter(n => n.type === 'GIFT_COMPLETED_REWARD'",
+                  "    && n.referenceType === 'GIFT' && Number(n.referenceId) === giftId));",
+                  "  const pagination = body.data.pagination;",
+                  "  if (pagination.hasNext) {",
+                  "    pm.expect(pages < 20).to.eql(true);",
+                  "    pm.expect(typeof pagination.nextCursor).to.eql('string');",
+                  "    pm.expect(visited.has(pagination.nextCursor)).to.eql(false);",
+                  "    visited.add(pagination.nextCursor);",
+                  "    const url = pm.environment.get('mainBaseUrl') + '/notifications?cursor='",
+                  "      + encodeURIComponent(pagination.nextCursor);",
+                  "    pm.sendRequest({url, method: 'GET', header: {Authorization:",
+                  "      'Bearer ' + pm.environment.get('senderAccessToken')}}, (error, response) => {",
+                  "      pm.test('다음 알림 페이지 조회 성공', () => {",
+                  "        pm.expect(error == null).to.eql(true);",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "      });",
+                  "      if (!error && response.code === 200) inspect(response.json(), pages + 1);",
+                  "    });",
+                  "    return;",
+                  "  }",
+                  "  pm.test('현재 선물의 보상 알림 0개', () => {",
+                  "    pm.expect(matches.length).to.eql(0);",
+                  "  });",
+                  "  if (0 === 1) {",
+                  "    pm.test('실제 지급액과 쿠폰 배수 표시', () => {",
+                  "      const notification = matches[0];",
+                  "      const suffix = \"2배 쿠폰이 적용되어 선물 보상 총 100,000 크레딧이 지급되었습니다.\";",
+                  "      pm.expect(notification.message.endsWith(suffix)).to.eql(true);",
+                  "      pm.expect(notification.title).to.eql(\"2배 쿠폰 보상이 지급되었어요\");",
+                  "    });",
+                  "  }",
+                  "}",
+                  "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "09 상대방 수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{pr3_2_giftId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('수락 시 실제 보상', () => {",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_2_giftId'));",
+                  "  pm.expect(data.giftStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.rewardAmount).to.eql(100000);",
+                  "});",
+                  "pm.collectionVariables.set('pr3_2_completedAt', data.completedAt);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10 같은 선물 재수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{pr3_2_giftId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('수락 시 실제 보상', () => {",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_2_giftId'));",
+                  "  pm.expect(data.giftStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.rewardAmount).to.eql(100000);",
+                  "});",
+                  "pm.test('최초 수락 시각 유지', () => pm.expect(data.completedAt).to.eql(pm.collectionVariables.get('pr3_2_completedAt')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "11 보상 1회 지급 잔액",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('발신자 보상 1회 증가', () => pm.expect(data.balance).to.eql(Number(pm.collectionVariables.get('pr3_2_paidBalance')) + 100000));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "12 보상 알림 금액·배수·중복 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const giftId = Number(pm.collectionVariables.get('pr3_2_giftId'));",
+                  "const matches = [];",
+                  "const visited = new Set();",
+                  "function inspect(body, pages) {",
+                  "  pm.expect(Array.isArray(body.data.items)).to.eql(true);",
+                  "  matches.push(...body.data.items.filter(n => n.type === 'GIFT_COMPLETED_REWARD'",
+                  "    && n.referenceType === 'GIFT' && Number(n.referenceId) === giftId));",
+                  "  const pagination = body.data.pagination;",
+                  "  if (pagination.hasNext) {",
+                  "    pm.expect(pages < 20).to.eql(true);",
+                  "    pm.expect(typeof pagination.nextCursor).to.eql('string');",
+                  "    pm.expect(visited.has(pagination.nextCursor)).to.eql(false);",
+                  "    visited.add(pagination.nextCursor);",
+                  "    const url = pm.environment.get('mainBaseUrl') + '/notifications?cursor='",
+                  "      + encodeURIComponent(pagination.nextCursor);",
+                  "    pm.sendRequest({url, method: 'GET', header: {Authorization:",
+                  "      'Bearer ' + pm.environment.get('senderAccessToken')}}, (error, response) => {",
+                  "      pm.test('다음 알림 페이지 조회 성공', () => {",
+                  "        pm.expect(error == null).to.eql(true);",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "      });",
+                  "      if (!error && response.code === 200) inspect(response.json(), pages + 1);",
+                  "    });",
+                  "    return;",
+                  "  }",
+                  "  pm.test('현재 선물의 보상 알림 1개', () => {",
+                  "    pm.expect(matches.length).to.eql(1);",
+                  "  });",
+                  "  if (1 === 1) {",
+                  "    pm.test('실제 지급액과 쿠폰 배수 표시', () => {",
+                  "      const notification = matches[0];",
+                  "      const suffix = \"2배 쿠폰이 적용되어 선물 보상 총 100,000 크레딧이 지급되었습니다.\";",
+                  "      pm.expect(notification.message.endsWith(suffix)).to.eql(true);",
+                  "      pm.expect(notification.title).to.eql(\"2배 쿠폰 보상이 지급되었어요\");",
+                  "    });",
+                  "  }",
+                  "}",
+                  "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "13 수락 시 쿠폰 추가 차감 없음",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "const before = JSON.parse(pm.collectionVariables.get('pr3_2_couponsBefore'));",
+                  "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 2 && 2 > 1 ? 1 : 0)}))",
+                  "  .filter(c => c.quantity > 0);",
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 3배 쿠폰 수락 보상·알림",
+      "description": "전용 로컬 계정으로 폴더 안 요청을 순서대로 실행한다. 다른 결제·크레딧 사용을 동시에 실행하지 않는다.",
+      "item": [
+        {
+          "name": "01 선물 사전 검증",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/gifts/preflight",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.environment.set('expectedUnitPrice', String(data.product.unitPrice));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "02 쿠폰 수량 기록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.collectionVariables.set('pr3_3_couponsBefore', JSON.stringify(data.coupons));",
+                  "const available = data.coupons.find(c => c.multiplier === 3);",
+                  "pm.test('선택 쿠폰 준비', () => pm.expect(3 === 1 || !!available && available.quantity > 0).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "03 결제 전 잔액 기록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.collectionVariables.set('pr3_3_balanceBefore', data.balance);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "04 결제·쿠폰 사용 확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_3_paymentKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('pr3_3_paymentKey', pm.variables.replaceIn('PR3-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('결제 완료·보상 미지급', () => {",
+                  "  pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_3_balanceBefore')) - data.amount);",
+                  "});",
+                  "pm.collectionVariables.set('pr3_3_orderId', data.orderId);",
+                  "pm.collectionVariables.set('pr3_3_giftId', String(data.giftId));",
+                  "pm.collectionVariables.set('pr3_3_paidBalance', data.balanceAfter);",
+                  "pm.collectionVariables.set('pr3_3_amount', data.amount);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "05 같은 결제 재요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_3_paymentKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('같은 주문·잔액 반환', () => {",
+                  "  pm.expect(data.orderId).to.eql(pm.collectionVariables.get('pr3_3_orderId'));",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_3_giftId'));",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_3_paidBalance')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "06 결제 반복 후 쿠폰 수량",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "const before = JSON.parse(pm.collectionVariables.get('pr3_3_couponsBefore'));",
+                  "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 3 && 3 > 1 ? 1 : 0)}))",
+                  "  .filter(c => c.quantity > 0);",
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "07 수락 전 보상 미지급 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('차감 잔액 유지', () => pm.expect(data.balance).to.eql(Number(pm.collectionVariables.get('pr3_3_paidBalance'))));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "08 수락 전 보상 알림 없음",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const giftId = Number(pm.collectionVariables.get('pr3_3_giftId'));",
+                  "const matches = [];",
+                  "const visited = new Set();",
+                  "function inspect(body, pages) {",
+                  "  pm.expect(Array.isArray(body.data.items)).to.eql(true);",
+                  "  matches.push(...body.data.items.filter(n => n.type === 'GIFT_COMPLETED_REWARD'",
+                  "    && n.referenceType === 'GIFT' && Number(n.referenceId) === giftId));",
+                  "  const pagination = body.data.pagination;",
+                  "  if (pagination.hasNext) {",
+                  "    pm.expect(pages < 20).to.eql(true);",
+                  "    pm.expect(typeof pagination.nextCursor).to.eql('string');",
+                  "    pm.expect(visited.has(pagination.nextCursor)).to.eql(false);",
+                  "    visited.add(pagination.nextCursor);",
+                  "    const url = pm.environment.get('mainBaseUrl') + '/notifications?cursor='",
+                  "      + encodeURIComponent(pagination.nextCursor);",
+                  "    pm.sendRequest({url, method: 'GET', header: {Authorization:",
+                  "      'Bearer ' + pm.environment.get('senderAccessToken')}}, (error, response) => {",
+                  "      pm.test('다음 알림 페이지 조회 성공', () => {",
+                  "        pm.expect(error == null).to.eql(true);",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "      });",
+                  "      if (!error && response.code === 200) inspect(response.json(), pages + 1);",
+                  "    });",
+                  "    return;",
+                  "  }",
+                  "  pm.test('현재 선물의 보상 알림 0개', () => {",
+                  "    pm.expect(matches.length).to.eql(0);",
+                  "  });",
+                  "  if (0 === 1) {",
+                  "    pm.test('실제 지급액과 쿠폰 배수 표시', () => {",
+                  "      const notification = matches[0];",
+                  "      const suffix = \"3배 쿠폰이 적용되어 선물 보상 총 150,000 크레딧이 지급되었습니다.\";",
+                  "      pm.expect(notification.message.endsWith(suffix)).to.eql(true);",
+                  "      pm.expect(notification.title).to.eql(\"3배 쿠폰 보상이 지급되었어요\");",
+                  "    });",
+                  "  }",
+                  "}",
+                  "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "09 상대방 수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{pr3_3_giftId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('수락 시 실제 보상', () => {",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_3_giftId'));",
+                  "  pm.expect(data.giftStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.rewardAmount).to.eql(150000);",
+                  "});",
+                  "pm.collectionVariables.set('pr3_3_completedAt', data.completedAt);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10 같은 선물 재수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/gifts/received/{{pr3_3_giftId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('수락 시 실제 보상', () => {",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_3_giftId'));",
+                  "  pm.expect(data.giftStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.rewardAmount).to.eql(150000);",
+                  "});",
+                  "pm.test('최초 수락 시각 유지', () => pm.expect(data.completedAt).to.eql(pm.collectionVariables.get('pr3_3_completedAt')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "11 보상 1회 지급 잔액",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('발신자 보상 1회 증가', () => pm.expect(data.balance).to.eql(Number(pm.collectionVariables.get('pr3_3_paidBalance')) + 150000));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "12 보상 알림 금액·배수·중복 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const giftId = Number(pm.collectionVariables.get('pr3_3_giftId'));",
+                  "const matches = [];",
+                  "const visited = new Set();",
+                  "function inspect(body, pages) {",
+                  "  pm.expect(Array.isArray(body.data.items)).to.eql(true);",
+                  "  matches.push(...body.data.items.filter(n => n.type === 'GIFT_COMPLETED_REWARD'",
+                  "    && n.referenceType === 'GIFT' && Number(n.referenceId) === giftId));",
+                  "  const pagination = body.data.pagination;",
+                  "  if (pagination.hasNext) {",
+                  "    pm.expect(pages < 20).to.eql(true);",
+                  "    pm.expect(typeof pagination.nextCursor).to.eql('string');",
+                  "    pm.expect(visited.has(pagination.nextCursor)).to.eql(false);",
+                  "    visited.add(pagination.nextCursor);",
+                  "    const url = pm.environment.get('mainBaseUrl') + '/notifications?cursor='",
+                  "      + encodeURIComponent(pagination.nextCursor);",
+                  "    pm.sendRequest({url, method: 'GET', header: {Authorization:",
+                  "      'Bearer ' + pm.environment.get('senderAccessToken')}}, (error, response) => {",
+                  "      pm.test('다음 알림 페이지 조회 성공', () => {",
+                  "        pm.expect(error == null).to.eql(true);",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "      });",
+                  "      if (!error && response.code === 200) inspect(response.json(), pages + 1);",
+                  "    });",
+                  "    return;",
+                  "  }",
+                  "  pm.test('현재 선물의 보상 알림 1개', () => {",
+                  "    pm.expect(matches.length).to.eql(1);",
+                  "  });",
+                  "  if (1 === 1) {",
+                  "    pm.test('실제 지급액과 쿠폰 배수 표시', () => {",
+                  "      const notification = matches[0];",
+                  "      const suffix = \"3배 쿠폰이 적용되어 선물 보상 총 150,000 크레딧이 지급되었습니다.\";",
+                  "      pm.expect(notification.message.endsWith(suffix)).to.eql(true);",
+                  "      pm.expect(notification.title).to.eql(\"3배 쿠폰 보상이 지급되었어요\");",
+                  "    });",
+                  "  }",
+                  "}",
+                  "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "13 수락 시 쿠폰 추가 차감 없음",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "const before = JSON.parse(pm.collectionVariables.get('pr3_3_couponsBefore'));",
+                  "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 3 && 3 > 1 ? 1 : 0)}))",
+                  "  .filter(c => c.quantity > 0);",
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 2배 쿠폰 미수락 취소·복구",
+      "description": "전용 로컬 계정으로 폴더 안 요청을 순서대로 실행한다. 다른 결제·크레딧 사용을 동시에 실행하지 않는다.",
+      "item": [
+        {
+          "name": "01 선물 사전 검증",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/gifts/preflight",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.environment.set('expectedUnitPrice', String(data.product.unitPrice));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "02 쿠폰 수량 기록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.collectionVariables.set('pr3_4_couponsBefore', JSON.stringify(data.coupons));",
+                  "const available = data.coupons.find(c => c.multiplier === 2);",
+                  "pm.test('선택 쿠폰 준비', () => pm.expect(2 === 1 || !!available && available.quantity > 0).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "03 결제 전 잔액 기록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.collectionVariables.set('pr3_4_balanceBefore', data.balance);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "04 결제·쿠폰 사용 확정",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_4_paymentKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('pr3_4_paymentKey', pm.variables.replaceIn('PR3-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('결제 완료·보상 미지급', () => {",
+                  "  pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "  pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_4_balanceBefore')) - data.amount);",
+                  "});",
+                  "pm.collectionVariables.set('pr3_4_orderId', data.orderId);",
+                  "pm.collectionVariables.set('pr3_4_giftId', String(data.giftId));",
+                  "pm.collectionVariables.set('pr3_4_paidBalance', data.balanceAfter);",
+                  "pm.collectionVariables.set('pr3_4_amount', data.amount);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "05 같은 결제 재요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_4_paymentKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('같은 주문·잔액 반환', () => {",
+                  "  pm.expect(data.orderId).to.eql(pm.collectionVariables.get('pr3_4_orderId'));",
+                  "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_4_giftId'));",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_4_paidBalance')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "06 결제 반복 후 쿠폰 수량",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "const before = JSON.parse(pm.collectionVariables.get('pr3_4_couponsBefore'));",
+                  "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 2 && 2 > 1 ? 1 : 0)}))",
+                  "  .filter(c => c.quantity > 0);",
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "07 수락 전 보상 미지급 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('차감 잔액 유지', () => pm.expect(data.balance).to.eql(Number(pm.collectionVariables.get('pr3_4_paidBalance'))));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "08 수락 전 보상 알림 없음",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const giftId = Number(pm.collectionVariables.get('pr3_4_giftId'));",
+                  "const matches = [];",
+                  "const visited = new Set();",
+                  "function inspect(body, pages) {",
+                  "  pm.expect(Array.isArray(body.data.items)).to.eql(true);",
+                  "  matches.push(...body.data.items.filter(n => n.type === 'GIFT_COMPLETED_REWARD'",
+                  "    && n.referenceType === 'GIFT' && Number(n.referenceId) === giftId));",
+                  "  const pagination = body.data.pagination;",
+                  "  if (pagination.hasNext) {",
+                  "    pm.expect(pages < 20).to.eql(true);",
+                  "    pm.expect(typeof pagination.nextCursor).to.eql('string');",
+                  "    pm.expect(visited.has(pagination.nextCursor)).to.eql(false);",
+                  "    visited.add(pagination.nextCursor);",
+                  "    const url = pm.environment.get('mainBaseUrl') + '/notifications?cursor='",
+                  "      + encodeURIComponent(pagination.nextCursor);",
+                  "    pm.sendRequest({url, method: 'GET', header: {Authorization:",
+                  "      'Bearer ' + pm.environment.get('senderAccessToken')}}, (error, response) => {",
+                  "      pm.test('다음 알림 페이지 조회 성공', () => {",
+                  "        pm.expect(error == null).to.eql(true);",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "      });",
+                  "      if (!error && response.code === 200) inspect(response.json(), pages + 1);",
+                  "    });",
+                  "    return;",
+                  "  }",
+                  "  pm.test('현재 선물의 보상 알림 0개', () => {",
+                  "    pm.expect(matches.length).to.eql(0);",
+                  "  });",
+                  "  if (0 === 1) {",
+                  "    pm.test('실제 지급액과 쿠폰 배수 표시', () => {",
+                  "      const notification = matches[0];",
+                  "      const suffix = \"2배 쿠폰이 적용되어 선물 보상 총 100,000 크레딧이 지급되었습니다.\";",
+                  "      pm.expect(notification.message.endsWith(suffix)).to.eql(true);",
+                  "      pm.expect(notification.title).to.eql(\"2배 쿠폰 보상이 지급되었어요\");",
+                  "    });",
+                  "  }",
+                  "}",
+                  "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "09 미수락 결제 취소",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_4_cancelKey}}"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_4_orderId}}/cancellations"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('pr3_4_cancelKey', pm.variables.replaceIn('PR3-CANCEL-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('미수락 취소 완료·전액 환불', () => {",
+                  "  pm.expect(data.paymentStatus).to.eql('CANCELED');",
+                  "  pm.expect(data.giftStatus).to.eql('CANCELED');",
+                  "  pm.expect(data.cancelAmount).to.eql(Number(pm.collectionVariables.get('pr3_4_amount')));",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_4_balanceBefore')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10 같은 취소 재요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{pr3_4_cancelKey}}"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_4_orderId}}/cancellations"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('미수락 취소 완료·전액 환불', () => {",
+                  "  pm.expect(data.paymentStatus).to.eql('CANCELED');",
+                  "  pm.expect(data.giftStatus).to.eql('CANCELED');",
+                  "  pm.expect(data.cancelAmount).to.eql(Number(pm.collectionVariables.get('pr3_4_amount')));",
+                  "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_4_balanceBefore')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "11 쿠폰 1회 복구",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/coupons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('취소 전 보유 수량 복구', () => pm.expect(data.coupons).to.eql(JSON.parse(pm.collectionVariables.get('pr3_4_couponsBefore'))));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "12 환불 후 잔액",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 공통 성공 응답', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(typeof body.message).to.eql('string');",
+                  "  pm.expect('error' in body).to.eql(false);",
+                  "});",
+                  "const data = pm.response.json().data;",
+                  "pm.test('보상 없이 원래 잔액 복구', () => pm.expect(data.balance).to.eql(Number(pm.collectionVariables.get('pr3_4_balanceBefore'))));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "13 취소 선물의 보상 알림 없음",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const giftId = Number(pm.collectionVariables.get('pr3_4_giftId'));",
+                  "const matches = [];",
+                  "const visited = new Set();",
+                  "function inspect(body, pages) {",
+                  "  pm.expect(Array.isArray(body.data.items)).to.eql(true);",
+                  "  matches.push(...body.data.items.filter(n => n.type === 'GIFT_COMPLETED_REWARD'",
+                  "    && n.referenceType === 'GIFT' && Number(n.referenceId) === giftId));",
+                  "  const pagination = body.data.pagination;",
+                  "  if (pagination.hasNext) {",
+                  "    pm.expect(pages < 20).to.eql(true);",
+                  "    pm.expect(typeof pagination.nextCursor).to.eql('string');",
+                  "    pm.expect(visited.has(pagination.nextCursor)).to.eql(false);",
+                  "    visited.add(pagination.nextCursor);",
+                  "    const url = pm.environment.get('mainBaseUrl') + '/notifications?cursor='",
+                  "      + encodeURIComponent(pagination.nextCursor);",
+                  "    pm.sendRequest({url, method: 'GET', header: {Authorization:",
+                  "      'Bearer ' + pm.environment.get('senderAccessToken')}}, (error, response) => {",
+                  "      pm.test('다음 알림 페이지 조회 성공', () => {",
+                  "        pm.expect(error == null).to.eql(true);",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "      });",
+                  "      if (!error && response.code === 200) inspect(response.json(), pages + 1);",
+                  "    });",
+                  "    return;",
+                  "  }",
+                  "  pm.test('현재 선물의 보상 알림 0개', () => {",
+                  "    pm.expect(matches.length).to.eql(0);",
+                  "  });",
+                  "  if (0 === 1) {",
+                  "    pm.test('실제 지급액과 쿠폰 배수 표시', () => {",
+                  "      const notification = matches[0];",
+                  "      const suffix = \"2배 쿠폰이 적용되어 선물 보상 총 100,000 크레딧이 지급되었습니다.\";",
+                  "      pm.expect(notification.message.endsWith(suffix)).to.eql(true);",
+                  "      pm.expect(notification.title).to.eql(\"2배 쿠폰 보상이 지급되었어요\");",
+                  "    });",
+                  "  }",
+                  "}",
+                  "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

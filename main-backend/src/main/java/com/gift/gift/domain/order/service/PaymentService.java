@@ -109,6 +109,11 @@ public class PaymentService {
     }
 
     private PaymentResponse requestApproval(Order order, String scenario) {
+        // 승인 요청은 한 번만 전송한다. 진행 중·미확정 재요청은 결과만 조회한다.
+        if (!approvalService.claim(order.getId())) {
+            return findFinalResult(order);
+        }
+
         try {
             PaymentResponse response = paymentClient.confirm(
                     confirmRequest(order),
@@ -119,7 +124,7 @@ public class PaymentService {
                     ? findFinalResult(order)
                     : response;
         } catch (PaymentClientException exception) {
-            if (isResultUnconfirmed(exception.failure())) {
+            if (isResultUnconfirmed(exception.failure()) || exception.outcomeUncertain()) {
                 return findFinalResult(order);
             }
 
@@ -231,8 +236,17 @@ public class PaymentService {
         }
 
         if (failure == PaymentClientFailure.INVALID_REQUEST) {
+            approvalService.decline(order.getId());
             return new OrderException(
                     OrderErrorCode.INVALID_PAYMENT_REQUEST,
+                    exception
+            );
+        }
+
+        if (failure == PaymentClientFailure.AUTHENTICATION_FAILED) {
+            approvalService.decline(order.getId());
+            return new OrderException(
+                    OrderErrorCode.PAYMENT_PROCESSING_FAILED,
                     exception
             );
         }

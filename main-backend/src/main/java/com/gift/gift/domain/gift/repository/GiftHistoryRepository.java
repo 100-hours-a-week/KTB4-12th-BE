@@ -4,7 +4,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -110,4 +113,20 @@ public interface GiftHistoryRepository extends JpaRepository<GiftHistory, Long> 
             @Param("cursorId") Long cursorId,
             Pageable pageable
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select gift from GiftHistory gift
+            where gift.id = :giftId and gift.recipient.id = :recipientId
+              and gift.deletedAt is null
+            """)
+    Optional<GiftHistory> findForAcceptance(
+            @Param("giftId") Long giftId, @Param("recipientId") Long recipientId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select gift from GiftHistory gift
+            where gift.orderRecordId = :orderRecordId
+            """)
+    Optional<GiftHistory> findForCancellation(@Param("orderRecordId") Long orderRecordId);
 }

@@ -6,6 +6,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
@@ -219,6 +221,65 @@ class PaymentCommandRetryTest {
         } finally {
             Thread.interrupted();
         }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PaymentClientFailure.class,
+            names = {"INVALID_REQUEST", "AUTHENTICATION_FAILED", "PAYMENT_DECLINED"})
+    @DisplayName("첫 요청의 명확한 거절은 미확정 이력 없이 그대로 전달한다")
+    void execute_firstRejectionHasNoUncertainHistory(PaymentClientFailure failure) {
+        List<Long> delays = new ArrayList<>();
+        PaymentCommandRetry retry = new PaymentCommandRetry(delays::add, bound -> 0);
+        PaymentClientException original = clientException(failure);
+
+        assertThatThrownBy(() -> retry.execute("PAYMENT_CONFIRM", "order-id", () -> {
+            throw original;
+        }, response -> false)).isInstanceOfSatisfying(PaymentClientException.class, error -> {
+            assertThat(error).isSameAs(original);
+            assertThat(error.outcomeUncertain()).isFalse();
+        });
+        assertThat(delays).isEmpty();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PaymentClientFailure.class,
+            names = {"INVALID_REQUEST", "AUTHENTICATION_FAILED", "PAYMENT_DECLINED",
+                    "CANCELLATION_DECLINED"})
+    @DisplayName("앞선 타임아웃 뒤 거절은 원본 오류와 추적값을 보존하고 결과 미확정으로 표시한다")
+    void execute_rejectionAfterTimeoutKeepsUncertainHistory(PaymentClientFailure failure) {
+        AtomicInteger calls = new AtomicInteger();
+        PaymentCommandRetry retry = new PaymentCommandRetry(ignored -> {}, bound -> 0);
+        PaymentClientException original = new PaymentClientException(failure, "거절", "upstream-trace");
+
+        assertThatThrownBy(() -> retry.execute("PAYMENT_CONFIRM", "order-id", () -> {
+            if (calls.getAndIncrement() == 0) {
+                throw clientException(PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED);
+            }
+            throw original;
+        }, response -> false)).isInstanceOfSatisfying(PaymentClientException.class, error -> {
+            assertThat(error.outcomeUncertain()).isTrue();
+            assertThat(error.failure()).isEqualTo(failure);
+            assertThat(error.upstreamTraceId()).isEqualTo("upstream-trace");
+            assertThat(error.getCause()).isSameAs(original);
+        });
+        assertThat(calls).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("처리 중 응답 뒤 입력 거절도 앞선 승인 결과를 미확정으로 보존한다")
+    void execute_rejectionAfterProcessingKeepsUncertainHistory() {
+        AtomicInteger calls = new AtomicInteger();
+        PaymentCommandRetry retry = new PaymentCommandRetry(ignored -> {}, bound -> 0);
+
+        assertThatThrownBy(() -> retry.execute("PAYMENT_CONFIRM", "order-id", () -> {
+            if (calls.getAndIncrement() == 0) {
+                return PaymentServerStatus.PENDING;
+            }
+            throw clientException(PaymentClientFailure.INVALID_REQUEST);
+        }, status -> status == PaymentServerStatus.PENDING))
+                .isInstanceOfSatisfying(PaymentClientException.class,
+                        error -> assertThat(error.outcomeUncertain()).isTrue());
+        assertThat(calls).hasValue(2);
     }
 
     private PaymentClientException clientException(

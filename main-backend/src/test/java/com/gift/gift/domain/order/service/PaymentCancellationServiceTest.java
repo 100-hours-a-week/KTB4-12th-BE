@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.order.entity.CancellationSource;
@@ -58,6 +60,7 @@ class PaymentCancellationServiceTest {
                 compensationService,
                 transactionService
         );
+        when(transactionService.claimUserRequest(any())).thenReturn(true);
     }
 
     @Test
@@ -126,7 +129,7 @@ class PaymentCancellationServiceTest {
         assertThat(result.canceledAt()).isEqualTo(canceledAt);
 
         verify(paymentClient).getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY);
-        verifyNoInteractions(transactionService);
+        verify(transactionService, never()).markDeclined(any());
     }
 
     @Test
@@ -303,6 +306,135 @@ class PaymentCancellationServiceTest {
         );
 
         verifyNoInteractions(paymentClient);
+    }
+
+    @Test
+    @DisplayName("외부 취소 거절 확정은 원장에 기록해 수락 차단을 해제한다")
+    void request_recordsDefinitiveCancellationDecline() {
+        Order order = completedOrder();
+        PaymentCancellation cancellation = pendingCancellation();
+        ReflectionTestUtils.setField(cancellation, "id", 20L);
+        when(requestService.start(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER))
+                .thenReturn(PaymentCancellationStartResult.created(cancellation, order));
+        when(paymentClient.cancel(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenThrow(new PaymentClientException(PaymentClientFailure.CANCELLATION_DECLINED,
+                        "취소 거절", (String) null));
+        assertThatThrownBy(() -> service.request(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER))
+                .isInstanceOf(OrderException.class);
+        verify(transactionService).markDeclined(20L);
+        verifyNoInteractions(compensationService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PaymentClientFailure.class,
+            names = {"INVALID_REQUEST", "AUTHENTICATION_FAILED", "CANCELLATION_DECLINED"})
+    @DisplayName("앞선 취소 미확정 뒤 거절을 받아도 실제 취소 완료를 조회해 반환한다")
+    void request_recoversCancellationAfterRetryRejection(PaymentClientFailure failure) {
+        PaymentCancellation cancellation = pendingCancellation();
+        LocalDateTime canceledAt = LocalDateTime.of(2026, 10, 26, 12, 0);
+        when(requestService.start(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER))
+                .thenReturn(PaymentCancellationStartResult.created(cancellation, completedOrder()));
+        when(paymentClient.cancel(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenThrow(new PaymentClientException(failure, "재시도 거절", "trace").withUncertainOutcome());
+        when(paymentClient.getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenReturn(cancelResponse(ORDER_ID, AMOUNT, canceledAt));
+
+        PaymentCancellationApproval result = service.request(
+                REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER
+        );
+
+        assertThat(result.transactionKey()).isEqualTo(TRANSACTION_KEY);
+        assertThat(result.canceledAt()).isEqualTo(canceledAt);
+        verify(paymentClient).getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY);
+        verify(transactionService, never()).markDeclined(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PaymentClientFailure.class,
+            names = {"INVALID_REQUEST", "AUTHENTICATION_FAILED", "CANCELLATION_DECLINED"})
+    @DisplayName("취소 재시도 거절 후 조회도 실패하면 취소를 종료하거나 보상하지 않는다")
+    void request_retryRejectionKeepsCancellationUnconfirmed(PaymentClientFailure failure) {
+        PaymentCancellation cancellation = pendingCancellation();
+        ReflectionTestUtils.setField(cancellation, "id", 20L);
+        when(requestService.start(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER))
+                .thenReturn(PaymentCancellationStartResult.created(cancellation, completedOrder()));
+        when(paymentClient.cancel(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenThrow(new PaymentClientException(failure, "재시도 거절", "trace").withUncertainOutcome());
+        when(paymentClient.getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenThrow(new PaymentClientException(PaymentClientFailure.PAYMENT_NOT_FOUND,
+                        "취소 결과 없음", (String) null));
+
+        assertThatThrownBy(() -> service.request(
+                REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER
+        )).isInstanceOfSatisfying(OrderException.class,
+                error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.CANCELLATION_RESULT_UNCONFIRMED));
+
+        verify(transactionService).markResultUnconfirmed(
+                20L, PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+        );
+        verify(transactionService, never()).markDeclined(any());
+        verifyNoInteractions(compensationService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PaymentClientFailure.class, names = {"AUTHENTICATION_FAILED", "INVALID_REQUEST"})
+    @DisplayName("최초 사용자 취소 입력·인증 거절은 취소 기록만 종료한다")
+    void request_declinesFirstUserAuthenticationRejection(PaymentClientFailure failure) {
+        PaymentCancellation cancellation = pendingCancellation();
+        ReflectionTestUtils.setField(cancellation, "id", 20L);
+        when(requestService.start(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER))
+                .thenReturn(PaymentCancellationStartResult.created(cancellation, completedOrder()));
+        when(paymentClient.cancel(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenThrow(new PaymentClientException(failure,
+                        "내부 인증 실패", (String) null));
+
+        assertThatThrownBy(() -> service.cancel(
+                REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER
+        )).isInstanceOf(OrderException.class);
+
+        verify(transactionService).markDeclined(20L);
+        verifyNoInteractions(compensationService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = CancellationSource.class,
+            names = {"GIFT_EXPIRATION", "LOCAL_PROCESSING_FAILURE"})
+    @DisplayName("만료·자동 보상 취소의 인증 실패는 종료하지 않고 동일 키 재시도를 허용한다")
+    void request_automaticAuthenticationFailureCanRetry(CancellationSource source) {
+        PaymentCancellation cancellation = new PaymentCancellation(
+                ORDER_RECORD_ID, REQUESTER_ID, source, IDEMPOTENCY_KEY,
+                new PaymentCancellationRequestHasher().hash(ORDER_ID)
+        );
+        when(requestService.start(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, source))
+                .thenReturn(PaymentCancellationStartResult.existing(cancellation, completedOrder()));
+        when(paymentClient.cancel(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenThrow(new PaymentClientException(PaymentClientFailure.AUTHENTICATION_FAILED,
+                        "내부 인증 실패", (String) null))
+                .thenReturn(cancelResponse(ORDER_ID, AMOUNT, LocalDateTime.of(2026, 10, 26, 12, 0)));
+
+        assertThatThrownBy(() -> service.request(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, source))
+                .isInstanceOf(OrderException.class);
+        assertThat(service.request(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, source).transactionKey())
+                .isEqualTo(TRANSACTION_KEY);
+        verify(transactionService, never()).claimUserRequest(any());
+        verify(transactionService, never()).markDeclined(any());
+        verify(paymentClient, times(2)).cancel(PAYMENT_KEY, IDEMPOTENCY_KEY);
+    }
+
+    @Test
+    @DisplayName("사용자 취소 선점 실패는 명령을 재전송하지 않고 결과만 조회한다")
+    void request_claimLoserOnlyQueriesCancellation() {
+        PaymentCancellation cancellation = pendingCancellation();
+        when(transactionService.claimUserRequest(any())).thenReturn(false);
+        when(requestService.start(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER))
+                .thenReturn(PaymentCancellationStartResult.existing(cancellation, completedOrder()));
+        when(paymentClient.getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY))
+                .thenReturn(cancelResponse(ORDER_ID, AMOUNT, LocalDateTime.of(2026, 10, 26, 12, 0)));
+
+        assertThat(service.request(REQUESTER_ID, ORDER_ID, IDEMPOTENCY_KEY, CancellationSource.USER)
+                .transactionKey()).isEqualTo(TRANSACTION_KEY);
+        verify(paymentClient, never()).cancel(any(), any());
+        verify(paymentClient).getCancellation(PAYMENT_KEY, IDEMPOTENCY_KEY);
     }
 
     private Order completedOrder() {

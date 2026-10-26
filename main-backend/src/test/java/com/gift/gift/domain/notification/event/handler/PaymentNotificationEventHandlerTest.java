@@ -3,6 +3,8 @@ package com.gift.gift.domain.notification.event.handler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 
 import com.gift.gift.domain.gift.event.GiftCompletedRewardEvent;
@@ -118,6 +120,38 @@ class PaymentNotificationEventHandlerTest {
         assertThat(command.title()).isEqualTo("보상이 지급되었어요");
         assertThat(command.message()).isEqualTo("선물 상품 선물 완료 보상 100,000 크레딧이 지급되었습니다.");
         assertThat(command.deduplicationKey()).isEqualTo("GIFT_COMPLETED_REWARD:501:20");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1,50000", "2,100000", "3,150000"})
+    @DisplayName("기본·2배·3배 보상 알림에 실제 지급액과 쿠폰 적용을 표시한다")
+    void handle_displaysActualRewardAndCouponMultiplier(int multiplier, long amount) {
+        when(keyGenerator.generate(NotificationType.GIFT_COMPLETED_REWARD, GIFT_ID.toString(), PAYER_ID))
+                .thenReturn("GIFT_COMPLETED_REWARD:501:20");
+        handler.handle(new GiftCompletedRewardEvent(GIFT_ID, PAYER_ID, PRODUCT_NAME, amount, multiplier));
+        NotificationCreateCommand command = captureCommand();
+        String formatted = String.format(java.util.Locale.KOREA, "%,d", amount);
+        assertThat(command.title()).isEqualTo(multiplier == 1
+                ? "보상이 지급되었어요" : multiplier + "배 쿠폰 보상이 지급되었어요");
+        assertThat(command.message()).isEqualTo(multiplier == 1
+                ? PRODUCT_NAME + " 선물 완료 보상 " + formatted + " 크레딧이 지급되었습니다."
+                : PRODUCT_NAME + " 선물에 " + multiplier + "배 쿠폰이 적용되어 선물 보상 총 "
+                        + formatted + " 크레딧이 지급되었습니다.");
+        assertThat(command.recipientId()).isEqualTo(PAYER_ID);
+        assertThat(command.referenceId()).isEqualTo(GIFT_ID);
+        assertThat(command.referenceType()).isEqualTo(NotificationReferenceType.GIFT);
+        assertThat(command.type()).isEqualTo(NotificationType.GIFT_COMPLETED_REWARD);
+        assertThat(command.deduplicationKey()).isEqualTo("GIFT_COMPLETED_REWARD:501:20");
+    }
+
+    @Test
+    @DisplayName("긴 상품명은 축약하되 쿠폰 배수와 지급액은 유지한다")
+    void handle_abbreviatesProductNameWithoutLosingReward() {
+        when(keyGenerator.generate(NotificationType.GIFT_COMPLETED_REWARD, GIFT_ID.toString(), PAYER_ID))
+                .thenReturn("GIFT_COMPLETED_REWARD:501:20");
+        handler.handle(new GiftCompletedRewardEvent(GIFT_ID, PAYER_ID, "가".repeat(35), 150_000L, 3));
+        assertThat(captureCommand().message()).isEqualTo("가".repeat(30)
+                + "... 선물에 3배 쿠폰이 적용되어 선물 보상 총 150,000 크레딧이 지급되었습니다.");
     }
 
     private NotificationCreateCommand captureCommand() {
