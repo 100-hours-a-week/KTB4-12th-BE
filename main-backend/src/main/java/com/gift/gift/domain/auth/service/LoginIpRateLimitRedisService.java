@@ -127,9 +127,9 @@ public class LoginIpRateLimitRedisService {
         Long retryAfterSeconds = redisTemplate.execute(
                 CONSUME_TOKEN_SCRIPT,
                 List.of(KEY_PREFIX + identifierHash),
-                CAPACITY,
-                REFILL_INTERVAL_MILLIS,
-                KEY_TTL_MILLIS
+                Integer.toString(CAPACITY),
+                Integer.toString(REFILL_INTERVAL_MILLIS),
+                Integer.toString(KEY_TTL_MILLIS)
         );
 
         if (retryAfterSeconds == null || retryAfterSeconds < 0) {
