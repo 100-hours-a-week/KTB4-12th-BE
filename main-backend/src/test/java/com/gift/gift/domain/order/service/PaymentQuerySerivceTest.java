@@ -38,17 +38,22 @@ class PaymentQueryServiceTest {
     private OrderRepository orderRepository;
     private GiftHistoryRepository giftHistoryRepository;
     private PaymentQueryService paymentQueryService;
+    private OrderRewardQueryService orderRewardQueryService;
 
     @BeforeEach
     void setUp() {
         orderRepository = mock(OrderRepository.class);
         giftHistoryRepository = mock(GiftHistoryRepository.class);
+        orderRewardQueryService = mock(OrderRewardQueryService.class);
+        when(orderRewardQueryService.summarize(any(), any()))
+                .thenReturn(new OrderRewardSummary(null, null, null, null));
 
         Clock clock = Clock.fixed(Instant.parse("2026-10-14T05:30:00Z"), ZoneId.of("Asia/Seoul"));
 
         paymentQueryService = new PaymentQueryService(
                 orderRepository,
                 giftHistoryRepository,
+                orderRewardQueryService,
                 clock
         );
     }

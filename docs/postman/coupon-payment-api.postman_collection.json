@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Coupon Payment PR3",
-    "description": "실제 로컬 서버에서 결제 후 미지급·수락 시 5만/10만/15만 보상·쿠폰 배수 알림·재요청·미수락 취소 복구를 검증한다. 쿠폰 결제 활성화와 테스트 전용 친구 계정, 충분한 잔액·재고, 2배 쿠폰 2개 이상·3배 1개 이상이 필요하다. 기본 차단 설정을 검사하는 기존 Payment API 05 폴더와 실행 환경이 다르다.",
+    "name": "Coupon Payment PR3·PR4",
+    "description": "실제 로컬 서버에서 결제 후 미지급·수락 시 5만/10만/15만 보상·쿠폰 배수 알림·재요청·미수락 취소 복구를 검증한다. 쿠폰 결제 활성화와 테스트 전용 친구 계정, 충분한 잔액·재고, 2배 쿠폰 2개 이상·3배 1개 이상이 필요하다. 기본 차단 설정을 검사하는 기존 Payment API 05 폴더와 실행 환경이 다르다. PR4: 쿠폰 목록 기본 보상액과 결제 생성·재조회 응답의 쿠폰 상태·예상/실제 보상을 검증한다.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -176,7 +176,10 @@
                   "const data = pm.response.json().data;",
                   "pm.collectionVariables.set('pr3_1_couponsBefore', JSON.stringify(data.coupons));",
                   "const available = data.coupons.find(c => c.multiplier === 1);",
-                  "pm.test('선택 쿠폰 준비', () => pm.expect(1 === 1 || !!available && available.quantity > 0).to.eql(true));"
+                  "pm.test('선택 쿠폰 준비', () => pm.expect(1 === 1 || !!available && available.quantity > 0).to.eql(true));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -265,7 +268,13 @@
                   "pm.collectionVariables.set('pr3_1_orderId', data.orderId);",
                   "pm.collectionVariables.set('pr3_1_giftId', String(data.giftId));",
                   "pm.collectionVariables.set('pr3_1_paidBalance', data.balanceAfter);",
-                  "pm.collectionVariables.set('pr3_1_amount', data.amount);"
+                  "pm.collectionVariables.set('pr3_1_amount', data.amount);",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(null);",
+                  "  pm.expect(data.couponStatus).to.eql(null);",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(50000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -314,6 +323,12 @@
                   "  pm.expect(data.orderId).to.eql(pm.collectionVariables.get('pr3_1_orderId'));",
                   "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_1_giftId'));",
                   "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_1_paidBalance')));",
+                  "});",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(null);",
+                  "  pm.expect(data.couponStatus).to.eql(null);",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(50000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
                   "});"
                 ]
               }
@@ -344,7 +359,10 @@
                   "const before = JSON.parse(pm.collectionVariables.get('pr3_1_couponsBefore'));",
                   "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 1 && 1 > 1 ? 1 : 0)}))",
                   "  .filter(c => c.quantity > 0);",
-                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -430,6 +448,33 @@
                   "  }",
                   "}",
                   "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PR4 수락·취소 전 상태 재조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_1_orderId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 조회 성공', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(null);",
+                  "  pm.expect(data.couponStatus).to.eql(null);",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(50000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -628,7 +673,37 @@
                   "const before = JSON.parse(pm.collectionVariables.get('pr3_1_couponsBefore'));",
                   "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 1 && 1 > 1 ? 1 : 0)}))",
                   "  .filter(c => c.quantity > 0);",
-                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PR4 수락 후 실제 보상 재조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_1_orderId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 조회 성공', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(null);",
+                  "  pm.expect(data.couponStatus).to.eql(null);",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(null);",
+                  "  pm.expect(data.rewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -704,7 +779,10 @@
                   "const data = pm.response.json().data;",
                   "pm.collectionVariables.set('pr3_2_couponsBefore', JSON.stringify(data.coupons));",
                   "const available = data.coupons.find(c => c.multiplier === 2);",
-                  "pm.test('선택 쿠폰 준비', () => pm.expect(2 === 1 || !!available && available.quantity > 0).to.eql(true));"
+                  "pm.test('선택 쿠폰 준비', () => pm.expect(2 === 1 || !!available && available.quantity > 0).to.eql(true));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -793,7 +871,13 @@
                   "pm.collectionVariables.set('pr3_2_orderId', data.orderId);",
                   "pm.collectionVariables.set('pr3_2_giftId', String(data.giftId));",
                   "pm.collectionVariables.set('pr3_2_paidBalance', data.balanceAfter);",
-                  "pm.collectionVariables.set('pr3_2_amount', data.amount);"
+                  "pm.collectionVariables.set('pr3_2_amount', data.amount);",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(2);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(100000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -842,6 +926,12 @@
                   "  pm.expect(data.orderId).to.eql(pm.collectionVariables.get('pr3_2_orderId'));",
                   "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_2_giftId'));",
                   "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_2_paidBalance')));",
+                  "});",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(2);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(100000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
                   "});"
                 ]
               }
@@ -872,7 +962,10 @@
                   "const before = JSON.parse(pm.collectionVariables.get('pr3_2_couponsBefore'));",
                   "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 2 && 2 > 1 ? 1 : 0)}))",
                   "  .filter(c => c.quantity > 0);",
-                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -958,6 +1051,33 @@
                   "  }",
                   "}",
                   "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PR4 수락·취소 전 상태 재조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_2_orderId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 조회 성공', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(2);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(100000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -1156,7 +1276,37 @@
                   "const before = JSON.parse(pm.collectionVariables.get('pr3_2_couponsBefore'));",
                   "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 2 && 2 > 1 ? 1 : 0)}))",
                   "  .filter(c => c.quantity > 0);",
-                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PR4 수락 후 실제 보상 재조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_2_orderId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 조회 성공', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(2);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(null);",
+                  "  pm.expect(data.rewardAmount).to.eql(100000);",
+                  "});"
                 ]
               }
             }
@@ -1232,7 +1382,10 @@
                   "const data = pm.response.json().data;",
                   "pm.collectionVariables.set('pr3_3_couponsBefore', JSON.stringify(data.coupons));",
                   "const available = data.coupons.find(c => c.multiplier === 3);",
-                  "pm.test('선택 쿠폰 준비', () => pm.expect(3 === 1 || !!available && available.quantity > 0).to.eql(true));"
+                  "pm.test('선택 쿠폰 준비', () => pm.expect(3 === 1 || !!available && available.quantity > 0).to.eql(true));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -1321,7 +1474,13 @@
                   "pm.collectionVariables.set('pr3_3_orderId', data.orderId);",
                   "pm.collectionVariables.set('pr3_3_giftId', String(data.giftId));",
                   "pm.collectionVariables.set('pr3_3_paidBalance', data.balanceAfter);",
-                  "pm.collectionVariables.set('pr3_3_amount', data.amount);"
+                  "pm.collectionVariables.set('pr3_3_amount', data.amount);",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(3);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(150000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -1370,6 +1529,12 @@
                   "  pm.expect(data.orderId).to.eql(pm.collectionVariables.get('pr3_3_orderId'));",
                   "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_3_giftId'));",
                   "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_3_paidBalance')));",
+                  "});",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(3);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(150000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
                   "});"
                 ]
               }
@@ -1400,7 +1565,10 @@
                   "const before = JSON.parse(pm.collectionVariables.get('pr3_3_couponsBefore'));",
                   "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 3 && 3 > 1 ? 1 : 0)}))",
                   "  .filter(c => c.quantity > 0);",
-                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -1486,6 +1654,33 @@
                   "  }",
                   "}",
                   "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PR4 수락·취소 전 상태 재조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_3_orderId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 조회 성공', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(3);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(150000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -1684,7 +1879,37 @@
                   "const before = JSON.parse(pm.collectionVariables.get('pr3_3_couponsBefore'));",
                   "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 3 && 3 > 1 ? 1 : 0)}))",
                   "  .filter(c => c.quantity > 0);",
-                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PR4 수락 후 실제 보상 재조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_3_orderId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 조회 성공', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(3);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(null);",
+                  "  pm.expect(data.rewardAmount).to.eql(150000);",
+                  "});"
                 ]
               }
             }
@@ -1760,7 +1985,10 @@
                   "const data = pm.response.json().data;",
                   "pm.collectionVariables.set('pr3_4_couponsBefore', JSON.stringify(data.coupons));",
                   "const available = data.coupons.find(c => c.multiplier === 2);",
-                  "pm.test('선택 쿠폰 준비', () => pm.expect(2 === 1 || !!available && available.quantity > 0).to.eql(true));"
+                  "pm.test('선택 쿠폰 준비', () => pm.expect(2 === 1 || !!available && available.quantity > 0).to.eql(true));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -1849,7 +2077,13 @@
                   "pm.collectionVariables.set('pr3_4_orderId', data.orderId);",
                   "pm.collectionVariables.set('pr3_4_giftId', String(data.giftId));",
                   "pm.collectionVariables.set('pr3_4_paidBalance', data.balanceAfter);",
-                  "pm.collectionVariables.set('pr3_4_amount', data.amount);"
+                  "pm.collectionVariables.set('pr3_4_amount', data.amount);",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(2);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(100000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -1898,6 +2132,12 @@
                   "  pm.expect(data.orderId).to.eql(pm.collectionVariables.get('pr3_4_orderId'));",
                   "  pm.expect(String(data.giftId)).to.eql(pm.collectionVariables.get('pr3_4_giftId'));",
                   "  pm.expect(data.balanceAfter).to.eql(Number(pm.collectionVariables.get('pr3_4_paidBalance')));",
+                  "});",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(2);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(100000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
                   "});"
                 ]
               }
@@ -1928,7 +2168,10 @@
                   "const before = JSON.parse(pm.collectionVariables.get('pr3_4_couponsBefore'));",
                   "const expected = before.map(c => ({...c, quantity: c.quantity - (c.multiplier === 2 && 2 > 1 ? 1 : 0)}))",
                   "  .filter(c => c.quantity > 0);",
-                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));"
+                  "pm.test('예약 수량 1회 차감·다른 배수 보존', () => pm.expect(data.coupons).to.eql(expected));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -2014,6 +2257,33 @@
                   "  }",
                   "}",
                   "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PR4 수락·취소 전 상태 재조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_4_orderId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 조회 성공', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(2);",
+                  "  pm.expect(data.couponStatus).to.eql(\"USED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(100000);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -2123,7 +2393,10 @@
                   "  pm.expect('error' in body).to.eql(false);",
                   "});",
                   "const data = pm.response.json().data;",
-                  "pm.test('취소 전 보유 수량 복구', () => pm.expect(data.coupons).to.eql(JSON.parse(pm.collectionVariables.get('pr3_4_couponsBefore'))));"
+                  "pm.test('취소 전 보유 수량 복구', () => pm.expect(data.coupons).to.eql(JSON.parse(pm.collectionVariables.get('pr3_4_couponsBefore'))));",
+                  "pm.test('PR4 기본 수락 보상액', () => {",
+                  "  pm.expect(pm.response.json().data.baseRewardAmount).to.eql(50000);",
+                  "});"
                 ]
               }
             }
@@ -2209,6 +2482,33 @@
                   "  }",
                   "}",
                   "inspect(pm.response.json(), 1);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PR4 취소 후 쿠폰 복구·미지급 재조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{pr3_4_orderId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 조회 성공', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('PR4 쿠폰·예상·실제 보상 계약', () => {",
+                  "  pm.expect(data.couponMultiplier).to.eql(2);",
+                  "  pm.expect(data.couponStatus).to.eql(\"RESTORED\");",
+                  "  pm.expect(data.expectedRewardAmount).to.eql(null);",
+                  "  pm.expect(data.rewardAmount).to.eql(null);",
+                  "});"
                 ]
               }
             }

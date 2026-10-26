@@ -3,6 +3,7 @@ package com.gift.gift.domain.order.dto.response;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
+import com.gift.gift.domain.coupon.entity.OrderCouponUsageStatus;
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.service.PaymentCompletion;
@@ -17,7 +18,11 @@ public record PaymentCreateResponse(
         long amount,
         long balanceAfter,
         OffsetDateTime approvedAt,
-        OffsetDateTime giftExpiresAt
+        OffsetDateTime giftExpiresAt,
+        Integer couponMultiplier,
+        OrderCouponUsageStatus couponStatus,
+        Long expectedRewardAmount,
+        Long rewardAmount
 ) {
 
     public static PaymentCreateResponse from(PaymentCompletion completion, ZoneId zoneId) {
@@ -32,7 +37,11 @@ public record PaymentCreateResponse(
                 completion.amount(),
                 completion.balanceAfter(),
                 completion.approvedAt().atZone(zoneId).toOffsetDateTime(),
-                completion.giftExpiresAt().atZone(zoneId).toOffsetDateTime()
+                completion.giftExpiresAt().atZone(zoneId).toOffsetDateTime(),
+                completion.rewardSummary().couponMultiplier(),
+                completion.rewardSummary().couponStatus(),
+                completion.rewardSummary().expectedRewardAmount(),
+                completion.rewardSummary().rewardAmount()
         );
     }
 }

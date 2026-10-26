@@ -4,6 +4,7 @@ import java.time.Clock;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.gift.entity.GiftHistory;
@@ -16,11 +17,12 @@ import com.gift.gift.domain.order.repository.OrderRepository;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
+@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class PaymentQueryService {
 
     private final OrderRepository orderRepository;
     private final GiftHistoryRepository giftHistoryRepository;
+    private final OrderRewardQueryService orderRewardQueryService;
     private final Clock clock;
 
     public PaymentStatusResponse getStatus(Long payerId, String orderId) {
@@ -33,6 +35,7 @@ public class PaymentQueryService {
                 .findByOrderRecordId(order.getId())
                 .orElse(null);
 
-        return PaymentStatusResponse.from(order, gift, clock.getZone());
+        return PaymentStatusResponse.from(order, gift,
+                orderRewardQueryService.summarize(order, gift), clock.getZone());
     }
 }

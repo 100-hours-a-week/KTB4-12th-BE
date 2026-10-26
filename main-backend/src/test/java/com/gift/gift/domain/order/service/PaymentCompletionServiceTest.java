@@ -70,6 +70,9 @@ class PaymentCompletionServiceTest {
     private OrderCouponService orderCouponService;
 
     @Mock
+    private OrderRewardQueryService orderRewardQueryService;
+
+    @Mock
     private OrderRepository orderRepository;
 
     @Mock
@@ -136,6 +139,7 @@ class PaymentCompletionServiceTest {
                 userQueryService,
                 eventPublisher,
                 orderCouponService,
+                orderRewardQueryService,
                 clock
         );
 

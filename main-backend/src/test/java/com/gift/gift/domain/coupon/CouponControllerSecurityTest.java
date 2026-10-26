@@ -88,7 +88,8 @@ class CouponControllerSecurityTest {
         mockMvc.perform(get("/coupons")
                         .with(jwt().jwt(token -> token.subject(userId.toString()))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.coupons").isEmpty());
+                .andExpect(jsonPath("$.data.coupons").isEmpty())
+                .andExpect(jsonPath("$.data.baseRewardAmount").value(50_000));
     }
 
     @Test

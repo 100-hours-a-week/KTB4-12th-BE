@@ -18,6 +18,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,6 +40,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.gift.gift.domain.coupon.repository.OrderCouponUsageRepository;
+import com.gift.gift.domain.coupon.entity.OrderCouponUsageStatus;
 import com.gift.gift.domain.coupon.service.CouponInitializationService;
 import com.gift.gift.domain.coupon.service.CouponIssueService;
 import com.gift.gift.domain.coupon.service.OrderCouponService;
@@ -58,6 +61,7 @@ import com.gift.gift.domain.order.service.OrderApprovalTransactionService;
 import com.gift.gift.domain.order.service.PaymentAutoCancellationTransactionService;
 import com.gift.gift.domain.order.service.PaymentCancellationApproval;
 import com.gift.gift.domain.order.service.PaymentRequestService;
+import com.gift.gift.domain.order.service.PaymentQueryService;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.user.entity.User;
@@ -74,8 +78,18 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 @SpringBootTest(properties = "app.coupon.payment-enabled=true")
+@AutoConfigureMockMvc
 class CouponRewardLifecycleIntegrationTest {
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private PaymentQueryService paymentQueries;
 
     @Autowired
     private EntityManager entityManager;
@@ -209,6 +223,89 @@ class CouponRewardLifecycleIntegrationTest {
         assertThat(acceptances.accept(recipientId, giftId).rewardAmount()).isEqualTo(100_000L);
         assertThat(balance(payerId)).isEqualTo(before);
         assertThat(rewardCount()).isEqualTo(1);
+        var response = paymentQueries.getStatus(payerId, order.getOrderId());
+        assertThat(response.expectedRewardAmount()).isNull();
+        assertThat(response.rewardAmount()).isEqualTo(100_000L);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0,50000", "2,100000", "3,150000"})
+    @DisplayName("결제 응답과 재조회는 쿠폰·예상 보상을 제공하고 수락 후에는 원장 지급액을 제공한다")
+    void contract_separatesExpectedAndPaidRewards(int multiplier, long expectedReward) throws Exception {
+        if (multiplier != 0) { grant(multiplier, 1); }
+        when(paymentClient.confirm(any(), any())).thenAnswer(invocation -> {
+            com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest request = invocation.getArgument(0);
+            return new PaymentResponse(request.orderId(), key(), key(), PaymentServerStatus.COMPLETED,
+                    request.amount(), LocalDateTime.now());
+        });
+        String requestKey = key();
+        String body = "{\"productId\":" + productId + ",\"recipientUserId\":" + recipientId
+                + ",\"quantity\":1,\"expectedUnitPrice\":1000"
+                + (multiplier == 0 ? "" : ",\"couponMultiplier\":" + multiplier) + "}";
+        var jwt = jwt().jwt(token -> token.subject(payerId.toString()));
+        mockMvc.perform(post("/payments")
+                        .with(jwt).header("Idempotency-Key", requestKey)
+                        .contentType("application/json").content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath(
+                        "$.data.expectedRewardAmount").value(expectedReward))
+                .andExpect(jsonPath(
+                        "$.data.rewardAmount").value((Object) null))
+                .andExpect(jsonPath(
+                        "$.data.balanceAfter").value(499_000));
+
+        Order order = orders.findByPayerIdAndIdempotencyKey(payerId, requestKey).orElseThrow();
+        var waiting = paymentQueries.getStatus(payerId, order.getOrderId());
+        assertThat(waiting.couponMultiplier()).isEqualTo(multiplier == 0 ? null : multiplier);
+        assertThat(waiting.couponStatus()).isEqualTo(multiplier == 0 ? null
+                : OrderCouponUsageStatus.USED);
+        assertThat(waiting.expectedRewardAmount()).isEqualTo(expectedReward);
+        assertThat(waiting.rewardAmount()).isNull();
+        assertThat(paymentQueries.getStatus(payerId, order.getOrderId())).isEqualTo(waiting);
+
+        acceptances.accept(recipientId, giftId(order));
+        var paid = paymentQueries.getStatus(payerId, order.getOrderId());
+        assertThat(paid.expectedRewardAmount()).isNull();
+        assertThat(paid.rewardAmount()).isEqualTo(expectedReward);
+        assertThat(completions.findCompleted(order.getId()).rewardSummary().rewardAmount())
+                .isEqualTo(expectedReward);
+        mockMvc.perform(post("/payments").with(jwt).header("Idempotency-Key", requestKey)
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.expectedRewardAmount").value((Object) null))
+                .andExpect(jsonPath("$.data.rewardAmount").value(expectedReward))
+                .andExpect(jsonPath("$.data.balanceAfter").value(499_000));
+        mockMvc.perform(get("/payments/{orderId}", order.getOrderId()).with(jwt))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(
+                        "$.data.expectedRewardAmount").value((Object) null))
+                .andExpect(jsonPath(
+                        "$.data.rewardAmount").value(expectedReward));
+        assertThat(balance(recipientId)).isEqualTo(500_000L);
+    }
+
+    @Test
+    @DisplayName("미확정 예약과 실패 복구는 예상·실제 보상이 없고 타인 조회를 거부한다")
+    void contract_pendingAndDeclinedDoNotPromiseRewards() throws Exception {
+        grant(2, 1);
+        Order order = start(key(), 2);
+        var pending = paymentQueries.getStatus(payerId, order.getOrderId());
+        assertThat(pending.couponStatus()).isEqualTo(
+                OrderCouponUsageStatus.RESERVED);
+        assertThat(pending.expectedRewardAmount()).isNull();
+        assertThat(pending.rewardAmount()).isNull();
+        approvals.decline(order.getId());
+        var declined = paymentQueries.getStatus(payerId, order.getOrderId());
+        assertThat(declined.couponMultiplier()).isEqualTo(2);
+        assertThat(declined.couponStatus()).isEqualTo(
+                OrderCouponUsageStatus.RESTORED);
+        assertThat(declined.expectedRewardAmount()).isNull();
+        assertThat(declined.rewardAmount()).isNull();
+        mockMvc.perform(get("/payments/{orderId}", order.getOrderId())
+                        .with(jwt().jwt(token -> token.subject(recipientId.toString()))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/payments/{orderId}", order.getOrderId()))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -266,6 +363,11 @@ class CouponRewardLifecycleIntegrationTest {
         assertThat(quantity(payerId, 2)).isEqualTo(1);
         assertThat(balance(payerId)).isEqualTo(500_000L);
         assertThat(rewardCount()).isZero();
+        var restored = paymentQueries.getStatus(payerId, order.getOrderId());
+        assertThat(restored.couponMultiplier()).isEqualTo(2);
+        assertThat(restored.couponStatus()).isEqualTo(OrderCouponUsageStatus.RESTORED);
+        assertThat(restored.expectedRewardAmount()).isNull();
+        assertThat(restored.rewardAmount()).isNull();
     }
 
     @Test
