@@ -1,6 +1,7 @@
 package com.gift.gift.domain.order.dto.request;
 
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -28,6 +29,25 @@ public record PaymentCreateRequest(
 
         @NotNull(message = ValidationErrorReason.Message.REQUIRED)
         @PositiveOrZero(message = ValidationErrorReason.Message.OUT_OF_RANGE)
-        Long expectedUnitPrice
+        Long expectedUnitPrice,
+
+        @Min(value = 2, message = ValidationErrorReason.Message.OUT_OF_RANGE)
+        @Max(value = 3, message = ValidationErrorReason.Message.OUT_OF_RANGE)
+        Integer couponMultiplier
 ) {
+
+    public PaymentCreateRequest(
+            Long productId,
+            Long recipientUserId,
+            Integer quantity,
+            Long expectedUnitPrice
+    ) {
+        this(
+                productId,
+                recipientUserId,
+                quantity,
+                expectedUnitPrice,
+                null
+        );
+    }
 }

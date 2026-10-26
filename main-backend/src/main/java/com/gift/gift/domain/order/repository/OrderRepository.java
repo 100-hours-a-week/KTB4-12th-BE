@@ -1,11 +1,14 @@
 package com.gift.gift.domain.order.repository;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
+
+import jakarta.persistence.LockModeType;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -113,14 +116,19 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             clearAutomatically = true
     )
     @Query("""
-            update Order orders
-            set orders.status = :declinedStatus,
-                orders.approvalResult = :declinedResult,
-                orders.failureCode = :failureCode,
-                orders.updatedAt = :declinedAt
-            where orders.id = :orderRecordId
-              and orders.status = :pendingStatus
-            """)
+        update Order orders
+        set orders.status = :declinedStatus,
+            orders.approvalResult = :declinedResult,
+            orders.failureCode = :failureCode,
+            orders.updatedAt = :declinedAt
+        where orders.id = :orderRecordId
+          and orders.status = :pendingStatus
+          and (
+                orders.approvalResult is null
+                or orders.approvalResult =
+                    com.gift.gift.domain.order.entity.PaymentApprovalResult.UNKNOWN
+          )
+        """)
     int decline(
             @Param("orderRecordId") Long orderRecordId,
             @Param("pendingStatus") OrderStatus pendingStatus,
@@ -278,5 +286,15 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("approvedResult") PaymentApprovalResult approvedResult,
             @Param("failureCode") OrderFailureCode failureCode,
             @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select orders
+        from Order orders
+        where orders.id = :orderRecordId
+        """)
+    Optional<Order> findByIdForUpdate(
+            @Param("orderRecordId") Long orderRecordId
     );
 }

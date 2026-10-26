@@ -56,6 +56,7 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    systemProperty('spring.test.context.cache.maxSize', '8')
 
     // 테스트에서는 목 데이터(db/seed)를 제외하고
     // 스키마 마이그레이션만 적용한다.

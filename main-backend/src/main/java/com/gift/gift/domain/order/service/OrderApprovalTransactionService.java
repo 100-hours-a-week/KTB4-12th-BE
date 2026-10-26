@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.coupon.service.OrderCouponService;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
@@ -20,6 +21,7 @@ import com.gift.gift.domain.order.repository.OrderRepository;
 public class OrderApprovalTransactionService {
 
     private final OrderRepository orderRepository;
+    private final OrderCouponService orderCouponService;
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -72,15 +74,17 @@ public class OrderApprovalTransactionService {
                 declinedAt
         );
 
-        if (updated == 1) {
-            return;
+        if (updated == 0) {
+            Order order = findOrder(orderRecordId);
+
+            if (order.getStatus() != OrderStatus.DECLINED) {
+                throw new IllegalStateException(
+                        "결제 거절 결과를 주문에 반영할 수 없습니다."
+                );
+            }
         }
 
-        Order order = findOrder(orderRecordId);
-
-        if (order.getStatus() != OrderStatus.DECLINED) {
-            throw new IllegalStateException("결제 거절 결과를 주문에 반영할 수 없습니다.");
-        }
+        orderCouponService.restoreAfterFailure(orderRecordId);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

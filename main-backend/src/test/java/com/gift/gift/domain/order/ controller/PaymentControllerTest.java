@@ -11,6 +11,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -20,6 +21,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.gift.gift.domain.gift.entity.GiftStatus;
 import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
+import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
@@ -32,6 +34,8 @@ import com.gift.gift.domain.order.service.PaymentProcessingResult;
 import com.gift.gift.domain.order.service.PaymentResult;
 import com.gift.gift.domain.order.service.PaymentService;
 import com.gift.gift.global.exception.GlobalExceptionHandler;
+import com.gift.gift.global.exception.BusinessException;
+import com.gift.gift.global.exception.ErrorCode;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -100,6 +104,78 @@ class PaymentControllerTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("쿠폰 배수와 명시적 미사용을 서비스에 그대로 전달한다")
+    void create_forwardsCouponSelection() throws Exception {
+        for (String selection : new String[]{"2", "3", "null"}) {
+            reset(paymentService);
+            when(paymentService.pay(eq(USER_ID), eq("coupon-key"), isNull(), any()))
+                    .thenReturn(PaymentResult.processing(
+                            new PaymentProcessingResult(ORDER_ID, PaymentApprovalResult.UNKNOWN), true));
+            mockMvc.perform(post("/payments")
+                            .header("Idempotency-Key", "coupon-key")
+                            .contentType("application/json")
+                            .content(couponRequest(selection)))
+                    .andExpect(status().isAccepted());
+            ArgumentCaptor<PaymentCreateRequest> captured = ArgumentCaptor.forClass(PaymentCreateRequest.class);
+            verify(paymentService).pay(eq(USER_ID), eq("coupon-key"), isNull(), captured.capture());
+            org.assertj.core.api.Assertions.assertThat(captured.getValue().couponMultiplier())
+                    .isEqualTo("null".equals(selection) ? null : Integer.valueOf(selection));
+        }
+    }
+
+    @Test
+    @DisplayName("잘못된 쿠폰 배수는 필드 오류와 400을 반환하며 결제를 호출하지 않는다")
+    void create_rejectsUnsupportedCouponMultiplier() throws Exception {
+        for (String selection : new String[]{"1", "4"}) {
+            mockMvc.perform(post("/payments")
+                            .header("Idempotency-Key", "coupon-key")
+                            .contentType("application/json")
+                            .content(couponRequest(selection)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("입력값을 확인해 주세요."))
+                    .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                    .andExpect(jsonPath("$.error.details[0].field").value("couponMultiplier"))
+                    .andExpect(jsonPath("$.error.details[0].reason").value("OUT_OF_RANGE"));
+        }
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    @DisplayName("쿠폰 수량 부족은 422 공통 오류로 반환한다")
+    void create_returnsCouponUnavailable() throws Exception {
+        when(paymentService.pay(eq(USER_ID), eq("coupon-key"), isNull(), any()))
+                .thenThrow(new BusinessException(ErrorCode.COUPON_NOT_AVAILABLE));
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", "coupon-key")
+                        .contentType("application/json")
+                        .content(couponRequest("2")))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.message").value("선택한 쿠폰의 사용 가능 수량이 부족합니다."))
+                .andExpect(jsonPath("$.error.code").value("COUPON_NOT_AVAILABLE"))
+                .andExpect(jsonPath("$.error.traceId").isNotEmpty())
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("쿠폰 결제 비활성 상태는 409와 원문 메시지로 반환한다")
+    void create_returnsCouponFeatureDisabled() throws Exception {
+        when(paymentService.pay(eq(USER_ID), eq("coupon-key"), isNull(), any()))
+                .thenThrow(new BusinessException(ErrorCode.CONFLICT, "쿠폰 결제는 아직 사용할 수 없습니다."));
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", "coupon-key")
+                        .contentType("application/json")
+                        .content(couponRequest("2")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("쿠폰 결제는 아직 사용할 수 없습니다."))
+                .andExpect(jsonPath("$.error.code").value("CONFLICT"));
+    }
+
+    private String couponRequest(String selection) {
+        return "{\"productId\":101,\"recipientUserId\":27,\"quantity\":2,"
+                + "\"expectedUnitPrice\":32000,\"couponMultiplier\":" + selection + "}";
     }
 
     @Test

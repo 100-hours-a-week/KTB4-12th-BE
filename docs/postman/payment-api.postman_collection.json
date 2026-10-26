@@ -28,7 +28,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -59,7 +62,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -77,7 +83,11 @@
       "auth": {
         "type": "bearer",
         "bearer": [
-          { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+          {
+            "key": "token",
+            "value": "{{senderAccessToken}}",
+            "type": "string"
+          }
         ]
       },
       "item": [
@@ -124,7 +134,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -166,9 +179,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "{{paymentIdempotencyKey}}" },
-              { "key": "X-Payment-Scenario", "value": "{{paymentScenario}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentIdempotencyKey}}"
+              },
+              {
+                "key": "X-Payment-Scenario",
+                "value": "{{paymentScenario}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -197,9 +219,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "{{paymentIdempotencyKey}}" },
-              { "key": "X-Payment-Scenario", "value": "{{paymentScenario}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentIdempotencyKey}}"
+              },
+              {
+                "key": "X-Payment-Scenario",
+                "value": "{{paymentScenario}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -287,7 +318,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Idempotency-Key", "value": "{{cancellationIdempotencyKey}}" }
+              {
+                "key": "Idempotency-Key",
+                "value": "{{cancellationIdempotencyKey}}"
+              }
             ],
             "url": "{{mainBaseUrl}}/payments/{{orderId}}/cancellations"
           },
@@ -313,7 +347,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Idempotency-Key", "value": "{{cancellationIdempotencyKey}}" }
+              {
+                "key": "Idempotency-Key",
+                "value": "{{cancellationIdempotencyKey}}"
+              }
             ],
             "url": "{{mainBaseUrl}}/payments/{{orderId}}/cancellations"
           },
@@ -373,7 +410,11 @@
       "auth": {
         "type": "bearer",
         "bearer": [
-          { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+          {
+            "key": "token",
+            "value": "{{senderAccessToken}}",
+            "type": "string"
+          }
         ]
       },
       "item": [
@@ -395,7 +436,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -435,9 +479,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "{{acceptPaymentIdempotencyKey}}" },
-              { "key": "X-Payment-Scenario", "value": "APPROVE" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{acceptPaymentIdempotencyKey}}"
+              },
+              {
+                "key": "X-Payment-Scenario",
+                "value": "APPROVE"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -518,7 +571,11 @@
             "auth": {
               "type": "bearer",
               "bearer": [
-                { "key": "token", "value": "{{recipientAccessToken}}", "type": "string" }
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
               ]
             },
             "method": "GET",
@@ -548,7 +605,11 @@
             "auth": {
               "type": "bearer",
               "bearer": [
-                { "key": "token", "value": "{{recipientAccessToken}}", "type": "string" }
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
               ]
             },
             "method": "GET",
@@ -579,7 +640,11 @@
             "auth": {
               "type": "bearer",
               "bearer": [
-                { "key": "token", "value": "{{recipientAccessToken}}", "type": "string" }
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
               ]
             },
             "method": "POST",
@@ -608,7 +673,11 @@
             "auth": {
               "type": "bearer",
               "bearer": [
-                { "key": "token", "value": "{{recipientAccessToken}}", "type": "string" }
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
               ]
             },
             "method": "POST",
@@ -648,7 +717,11 @@
       "auth": {
         "type": "bearer",
         "bearer": [
-          { "key": "token", "value": "{{senderAccessToken}}", "type": "string" }
+          {
+            "key": "token",
+            "value": "{{senderAccessToken}}",
+            "type": "string"
+          }
         ]
       },
       "item": [
@@ -671,8 +744,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "INVALID-{{$guid}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "INVALID-{{$guid}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -701,9 +780,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "DECLINE-{{$guid}}" },
-              { "key": "X-Payment-Scenario", "value": "DECLINE" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "DECLINE-{{$guid}}"
+              },
+              {
+                "key": "X-Payment-Scenario",
+                "value": "DECLINE"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -771,9 +859,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Internal-Api-Key", "value": "{{internalApiKey}}" },
-              { "key": "X-Payment-Scenario", "value": "APPROVE" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Internal-Api-Key",
+                "value": "{{internalApiKey}}"
+              },
+              {
+                "key": "X-Payment-Scenario",
+                "value": "APPROVE"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -811,7 +908,10 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-Internal-Api-Key", "value": "{{internalApiKey}}" }
+              {
+                "key": "X-Internal-Api-Key",
+                "value": "{{internalApiKey}}"
+              }
             ],
             "url": "{{paymentBaseUrl}}/payments/orders/{{internalOrderId}}"
           },
@@ -846,10 +946,162 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Internal-Api-Key", "value": "{{internalApiKey}}" },
-              { "key": "Idempotency-Key", "value": "{{internalCancellationIdempotencyKey}}" }
+              {
+                "key": "X-Internal-Api-Key",
+                "value": "{{internalApiKey}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{internalCancellationIdempotencyKey}}"
+              }
             ],
             "url": "{{paymentBaseUrl}}/payments/{{internalPaymentKey}}/cancel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05. PR2 쿠폰 요청 검증",
+      "description": "기본 설정(app.coupon.payment-enabled=false)에서 실행한다. 00 인증과 01 결제 후 취소를 먼저 실행해 유효한 상품·가격·paymentIdempotencyKey를 준비한다. 기존 주문은 쿠폰 미사용이므로 같은 키로 2배를 선택하면 충돌한다. PR3 전에는 쿠폰 성공 결제 경로를 열지 않는다.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{senderAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "허용되지 않는 쿠폰 배수",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 INVALID_REQUEST', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('INVALID_REQUEST');",
+                  "  pm.expect(body.error.traceId).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body).not.to.have.property('data');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "COUPON-{{$guid}}"
+              },
+              {
+                "key": "X-Payment-Scenario",
+                "value": "{{paymentScenario}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 4\n}"
+            },
+            "url": "{{mainBaseUrl}}/payments"
+          },
+          "response": []
+        },
+        {
+          "name": "PR3 전 쿠폰 결제 차단",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 CONFLICT', () => {",
+                  "  pm.response.to.have.status(409);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('CONFLICT');",
+                  "  pm.expect(body.error.traceId).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body).not.to.have.property('data');",
+                  "  pm.expect(body.message).to.eql('쿠폰 결제는 아직 사용할 수 없습니다.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "COUPON-{{$guid}}"
+              },
+              {
+                "key": "X-Payment-Scenario",
+                "value": "{{paymentScenario}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 2\n}"
+            },
+            "url": "{{mainBaseUrl}}/payments"
+          },
+          "response": []
+        },
+        {
+          "name": "기존 결제 키로 쿠폰 선택 변경",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 IDEMPOTENCY_KEY_CONFLICT', () => {",
+                  "  pm.response.to.have.status(409);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('IDEMPOTENCY_KEY_CONFLICT');",
+                  "  pm.expect(body.error.traceId).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body).not.to.have.property('data');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentIdempotencyKey}}"
+              },
+              {
+                "key": "X-Payment-Scenario",
+                "value": "{{paymentScenario}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}},\n  \"couponMultiplier\": 2\n}"
+            },
+            "url": "{{mainBaseUrl}}/payments"
           },
           "response": []
         }
