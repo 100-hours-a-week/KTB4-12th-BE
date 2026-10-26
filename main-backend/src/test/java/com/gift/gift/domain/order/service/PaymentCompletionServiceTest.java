@@ -33,6 +33,7 @@ import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.domain.product.service.ProductStockService;
+import com.gift.gift.domain.roulette.service.RouletteService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserQueryService;
 
@@ -120,6 +121,9 @@ class PaymentCompletionServiceTest {
     @Mock
     private CreditTransaction savedCreditTransaction;
 
+    @Mock
+    private RouletteService rouletteService;
+
     private PaymentCompletionService paymentCompletionService;
 
     @BeforeEach
@@ -140,7 +144,8 @@ class PaymentCompletionServiceTest {
                 eventPublisher,
                 orderCouponService,
                 orderRewardQueryService,
-                clock
+                clock,
+                rouletteService
         );
 
         when(completedOrder.getId()).thenReturn(ORDER_RECORD_ID);

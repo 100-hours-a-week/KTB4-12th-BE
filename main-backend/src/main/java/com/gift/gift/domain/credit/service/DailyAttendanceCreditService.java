@@ -12,6 +12,8 @@ import com.gift.gift.domain.credit.entity.CreditTransaction;
 import com.gift.gift.domain.credit.entity.CreditTransactionType;
 import com.gift.gift.domain.credit.repository.CreditAccountRepository;
 import com.gift.gift.domain.credit.repository.CreditTransactionRepository;
+import com.gift.gift.domain.roulette.service.RouletteService;
+import com.gift.gift.domain.roulette.support.RouletteSettings;
 
 @Service
 @RequiredArgsConstructor
@@ -24,9 +26,16 @@ public class DailyAttendanceCreditService {
     private final CreditAccountRepository creditAccountRepository;
     private final CreditTransactionRepository creditTransactionRepository;
     private final Clock clock;
+    private final RouletteService rouletteService;
+    private final RouletteSettings rouletteSettings;
 
     @Transactional
     public void grant(Long userId) {
+        if (rouletteSettings.enabled()) {
+            rouletteService.attend(userId);
+            return;
+        }
+
         LocalDate attendanceDate = LocalDate.now(clock);
 
         String deduplicationKey = ledgerKey(userId, attendanceDate);
