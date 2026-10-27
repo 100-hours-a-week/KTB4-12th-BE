@@ -39,7 +39,6 @@ import com.gift.gift.domain.roulette.service.RouletteService;
 import com.gift.gift.domain.roulette.service.RouletteSpinService;
 import com.gift.gift.domain.roulette.support.RouletteDraw;
 import com.gift.gift.domain.roulette.support.RoulettePolicy;
-import com.gift.gift.domain.roulette.support.RouletteSettings;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 import com.gift.gift.global.exception.BusinessException;
@@ -53,7 +52,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = "app.roulette.enabled=true")
+@SpringBootTest
 @AutoConfigureMockMvc
 class RouletteSpinIntegrationTest {
 
@@ -68,7 +67,6 @@ class RouletteSpinIntegrationTest {
     @Autowired private MockMvc mvc;
     @MockitoSpyBean private Clock clock;
     @MockitoSpyBean private RouletteDraw draw;
-    @MockitoSpyBean private RouletteSettings settings;
     @MockitoSpyBean private RouletteAccountRepository accounts;
 
     private final List<Long> userIds = new ArrayList<>();
@@ -96,7 +94,7 @@ class RouletteSpinIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {0, 2438, 5813})
+    @ValueSource(ints = {0, 1750, 4917})
     @DisplayName("쿠폰 당첨은 참여권 한 장과 일일 한도를 소비하고 해당 배수 한 장만 지급한다")
     void spin_awardsCouponAndReplaysSameResult(int value) {
         var segment = RoulettePolicy.select(value);
@@ -120,10 +118,11 @@ class RouletteSpinIntegrationTest {
         verify(draw, times(1)).draw();
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(ints = {3250, 6667, 8334})
     @DisplayName("꽝도 참여권과 일일 한도를 소비하고 재요청에 같은 결과를 반환한다")
-    void spin_persistsMissWithoutAwardingCoupon() {
-        doReturn(RoulettePolicy.select(4063)).when(draw).draw();
+    void spin_persistsMissWithoutAwardingCoupon(int value) {
+        doReturn(RoulettePolicy.select(value)).when(draw).draw();
         tickets.attend(userId);
         String key = UUID.randomUUID().toString();
 
@@ -340,34 +339,52 @@ class RouletteSpinIntegrationTest {
     }
 
     @Test
-    @DisplayName("참여 현황은 실제 6칸 확률과 박스 미지급 상태를 제공하고 조회만으로 기록을 만들지 않는다")
+    @DisplayName("참여 현황은 실제 6칸 확률과 쿠폰·꽝 보상를 제공하고 조회만으로 기록을 만들지 않는다")
     void api_publishesProbabilitiesWithoutGrantingTickets() throws Exception {
         mvc.perform(get("/roulette").with(jwt().jwt(token -> token.subject(userId.toString()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rewardVersion").value(RoulettePolicy.VERSION))
-                .andExpect(jsonPath("$.data.boxesAvailable").value(false))
+                .andExpect(jsonPath("$.data.boxesAvailable").doesNotExist())
                 .andExpect(jsonPath("$.data.segments.length()").value(6))
-                .andExpect(jsonPath("$.data.segments[0].probability").value(24.38))
-                .andExpect(jsonPath("$.data.segments[1].probability").value(16.25))
-                .andExpect(jsonPath("$.data.segments[5].probability").value(0))
+                .andExpect(jsonPath("$.data.segments[0].probability").value(17.5))
+                .andExpect(jsonPath("$.data.segments[1].probability").value(15))
+                .andExpect(jsonPath("$.data.segments[5].probability").value(16.66))
+                .andExpect(jsonPath("$.data.segments[5].rewardType").value("MISS"))
                 .andExpect(jsonPath("$.data.remaining").value(0));
         assertThat(countSpins(userId)).isZero();
     }
 
     @Test
-    @DisplayName("룰렛 비활성 시 실행은 503이며 이미 보유한 참여권과 쿠폰을 변경하지 않는다")
-    void api_rejectsSpinWhenDisabled() throws Exception {
+    @DisplayName("별도 활성화 설정 없이 출석 참여권을 사용해 쿠폰을 지급한다")
+    void api_spinsWithoutFeatureFlag() throws Exception {
         tickets.attend(userId);
-        doReturn(false).when(settings).enabled();
+        doReturn(RoulettePolicy.SEGMENTS.get(0)).when(draw).draw();
 
         mvc.perform(post("/roulette/spins").header("Idempotency-Key", UUID.randomUUID().toString())
                         .with(jwt().jwt(token -> token.subject(userId.toString()))))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error.code").value("SERVICE_UNAVAILABLE"));
-        assertThat(countSpins(userId)).isZero();
-        assertThat(quantity(userId, 2) + quantity(userId, 3)).isZero();
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rewardType").value("COUPON"));
+        assertThat(countSpins(userId)).isEqualTo(1);
+        assertThat(quantity(userId, 2)).isEqualTo(1);
+        assertThat(quantity(userId, 3)).isZero();
         assertThat(jdbc.queryForObject("SELECT available_tickets FROM roulette_accounts WHERE user_id = ?",
-                Long.class, userId)).isEqualTo(1);
+                Long.class, userId)).isZero();
+    }
+
+    @Test
+    @DisplayName("기존 coupon-v1 실행은 버전과 결과를 유지하며 새 판 정책으로 다시 추첨하지 않는다")
+    void spin_replaysLegacyVersion() {
+        tickets.attend(userId);
+        String key = UUID.randomUUID().toString();
+        var original = spins.spin(userId, key);
+        jdbc.update("UPDATE roulette_spins SET reward_version = 'coupon-v1' WHERE id = ?", original.spinId());
+        var replay = spins.spin(userId, key);
+        assertThat(replay.spinId()).isEqualTo(original.spinId());
+        assertThat(replay.rewardVersion()).isEqualTo("coupon-v1");
+        assertThat(replay.segmentId()).isEqualTo(original.segmentId());
+        assertThat(replay.remaining()).isEqualTo(original.remaining());
+        assertThat(quantity(userId, 2)).isEqualTo(1);
+        verify(draw, times(1)).draw();
     }
 
     private Long newUser() {

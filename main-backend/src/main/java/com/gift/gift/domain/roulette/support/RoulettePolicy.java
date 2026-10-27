@@ -9,15 +9,15 @@ import com.gift.gift.domain.roulette.entity.RouletteRewardType;
 public final class RoulettePolicy {
 
     public static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
-    public static final String VERSION = "coupon-v1";
+    public static final String VERSION = "coupon-v3";
     public static final int TOTAL_WEIGHT = 10_000;
     public static final List<Segment> SEGMENTS = List.of(
-            segment(0, RouletteRewardType.COUPON, 2, 2438),
-            segment(1, RouletteRewardType.COUPON, 3, 1625),
-            segment(2, RouletteRewardType.MISS, null, 1750),
-            segment(3, RouletteRewardType.COUPON, 2, 2437),
-            segment(4, RouletteRewardType.MISS, null, 1750),
-            segment(5, RouletteRewardType.RANDOM_BOX, null, 0)
+            segment(0, RouletteRewardType.COUPON, 2, 1750),
+            segment(1, RouletteRewardType.COUPON, 3, 1500),
+            segment(2, RouletteRewardType.MISS, null, 1667),
+            segment(3, RouletteRewardType.COUPON, 2, 1750),
+            segment(4, RouletteRewardType.MISS, null, 1667),
+            segment(5, RouletteRewardType.MISS, null, 1666)
     );
 
     private RoulettePolicy() {

@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "룰렛 참여권·추첨 API (#479/#480)",
+    "name": "룰렛 및 독립 랜덤박스 API (#479/#480/#481)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "6칸 유지. 현재 2배 48.75%, 3배 16.25%, 꽝 35%, 박스 0%. 새 실행에는 새 UUID, 재요청에는 기존 UUID를 사용합니다. 하루 한 번 제한은 KST 기준입니다."
+    "description": "룰렛은 coupon-v3: 2배 35%, 3배 15%, 꽝 50% 고정이며 5번 칸은 꽝입니다. 랜덤박스는 룰렛과 독립적으로 유지합니다. 별도 지급 경로는 미구현이므로 박스 조회·개봉은 이미 본인에게 배정된 randomBoxId를 직접 설정한 경우만 실행합니다. 교환권 코드를 환경 변수나 로그에 저장하지 마세요."
   },
   "auth": {
     "type": "bearer",
@@ -119,7 +119,7 @@
               "  const data = pm.response.json().data;",
               "  pm.environment.set('rouletteSpinSnapshot', JSON.stringify(data));",
               "  pm.test('서버 보상', () => pm.expect(data.rewardType).to.be.oneOf(['COUPON', 'MISS']));",
-              "  pm.test('박스 칸 제외', () => pm.expect(data.segmentId).to.be.within(0, 4));",
+              "  pm.test('서버 칸 ID', () => pm.expect(data.segmentId).to.be.within(0, 5));",
               "}"
             ]
           }
@@ -187,6 +187,89 @@
             "exec": [
               "pm.test('잘못된 요청', () => pm.response.to.have.status(400));",
               "pm.test('오류 코드', () => pm.expect(pm.response.json().error.code).to.equal('INVALID_REQUEST'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 본인 박스 조회 (개봉 전 보상 비공개)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/random-boxes/{{randomBoxId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "random-boxes",
+            "{{randomBoxId}}"
+          ]
+        },
+        "description": "별도 보유 박스의 randomBoxId를 직접 설정 후 실행합니다. 현재 지급 경로는 미구현이며 룰렛에서 박스를 받지 않습니다. ID가 없으면 건너뜁니다."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.environment.get('randomBoxId')) pm.execution.skipRequest();"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('성공', () => pm.response.to.have.status(200));",
+              "pm.test('캐시 금지', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));",
+              "const data = pm.response.json().data;",
+              "if (data && data.status === 'UNOPENED') pm.test('미개봉 보상 비공개', () => { pm.expect(data.prizeName).to.equal(null); pm.expect(data.voucherCode).to.equal(null); pm.expect(data.openedAt).to.equal(null); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 박스 개봉 (반복 가능)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/random-boxes/{{randomBoxId}}/open",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "random-boxes",
+            "{{randomBoxId}}",
+            "open"
+          ]
+        },
+        "description": "별도 보유 박스의 randomBoxId를 직접 설정 후 실행합니다. 현재 지급 경로는 미구현이며 룰렛에서 박스를 받지 않습니다. ID가 없으면 건너뜁니다."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.environment.get('randomBoxId')) pm.execution.skipRequest();"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('성공', () => pm.response.to.have.status(200));",
+              "pm.test('캐시 금지', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));",
+              "const data = pm.response.json().data;",
+              "if (data && data.status === 'UNOPENED') pm.test('미개봉 보상 비공개', () => { pm.expect(data.prizeName).to.equal(null); pm.expect(data.voucherCode).to.equal(null); pm.expect(data.openedAt).to.equal(null); });"
             ]
           }
         }

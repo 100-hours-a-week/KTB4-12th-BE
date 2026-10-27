@@ -59,7 +59,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest(properties = "app.roulette.enabled=true")
+@SpringBootTest
 class PaymentFlowIntegrationTest {
 
     private static final String PASSWORD_HASH = "$2a$10$" + "a".repeat(53);

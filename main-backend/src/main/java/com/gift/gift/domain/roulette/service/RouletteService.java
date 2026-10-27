@@ -21,7 +21,6 @@ import com.gift.gift.domain.roulette.repository.RouletteParticipationDayReposito
 import com.gift.gift.domain.roulette.repository.RouletteTicketGrantRepository;
 import com.gift.gift.domain.roulette.support.RouletteDay;
 import com.gift.gift.domain.roulette.support.RoulettePolicy;
-import com.gift.gift.domain.roulette.support.RouletteSettings;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 
@@ -33,12 +32,10 @@ public class RouletteService {
     private final RouletteParticipationDayRepository dayRepository;
     private final RouletteTicketGrantRepository grantRepository;
     private final CreditTransactionRepository creditTransactionRepository;
-    private final RouletteSettings settings;
     private final Clock clock;
 
     @Transactional(readOnly = true)
     public RouletteStatusResponse status(Long userId) {
-        requireEnabled();
         Instant now = clock.instant();
         LocalDate date = now.atZone(RoulettePolicy.ZONE).toLocalDate();
         long remaining = accountRepository.findById(userId)
@@ -51,7 +48,6 @@ public class RouletteService {
 
     @Transactional
     public RouletteAttendanceResponse attend(Long userId) {
-        requireEnabled();
         RouletteAccount account = lockAccount(userId);
         Instant now = clock.instant();
         LocalDate date = now.atZone(RoulettePolicy.ZONE).toLocalDate();
@@ -72,9 +68,6 @@ public class RouletteService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void grantGift(Long senderId, Long giftId) {
-        if (!settings.enabled()) {
-            return;
-        }
         RouletteAccount account = lockAccount(senderId);
         Instant now = clock.instant();
         LocalDate date = now.atZone(RoulettePolicy.ZONE).toLocalDate();
@@ -89,7 +82,6 @@ public class RouletteService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public RouletteDay consumeTicket(Long userId) {
-        requireEnabled();
         RouletteAccount account = lockAccount(userId);
         LocalDate date = clock.instant().atZone(RoulettePolicy.ZONE).toLocalDate();
         RouletteParticipationDay day = initializeDay(userId, date);
@@ -119,11 +111,5 @@ public class RouletteService {
     private RouletteDay toDay(RouletteParticipationDay day, long remaining) {
         return new RouletteDay(day.getParticipationDate(), day.getAttendanceGranted(), day.getGiftGranted(),
                 day.getUsed(), remaining);
-    }
-
-    private void requireEnabled() {
-        if (!settings.enabled()) {
-            throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE, "룰렛 이벤트를 준비 중입니다.");
-        }
     }
 }

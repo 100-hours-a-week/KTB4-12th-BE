@@ -85,9 +85,6 @@ app:
     login-rate-limit:
       hmac-secret-base64: ${LOGIN_RATE_LIMIT_HMAC_SECRET_BASE64}
 
-  roulette:
-    enabled: ${ROULETTE_ENABLED:false}
-
   product-search:
     enabled: ${PRODUCT_SEARCH_ENABLED:false}
     index-name: ${PRODUCT_SEARCH_INDEX:gift-products-local-v1}
