@@ -184,6 +184,14 @@ public enum ErrorCode {
             HttpStatus.SERVICE_UNAVAILABLE,
             "결제 결과를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요."
     ),
+    ROULETTE_DAILY_LIMIT_EXCEEDED(
+            HttpStatus.CONFLICT,
+            "오늘의 룰렛 참여 한도를 모두 사용했습니다. 내일 다시 참여해 주세요."
+    ),
+    ROULETTE_TICKET_NOT_AVAILABLE(
+            HttpStatus.CONFLICT,
+            "사용 가능한 룰렛 참여권이 없습니다."
+    ),
     GIFT_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "선물 내역을 찾을 수 없습니다."

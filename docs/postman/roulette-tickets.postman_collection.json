@@ -1,0 +1,79 @@
+{
+  "info": {
+    "name": "룰렛 참여권 API (#479)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 출석 참여권 확인 (반복 가능)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/roulette/attendance",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette",
+            "attendance"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('출석 확인 성공', () => pm.response.to.have.status(200));",
+              "const data = pm.response.json().data;",
+              "pm.test('출석 한도', () => pm.expect(data.attendanceGranted).to.be.within(0, 1));",
+              "pm.test('누적 잔액', () => pm.expect(data.remaining).to.be.at.least(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 참여 현황 조회",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/roulette",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('조회 성공', () => pm.response.to.have.status(200));",
+              "const data = pm.response.json().data;",
+              "pm.test('잔액은 음수가 아니다', () => pm.expect(data.remaining).to.be.at.least(0));",
+              "pm.test('일일 한도', () => pm.expect(data.dailyRemaining).to.be.oneOf([0, 1]));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

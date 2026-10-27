@@ -59,7 +59,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.roulette.enabled=true")
 class PaymentFlowIntegrationTest {
 
     private static final String PASSWORD_HASH = "$2a$10$" + "a".repeat(53);
@@ -177,6 +177,9 @@ class PaymentFlowIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update("DELETE FROM roulette_ticket_grants WHERE user_id = ?", payerId);
+        jdbcTemplate.update("DELETE FROM roulette_days WHERE user_id = ?", payerId);
+        jdbcTemplate.update("DELETE FROM roulette_accounts WHERE user_id = ?", payerId);
         jdbcTemplate.update(
                 "delete from notification_outbox where recipient_id in (?, ?)",
                 payerId,
@@ -279,6 +282,12 @@ class PaymentFlowIntegrationTest {
                 .orElseThrow();
 
         assertThat(first.created()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, payerId
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, recipientId
+        )).isZero();
         assertThat(second.created()).isFalse();
         assertThat(order.getStatus())
                 .isEqualTo(OrderStatus.COMPLETED);
