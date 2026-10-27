@@ -1,7 +1,8 @@
 {
   "info": {
-    "name": "룰렛 참여권 API (#479)",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "name": "룰렛 참여권·추첨 API (#479/#480)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "6칸 유지. 현재 2배 48.75%, 3배 16.25%, 꽝 35%, 박스 0%. 새 실행에는 새 UUID, 재요청에는 기존 UUID를 사용합니다. 하루 한 번 제한은 KST 기준입니다."
   },
   "auth": {
     "type": "bearer",
@@ -70,6 +71,122 @@
               "const data = pm.response.json().data;",
               "pm.test('잔액은 음수가 아니다', () => pm.expect(data.remaining).to.be.at.least(0));",
               "pm.test('일일 한도', () => pm.expect(data.dailyRemaining).to.be.oneOf([0, 1]));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 룰렛 실행 (새 실행 시 환경의 키를 비우기)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{rouletteIdempotencyKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/roulette/spins",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette",
+            "spins"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.environment.get('rouletteIdempotencyKey')) {",
+              "  pm.environment.set('rouletteIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('실행 성공', () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) {",
+              "  const data = pm.response.json().data;",
+              "  pm.environment.set('rouletteSpinSnapshot', JSON.stringify(data));",
+              "  pm.test('서버 보상', () => pm.expect(data.rewardType).to.be.oneOf(['COUPON', 'MISS']));",
+              "  pm.test('박스 칸 제외', () => pm.expect(data.segmentId).to.be.within(0, 4));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 같은 키 재요청 (날짜 변경 후에도 최초 결과)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{rouletteIdempotencyKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/roulette/spins",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette",
+            "spins"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('재요청 성공', () => pm.response.to.have.status(200));",
+              "pm.test('최초 결과와 동일', () => {",
+              "  pm.expect(pm.environment.get('rouletteSpinSnapshot'), '03 실행 결과 필요').to.be.a('string').and.not.empty;",
+              "  pm.expect(pm.response.json().data).to.deep.equal(JSON.parse(pm.environment.get('rouletteSpinSnapshot')));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 키 누락 (400)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/roulette/spins",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette",
+            "spins"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('잘못된 요청', () => pm.response.to.have.status(400));",
+              "pm.test('오류 코드', () => pm.expect(pm.response.json().error.code).to.equal('INVALID_REQUEST'));"
             ]
           }
         }

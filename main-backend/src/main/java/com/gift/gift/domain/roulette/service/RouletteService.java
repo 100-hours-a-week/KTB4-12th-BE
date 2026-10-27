@@ -88,7 +88,7 @@ public class RouletteService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void consumeTicket(Long userId) {
+    public RouletteDay consumeTicket(Long userId) {
         requireEnabled();
         RouletteAccount account = lockAccount(userId);
         LocalDate date = clock.instant().atZone(RoulettePolicy.ZONE).toLocalDate();
@@ -101,6 +101,7 @@ public class RouletteService {
         }
         account.consumeTicket();
         day.consumeTicket();
+        return toDay(day, account.getAvailableTickets());
     }
 
     private RouletteAccount lockAccount(Long userId) {
