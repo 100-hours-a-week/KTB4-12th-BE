@@ -18,7 +18,6 @@ import com.gift.gift.domain.roulette.repository.RouletteSpinRepository;
 import com.gift.gift.domain.roulette.support.RouletteDay;
 import com.gift.gift.domain.roulette.support.RouletteDraw;
 import com.gift.gift.domain.roulette.support.RoulettePolicy;
-import com.gift.gift.domain.roulette.support.RouletteSettings;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 
@@ -31,14 +30,10 @@ public class RouletteSpinService {
     private final RouletteService rouletteService;
     private final CouponIssueService couponIssueService;
     private final RouletteDraw draw;
-    private final RouletteSettings settings;
     private final Clock clock;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public RouletteSpinResponse spin(Long userId, String idempotencyKey) {
-        if (!settings.enabled()) {
-            throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE, "룰렛 이벤트를 준비 중입니다.");
-        }
         UUID key = canonicalKey(idempotencyKey);
         accountRepository.insertIfAbsent(userId);
         accountRepository.findByUserIdForUpdate(userId)

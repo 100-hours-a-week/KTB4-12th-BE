@@ -35,7 +35,7 @@ import com.gift.gift.domain.user.entity.User;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest(properties = "app.roulette.enabled=true")
+@SpringBootTest
 class GiftAcceptanceFlowIntegrationTest {
 
     private static final String PASSWORD_HASH = "$2a$10$" + "a".repeat(53);

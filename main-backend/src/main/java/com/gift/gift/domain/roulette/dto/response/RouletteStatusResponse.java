@@ -17,7 +17,6 @@ public record RouletteStatusResponse(
         int used,
         long remaining,
         int dailyRemaining,
-        boolean boxesAvailable,
         String rewardVersion,
         List<RoulettePolicy.Segment> segments
 ) {
@@ -26,7 +25,7 @@ public record RouletteStatusResponse(
         return new RouletteStatusResponse(
                 day.date(), now, day.date().plusDays(1).atStartOfDay(RoulettePolicy.ZONE).toOffsetDateTime(),
                 day.attendanceGranted(), day.giftGranted(), day.used(), day.remaining(),
-                day.dailyRemaining(), false, RoulettePolicy.VERSION, RoulettePolicy.SEGMENTS
+                day.dailyRemaining(), RoulettePolicy.VERSION, RoulettePolicy.SEGMENTS
         );
     }
 }
