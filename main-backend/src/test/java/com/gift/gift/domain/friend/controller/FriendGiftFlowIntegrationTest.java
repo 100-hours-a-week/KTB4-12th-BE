@@ -218,6 +218,9 @@ class FriendGiftFlowIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        jdbc.update("DELETE FROM roulette_ticket_grants WHERE user_id IN (?, ?)", requester.getId(), receiver.getId());
+        jdbc.update("DELETE FROM roulette_days WHERE user_id IN (?, ?)", requester.getId(), receiver.getId());
+        jdbc.update("DELETE FROM roulette_accounts WHERE user_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM notification_outbox WHERE recipient_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM notifications WHERE recipient_id IN (?, ?)", requester.getId(), receiver.getId());
         jdbc.update("DELETE FROM credit_transactions WHERE user_id IN (?, ?)", requester.getId(), receiver.getId());

@@ -19,6 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import com.gift.gift.domain.roulette.service.RouletteService;
+import com.gift.gift.domain.roulette.support.RoulettePolicy;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
 
@@ -36,6 +38,9 @@ class DailyAttendanceCreditServiceIntegrationTest {
     private SignupCreditService signupCreditService;
 
     @Autowired
+    private RouletteService rouletteService;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -47,78 +52,34 @@ class DailyAttendanceCreditServiceIntegrationTest {
     private final List<Long> userIds = new ArrayList<>();
 
     @Test
-    @DisplayName("동시 접속에도 당일 크레딧과 원장을 한 번만 지급한다")
-    void grant_concurrentlyRewardsOncePerDay() throws Exception {
-
+    @DisplayName("로그인과 출석이 겹쳐도 크레딧 대신 당일 참여권을 한 번만 지급한다")
+    void grant_concurrentlyRewardsOneTicketWithoutCredits() throws Exception {
         User user = persistUser();
-
         signupCreditService.grant(user.getId());
-
-        LocalDate attendanceDate = LocalDate.now(clock);
+        LocalDate attendanceDate = clock.instant().atZone(RoulettePolicy.ZONE).toLocalDate();
 
         race(
-                () -> dailyAttendanceCreditService
-                        .grant(user.getId()),
-                () -> dailyAttendanceCreditService
-                        .grant(user.getId())
+                () -> dailyAttendanceCreditService.grant(user.getId()),
+                () -> rouletteService.attend(user.getId())
         );
+        dailyAttendanceCreditService.grant(user.getId());
 
-        Long balance = jdbcTemplate.queryForObject(
-                """
-                SELECT balance
-                FROM credit_accounts
-                WHERE user_id = ?
-                """,
-                Long.class,
-                user.getId()
-        );
-
-        Long transactionCount =
-                jdbcTemplate.queryForObject(
-                        """
-                        SELECT COUNT(*)
-                        FROM credit_transactions
-                        WHERE user_id = ?
-                          AND type = 'DAILY_ATTENDANCE_REWARD'
-                        """,
-                        Long.class,
-                        user.getId()
-                );
-
-        Date savedAttendanceDate =
-                jdbcTemplate.queryForObject(
-                        """
-                        SELECT attendance_date
-                        FROM credit_transactions
-                        WHERE user_id = ?
-                          AND type = 'DAILY_ATTENDANCE_REWARD'
-                        """,
-                        Date.class,
-                        user.getId()
-                );
-
-        String deduplicationKey =
-                jdbcTemplate.queryForObject(
-                        """
-                        SELECT deduplication_key
-                        FROM credit_transactions
-                        WHERE user_id = ?
-                          AND type = 'DAILY_ATTENDANCE_REWARD'
-                        """,
-                        String.class,
-                        user.getId()
-                );
-
-        assertThat(balance).isEqualTo(600_000L);
-
-        assertThat(transactionCount).isEqualTo(1L);
-
-        assertThat(savedAttendanceDate).isNotNull();
-
-        assertThat(savedAttendanceDate.toLocalDate()).isEqualTo(attendanceDate);
-
-        assertThat(deduplicationKey)
-                .isEqualTo("DAILY_ATTENDANCE_REWARD:" + user.getId() + ":" + attendanceDate);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT balance FROM credit_accounts WHERE user_id = ?", Long.class, user.getId()))
+                .isEqualTo(500_000L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM credit_transactions WHERE user_id = ? AND type = 'DAILY_ATTENDANCE_REWARD'",
+                Long.class, user.getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, user.getId()))
+                .isEqualTo(1L);
+        assertThat(rouletteService.status(user.getId()).remaining()).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT participation_date FROM roulette_ticket_grants WHERE user_id = ?", Date.class, user.getId())
+                .toLocalDate()).isEqualTo(attendanceDate);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT source_key FROM roulette_ticket_grants WHERE user_id = ?", String.class, user.getId()))
+                .isEqualTo("ATTENDANCE:" + user.getId() + ":" + attendanceDate);
     }
 
     private void race(Runnable first, Runnable second) throws Exception {
@@ -196,6 +157,9 @@ class DailyAttendanceCreditServiceIntegrationTest {
     @AfterEach
     void cleanUp() {
         for (Long userId : userIds) {
+            for (String table : List.of("roulette_ticket_grants", "roulette_days", "roulette_accounts")) {
+                jdbcTemplate.update("DELETE FROM " + table + " WHERE user_id = ?", userId);
+            }
             jdbcTemplate.update(
                     """
                     DELETE FROM credit_transactions

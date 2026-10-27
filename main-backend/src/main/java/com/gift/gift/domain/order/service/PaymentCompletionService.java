@@ -32,6 +32,7 @@ import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.domain.product.service.ProductStockService;
+import com.gift.gift.domain.roulette.service.RouletteService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserQueryService;
 
@@ -52,6 +53,7 @@ public class PaymentCompletionService {
     private final OrderCouponService orderCouponService;
     private final OrderRewardQueryService orderRewardQueryService;
     private final Clock clock;
+    private final RouletteService rouletteService;
 
     @Transactional
     public PaymentCompletion complete(Long orderRecordId) {
@@ -161,6 +163,7 @@ public class PaymentCompletionService {
         );
 
         creditTransactionRepository.saveAndFlush(transaction);
+        rouletteService.grantGift(order.getPayerId(), savedGift.getId());
 
         Order completedOrder = findOrder(orderRecordId);
 

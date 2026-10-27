@@ -177,6 +177,9 @@ class PaymentFlowIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update("DELETE FROM roulette_ticket_grants WHERE user_id = ?", payerId);
+        jdbcTemplate.update("DELETE FROM roulette_days WHERE user_id = ?", payerId);
+        jdbcTemplate.update("DELETE FROM roulette_accounts WHERE user_id = ?", payerId);
         jdbcTemplate.update(
                 "delete from notification_outbox where recipient_id in (?, ?)",
                 payerId,
@@ -279,6 +282,12 @@ class PaymentFlowIntegrationTest {
                 .orElseThrow();
 
         assertThat(first.created()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, payerId
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, recipientId
+        )).isZero();
         assertThat(second.created()).isFalse();
         assertThat(order.getStatus())
                 .isEqualTo(OrderStatus.COMPLETED);

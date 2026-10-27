@@ -163,6 +163,9 @@ class GiftAcceptanceFlowIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update("DELETE FROM roulette_ticket_grants WHERE user_id = ?", senderId);
+        jdbcTemplate.update("DELETE FROM roulette_days WHERE user_id = ?", senderId);
+        jdbcTemplate.update("DELETE FROM roulette_accounts WHERE user_id = ?", senderId);
         jdbcTemplate.update(
                 """
                 delete from notifications
@@ -228,6 +231,12 @@ class GiftAcceptanceFlowIntegrationTest {
                 .orElseThrow();
 
         assertThat(first).isEqualTo(second);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, senderId
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, recipientId
+        )).isZero();
         assertThat(gift.getStatus()).isEqualTo(GiftStatus.COMPLETED);
         assertThat(gift.getCompletedAt()).isNotNull();
         assertThat(account.getBalance())
@@ -274,6 +283,9 @@ class GiftAcceptanceFlowIntegrationTest {
                 .isEqualTo(GiftStatus.WAITING_FOR_ACCEPTANCE);
         assertThat(gift.getCompletedAt()).isNull();
         assertThat(account.getBalance()).isEqualTo(INITIAL_BALANCE);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, senderId
+        )).isZero();
     }
 
     private String ledgerKey() {
