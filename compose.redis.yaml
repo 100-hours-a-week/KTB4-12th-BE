@@ -1,0 +1,28 @@
+# Deployment: connect the backend to gift-redis_default and use REDIS_HOST=redis.
+# Set the same REDIS_PASSWORD for Redis and the backend.
+# Start: docker compose -f compose.redis.yaml up -d --wait
+name: gift-redis
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD for Redis and the backend}
+    command:
+      - /bin/sh
+      - -ec
+      - exec /usr/local/bin/docker-entrypoint.sh redis-server --requirepass "$$REDIS_PASSWORD"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'test "$$(REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli --raw ping)" = PONG'
+      interval: 10s
+      timeout: 2s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  redis-data:
