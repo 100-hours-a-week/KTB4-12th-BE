@@ -88,9 +88,6 @@ public class RouletteService {
         if (account.getAvailableTickets() == 0) {
             throw new BusinessException(ErrorCode.ROULETTE_TICKET_NOT_AVAILABLE);
         }
-        if (day.getUsed() >= 1) {
-            throw new BusinessException(ErrorCode.ROULETTE_DAILY_LIMIT_EXCEEDED);
-        }
         account.consumeTicket();
         day.consumeTicket();
         return toDay(day, account.getAvailableTickets());
