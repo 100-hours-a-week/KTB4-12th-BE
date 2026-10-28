@@ -95,7 +95,7 @@ class RouletteSpinIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, 1750, 4917})
-    @DisplayName("쿠폰 당첨은 참여권 한 장과 일일 한도를 소비하고 해당 배수 한 장만 지급한다")
+    @DisplayName("쿠폰 당첨은 참여권 한 장을 소비하고 해당 배수 한 장만 지급한다")
     void spin_awardsCouponAndReplaysSameResult(int value) {
         var segment = RoulettePolicy.select(value);
         doReturn(segment).when(draw).draw();
@@ -120,7 +120,7 @@ class RouletteSpinIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(ints = {3250, 6667, 8334})
-    @DisplayName("꽝도 참여권과 일일 한도를 소비하고 재요청에 같은 결과를 반환한다")
+    @DisplayName("꽝도 참여권 한 장을 소비하고 재요청에 같은 결과를 반환한다")
     void spin_persistsMissWithoutAwardingCoupon(int value) {
         doReturn(RoulettePolicy.select(value)).when(draw).draw();
         tickets.attend(userId);
@@ -173,8 +173,8 @@ class RouletteSpinIntegrationTest {
     }
 
     @Test
-    @DisplayName("서로 다른 키의 동시 실행은 잔액이 남아 있어도 하루 한 번만 성공한다")
-    void spin_concurrentlyEnforcesDailyLimit() throws Exception {
+    @DisplayName("서로 다른 키의 동시 실행은 보유 참여권만큼 성공하고 초과 요청은 거절한다")
+    void spin_concurrentlyEnforcesTicketBalance() throws Exception {
         tickets.attend(userId);
         grantGift(userId, 502L);
         Callable<Object> action = () -> {
@@ -185,13 +185,14 @@ class RouletteSpinIntegrationTest {
             }
         };
 
-        var results = race(List.of(action, action));
+        var results = race(List.of(action, action, action));
 
-        assertThat(results.stream().filter(RouletteSpinResponse.class::isInstance)).hasSize(1);
-        assertThat(results).contains(ErrorCode.ROULETTE_DAILY_LIMIT_EXCEEDED);
-        assertThat(countSpins(userId)).isEqualTo(1);
-        assertThat(quantity(userId, 2)).isEqualTo(1);
-        assertThat(tickets.status(userId).remaining()).isEqualTo(1);
+        assertThat(results.stream().filter(RouletteSpinResponse.class::isInstance)).hasSize(2);
+        assertThat(results).contains(ErrorCode.ROULETTE_TICKET_NOT_AVAILABLE);
+        assertThat(countSpins(userId)).isEqualTo(2);
+        assertThat(quantity(userId, 2)).isEqualTo(2);
+        assertThat(tickets.status(userId).used()).isEqualTo(2);
+        assertThat(tickets.status(userId).remaining()).isZero();
     }
 
     @Test
@@ -310,7 +311,7 @@ class RouletteSpinIntegrationTest {
     }
 
     @Test
-    @DisplayName("추첨 API는 인증·참여권 부족·일일 제한을 구분하며 본인의 결과만 반환한다")
+    @DisplayName("추첨 API는 같은 날 잔액만큼 허용하고 인증·참여권 부족·본인 결과를 검증한다")
     void api_enforcesAuthenticationOwnershipAndLimits() throws Exception {
         String key = UUID.randomUUID().toString();
         mvc.perform(post("/roulette/spins").header("Idempotency-Key", key))
@@ -324,8 +325,12 @@ class RouletteSpinIntegrationTest {
         var original = spins.spin(userId, key);
         mvc.perform(post("/roulette/spins").header("Idempotency-Key", UUID.randomUUID().toString())
                         .with(jwt().jwt(token -> token.subject(userId.toString()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.remaining").value(0));
+        mvc.perform(post("/roulette/spins").header("Idempotency-Key", UUID.randomUUID().toString())
+                        .with(jwt().jwt(token -> token.subject(userId.toString()))))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("ROULETTE_DAILY_LIMIT_EXCEEDED"));
+                .andExpect(jsonPath("$.error.code").value("ROULETTE_TICKET_NOT_AVAILABLE"));
         Long otherId = newUser();
         mvc.perform(post("/roulette/spins").header("Idempotency-Key", key)
                         .with(jwt().jwt(token -> token.subject(otherId.toString()))))
@@ -345,6 +350,7 @@ class RouletteSpinIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rewardVersion").value(RoulettePolicy.VERSION))
                 .andExpect(jsonPath("$.data.boxesAvailable").doesNotExist())
+                .andExpect(jsonPath("$.data.dailyRemaining").doesNotExist())
                 .andExpect(jsonPath("$.data.segments.length()").value(6))
                 .andExpect(jsonPath("$.data.segments[0].probability").value(17.5))
                 .andExpect(jsonPath("$.data.segments[1].probability").value(15))

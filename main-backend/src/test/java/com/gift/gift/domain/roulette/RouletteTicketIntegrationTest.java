@@ -169,20 +169,21 @@ class RouletteTicketIntegrationTest {
     }
 
     @Test
-    @DisplayName("선물 참여권은 제한 없이 누적하고 하루 한 번만 차감하며 잔액을 이월한다")
+    @DisplayName("선물 참여권은 같은 날 여러 번 차감하고 남은 잔액을 이월한다")
     void tickets_accumulateAndCarryOver() {
         for (long gift = 1; gift <= 6; gift++) {
             grantGift(gift);
         }
         consume();
         assertThat(service.status(userId).remaining()).isEqualTo(5);
-        assertThatThrownBy(this::consume).isInstanceOfSatisfying(BusinessException.class,
-                e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ROULETTE_DAILY_LIMIT_EXCEEDED));
-        nextDay();
-        assertThat(service.status(userId).remaining()).isEqualTo(5);
-        assertThat(service.status(userId).dailyRemaining()).isEqualTo(1);
         consume();
+        assertThat(service.status(userId).used()).isEqualTo(2);
         assertThat(service.status(userId).remaining()).isEqualTo(4);
+        nextDay();
+        assertThat(service.status(userId).remaining()).isEqualTo(4);
+        assertThat(service.status(userId).used()).isZero();
+        consume();
+        assertThat(service.status(userId).remaining()).isEqualTo(3);
     }
 
     @Test
@@ -255,7 +256,8 @@ class RouletteTicketIntegrationTest {
         mvc.perform(get("/roulette").with(jwt().jwt(token -> token.subject(userId.toString()))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.remaining").value(0));
         mvc.perform(post("/roulette/attendance").with(jwt().jwt(token -> token.subject(userId.toString()))))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.granted").value(true));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.granted").value(true))
+                .andExpect(jsonPath("$.data.dailyRemaining").doesNotExist());
         mvc.perform(post("/roulette/attendance").with(jwt().jwt(token -> token.subject(userId.toString()))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.granted").value(false))
                 .andExpect(jsonPath("$.data.remaining").value(1));
