@@ -1,11 +1,18 @@
 package com.gift.gift.domain.notification.service;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
+
+import com.gift.gift.domain.notification.entity.NotificationType;
+import com.gift.gift.domain.notification.repository.NotificationQueryRow;
+import com.gift.gift.domain.notification.repository.NotificationSseDeliveryRepository.Delivery;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -47,5 +54,28 @@ class NotificationSseDeliverySchedulerTest {
             scheduler.destroy();
         }
         verify(hub).closeAll();
+    }
+
+    @Test
+    @DisplayName("DB 완료 처리 실패 시 SSE를 보내지 않고 다음 폴링에서 미완료 작업을 처리한다")
+    void poll_doesNotSendWhenCompletionFails() {
+        var deliveries = mock(NotificationSseDeliveryService.class);
+        var hub = mock(NotificationSseHub.class);
+        var row = new NotificationQueryRow(
+                1L, NotificationType.GIFT_RECEIVED,
+                "알림", "내용", null, null, LocalDateTime.of(2026, 10, 28, 0, 0), null);
+        var delivery = new Delivery(
+                1L, "connection", 1L, row);
+        when(hub.hasConnections()).thenReturn(true);
+        when(hub.nodeId()).thenReturn("node");
+        when(deliveries.findDue("node", 100)).thenReturn(List.of(delivery));
+        when(deliveries.completeBeforeSend(1L, "node"))
+                .thenThrow(new DataAccessResourceFailureException("DB unavailable"))
+                .thenReturn(true);
+        var scheduler = new NotificationSseDeliveryScheduler(deliveries, hub);
+        scheduler.poll();
+        verify(hub, never()).send(anyString(), anyLong(), any());
+        scheduler.poll();
+        verify(hub).send(eq("connection"), eq(1L), any());
     }
 }
