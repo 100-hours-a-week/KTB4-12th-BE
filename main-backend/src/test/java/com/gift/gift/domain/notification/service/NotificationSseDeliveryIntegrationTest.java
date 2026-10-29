@@ -1,5 +1,6 @@
 package com.gift.gift.domain.notification.service;
 
+import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -10,6 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.gift.gift.domain.notification.dto.NotificationCreateCommand;
 import com.gift.gift.domain.notification.entity.NotificationReferenceType;
@@ -17,9 +19,9 @@ import com.gift.gift.domain.notification.entity.NotificationType;
 import com.gift.gift.domain.notification.repository.NotificationSseDeliveryRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.global.exception.BusinessException;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @SpringBootTest
 class NotificationSseDeliveryIntegrationTest {
@@ -88,23 +90,21 @@ class NotificationSseDeliveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("ACK 전에는 다시 시도하고 ACK 이후에는 중복 전송하지 않는다")
-    void acknowledge_stopsRetryAndChecksOwnership() {
+    @DisplayName("전송 전 완료는 담당 서버에서 한 번만 가능하며 다시 조회하지 않는다")
+    void completeBeforeSend_stopsFutureDelivery() {
         connect(nodeA);
         notifications.create(command());
         long id = deliveries.findDue(nodeA, 100).getFirst().id();
-        assertThat(deliveries.reserve(id, nodeB)).isFalse();
-        assertThat(deliveries.reserve(id, nodeA)).isTrue();
-        assertThat(deliveries.reserve(id, nodeA)).isFalse();
-        assertThat(deliveries.findDue(nodeA, 100)).isEmpty();
+        assertThat(deliveries.completeBeforeSend(id, nodeB)).isFalse();
+        assertThat(deliveries.completeBeforeSend(id, nodeA)).isTrue();
+        var completed = jdbc.queryForObject("SELECT completed_at FROM notification_sse_deliveries WHERE id = ?",
+                Timestamp.class, id);
+        assertThat(completed).isNotNull();
+        assertThat(deliveries.completeBeforeSend(id, nodeA)).isFalse();
         jdbc.update("UPDATE notification_sse_deliveries SET next_attempt_at = NOW(6) WHERE id = ?", id);
-        assertThat(deliveries.findDue(nodeA, 100)).hasSize(1);
-        assertThatThrownBy(() -> deliveries.acknowledge(recipient + 100000, id))
-                .isInstanceOf(BusinessException.class);
-        deliveries.acknowledge(recipient, id);
-        deliveries.acknowledge(recipient, id);
         assertThat(deliveries.findDue(nodeA, 100)).isEmpty();
-        assertThat(deliveries.reserve(id, nodeA)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT completed_at FROM notification_sse_deliveries WHERE id = ?",
+                Timestamp.class, id)).isEqualTo(completed);
     }
 
     @Test
@@ -117,7 +117,7 @@ class NotificationSseDeliveryIntegrationTest {
             var batch = deliveries.findDue(nodeA, 2);
             if (batch.isEmpty()) break;
             assertThat(batch).hasSizeLessThanOrEqualTo(2);
-            for (var item : batch) deliveries.acknowledge(recipient, item.id());
+            for (var item : batch) deliveries.completeBeforeSend(item.id(), nodeA);
             count += batch.size();
         }
         assertThat(count).isEqualTo(5);
@@ -149,8 +149,8 @@ class NotificationSseDeliveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 전달 작업의 동시 예약은 한 번만 성공한다")
-    void reserve_allowsOnlyOneConcurrentSender() throws Exception {
+    @DisplayName("같은 전달 작업의 동시 완료은 한 번만 성공한다")
+    void completeBeforeSend_allowsOnlyOneConcurrentSender() throws Exception {
         connect(nodeA);
         notifications.create(command());
         long id = deliveries.findDue(nodeA, 100).getFirst().id();
@@ -158,7 +158,7 @@ class NotificationSseDeliveryIntegrationTest {
         try (var executor = Executors.newFixedThreadPool(2)) {
             Callable<Boolean> attempt = () -> {
                 assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
-                return deliveries.reserve(id, nodeA);
+                return deliveries.completeBeforeSend(id, nodeA);
             };
             var first = executor.submit(attempt);
             var second = executor.submit(attempt);
@@ -193,7 +193,7 @@ class NotificationSseDeliveryIntegrationTest {
                 notifications.create(command());
                 var first = deliveries.findDue(nodeA, 100);
                 assertThat(first).hasSize(1);
-                deliveries.acknowledge(recipient, first.getFirst().id());
+                deliveries.completeBeforeSend(first.getFirst().id(), nodeA);
                 release.countDown();
                 slow.get(10, TimeUnit.SECONDS);
                 var late = deliveries.findDue(nodeA, 100);
@@ -230,8 +230,8 @@ class NotificationSseDeliveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 연결의 전송이 막혀도 나머지 전달 작업을 완료 처리하거나 잃지 않는다")
-    void busyConnection_keepsUnacknowledgedJobsInDatabase() throws Exception {
+    @DisplayName("같은 연결의 전송이 막히면 후속 전달을 포기하고 완료 상태와 연결을 유지한다")
+    void busyConnection_completesDroppedJobsWithoutDisconnecting() throws Exception {
         var hub = new NotificationSseHub(connections);
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
@@ -244,13 +244,43 @@ class NotificationSseDeliveryIntegrationTest {
             assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
             org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), hub::sendHeartbeats);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notification_sse_deliveries"
-                    + " WHERE node_id = ? AND acknowledged_at IS NULL", Long.class, hub.nodeId())).isEqualTo(2);
+                    + " WHERE node_id = ? AND completed_at IS NOT NULL", Long.class, hub.nodeId())).isEqualTo(2);
+            assertThat(deliveries.findDue(hub.nodeId(), 100)).isEmpty();
+            assertThat(hub.hasConnections()).isTrue();
+            poller.poll();
             release.countDown();
             received.get(5, TimeUnit.SECONDS);
         } finally {
             release.countDown();
             hub.destroy();
         }
+    }
+
+    @Test
+    @DisplayName("전송 큐 거절 전에 완료가 커밋되며 다음 폴링에서 재시도하지 않는다")
+    void rejectedSend_doesNotRetryCompletedDelivery() {
+        String connection = connect(nodeA);
+        notifications.create(command());
+        long id = deliveries.findDue(nodeA, 100).getFirst().id();
+        var hub = mock(NotificationSseHub.class);
+        when(hub.nodeId()).thenReturn(nodeA);
+        when(hub.hasConnections()).thenReturn(true);
+        when(hub.send(eq(connection),
+                eq(id), any())).thenAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(jdbc.queryForObject("SELECT completed_at FROM notification_sse_deliveries WHERE id = ?",
+                    Timestamp.class, id)).isNotNull();
+            return false;
+        });
+        var poller = new NotificationSseDeliveryScheduler(deliveries, hub);
+        poller.poll();
+        poller.poll();
+        verify(hub, times(1)).send(
+                eq(connection), eq(id),
+                any());
+        assertThat(deliveries.findDue(nodeA, 100)).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notifications WHERE recipient_id = ?",
+                Long.class, recipient)).isEqualTo(1);
     }
 
     private CompletableFuture<com.gift.gift.domain.notification.dto.response.NotificationListItem> receive(

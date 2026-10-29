@@ -84,14 +84,12 @@ public class NotificationSseHub implements DisposableBean {
             });
             return true;
         } catch (RejectedExecutionException full) {
-            // 호출 스레드에서 대신 전송하지 않는다. 미확인 전달 작업은 DB에서 다시 조회한다.
             sending.remove(connectionId);
             return false;
         }
     }
 
     public void sendHeartbeats() {
-        // 갱신 조회 중 새로 등록된 연결을 오래된 조회 결과로 종료하지 않는다.
         var snapshot = Map.copyOf(connections);
         try {
             var active = connectionService.renew(nodeId);
@@ -103,7 +101,6 @@ public class NotificationSseHub implements DisposableBean {
                 offer(id, emitter, SseEmitter.event().comment("keepalive"));
             });
         } catch (RuntimeException failure) {
-            // DB에서 연결 등록을 유지하지 못하면 조용히 누락시키지 않고 재연결을 유도한다.
             log.warn("SSE 연결 임대 갱신 실패: errorType={}", failure.getClass().getName());
             closeAll();
         }
@@ -119,7 +116,6 @@ public class NotificationSseHub implements DisposableBean {
         try {
             sender.execute(emitter::complete);
         } catch (RejectedExecutionException full) {
-            // shortcut: 풀 포화 시 종료는 Servlet timeout에 의존한다. 즉시 종료가 필요하면 별도 종료 경로를 둔다.
             log.warn("SSE 연결 종료 대기: 전송 풀 포화 또는 종료");
         }
     }

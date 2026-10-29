@@ -64,7 +64,7 @@ public class NotificationSseDeliveryRepository {
                 FROM notification_sse_deliveries d
                 JOIN notification_sse_connections c ON c.id = d.connection_id
                 JOIN notifications n ON n.id = d.notification_id
-                WHERE d.node_id = ? AND d.acknowledged_at IS NULL
+                WHERE d.node_id = ? AND d.completed_at IS NULL
                     AND d.next_attempt_at <= CURRENT_TIMESTAMP(6)
                     AND c.expires_at > CURRENT_TIMESTAMP(6)
                 ORDER BY d.next_attempt_at, d.id LIMIT ?
@@ -80,30 +80,13 @@ public class NotificationSseDeliveryRepository {
         }, nodeId, batchSize);
     }
 
-    public boolean reserve(Long deliveryId, String nodeId) {
+    public boolean completeBeforeSend(Long deliveryId, String nodeId) {
         return jdbc.update("""
                 UPDATE notification_sse_deliveries
-                SET next_attempt_at = TIMESTAMPADD(SECOND,
-                        LEAST(30, POWER(2, LEAST(attempt_count, 5))), CURRENT_TIMESTAMP(6)),
-                    attempt_count = LEAST(attempt_count + 1, 2147483647)
-                WHERE id = ? AND node_id = ? AND acknowledged_at IS NULL
+                SET completed_at = CURRENT_TIMESTAMP(6)
+                WHERE id = ? AND node_id = ? AND completed_at IS NULL
                     AND next_attempt_at <= CURRENT_TIMESTAMP(6)
                 """, deliveryId, nodeId) == 1;
-    }
-
-    public boolean belongsTo(Long deliveryId, Long recipientId) {
-        return Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM notification_sse_deliveries d
-                JOIN notification_sse_connections c ON c.id = d.connection_id
-                WHERE d.id = ? AND c.recipient_id = ?)
-                """, Boolean.class, deliveryId, recipientId));
-    }
-
-    public void acknowledge(Long deliveryId) {
-        jdbc.update("""
-                UPDATE notification_sse_deliveries
-                SET acknowledged_at = COALESCE(acknowledged_at, CURRENT_TIMESTAMP(6)) WHERE id = ?
-                """, deliveryId);
     }
 
     public record Delivery(Long id, String connectionId, Long recipientId, NotificationQueryRow notification) {

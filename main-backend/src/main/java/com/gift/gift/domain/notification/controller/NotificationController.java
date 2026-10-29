@@ -1,7 +1,5 @@
 package com.gift.gift.domain.notification.controller;
 
-import java.util.Map;
-
 import jakarta.validation.constraints.Positive;
 
 import lombok.RequiredArgsConstructor;
@@ -21,7 +19,6 @@ import com.gift.gift.domain.notification.dto.response.NotificationReadResponse;
 import com.gift.gift.domain.notification.dto.response.NotificationUnreadCountResponse;
 import com.gift.gift.domain.notification.service.NotificationService;
 import com.gift.gift.domain.notification.service.NotificationSseHub;
-import com.gift.gift.domain.notification.service.NotificationSseDeliveryService;
 import com.gift.gift.global.pagination.CursorPageResponse;
 import com.gift.gift.global.response.ApiResponse;
 import com.gift.gift.global.security.CurrentUserId;
@@ -33,7 +30,6 @@ public class NotificationController {
 
     private final NotificationService notificationService;
     private final NotificationSseHub notificationSseHub;
-    private final NotificationSseDeliveryService notificationSseDeliveryService;
 
     @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> subscribe(@CurrentUserId Long userId) {
@@ -42,15 +38,6 @@ public class NotificationController {
                 .cacheControl(CacheControl.noCache())
                 .header("X-Accel-Buffering", "no")
                 .body(notificationSseHub.connect(userId));
-    }
-
-    @PatchMapping("/events/{deliveryId}/ack")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> acknowledge(
-            @CurrentUserId Long userId,
-            @PathVariable @Positive Long deliveryId
-    ) {
-        notificationSseDeliveryService.acknowledge(userId, deliveryId);
-        return ResponseEntity.ok(ApiResponse.success("알림 수신을 확인했습니다."));
     }
 
     @GetMapping("/unread-count")

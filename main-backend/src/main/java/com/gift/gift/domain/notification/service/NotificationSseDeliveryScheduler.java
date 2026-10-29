@@ -46,12 +46,12 @@ public class NotificationSseDeliveryScheduler implements InitializingBean, Dispo
             if (!hub.hasConnections()) return;
             for (var delivery : deliveries.findDue(hub.nodeId(), batchSize)) {
                 try {
-                    if (deliveries.reserve(delivery.id(), hub.nodeId())) {
+                    if (deliveries.completeBeforeSend(delivery.id(), hub.nodeId())) {
                         hub.send(delivery.connectionId(), delivery.id(),
                                 NotificationListItem.from(delivery.notification()));
                     }
                 } catch (RuntimeException failure) {
-                    log.warn("SSE 전달 재시도 대기: errorType={}", failure.getClass().getName());
+                    log.warn("SSE 전달 처리 실패: errorType={}", failure.getClass().getName());
                 }
             }
         } catch (RuntimeException failure) {

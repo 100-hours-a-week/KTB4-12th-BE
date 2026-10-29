@@ -9,8 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.notification.repository.NotificationSseDeliveryRepository;
 import com.gift.gift.domain.notification.repository.NotificationSseDeliveryRepository.Delivery;
-import com.gift.gift.global.exception.BusinessException;
-import com.gift.gift.global.exception.ErrorCode;
 
 @Service
 @RequiredArgsConstructor
@@ -23,15 +21,7 @@ public class NotificationSseDeliveryService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean reserve(Long deliveryId, String nodeId) {
-        return repository.reserve(deliveryId, nodeId);
-    }
-
-    @Transactional
-    public void acknowledge(Long recipientId, Long deliveryId) {
-        if (!repository.belongsTo(deliveryId, recipientId)) {
-            throw new BusinessException(ErrorCode.NOTIFICATION_NOT_FOUND);
-        }
-        repository.acknowledge(deliveryId);
+    public boolean completeBeforeSend(Long deliveryId, String nodeId) {
+        return repository.completeBeforeSend(deliveryId, nodeId);
     }
 }
