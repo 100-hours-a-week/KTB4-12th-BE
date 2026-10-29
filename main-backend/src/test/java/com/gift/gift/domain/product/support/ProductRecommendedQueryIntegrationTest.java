@@ -17,6 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ import com.gift.gift.domain.product.repository.ProductSummaryProjection;
 import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientRecommendedProduct;
+import com.gift.gift.domain.recommendation.profiling.event.RecommendationAnalysisCompletedEvent;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.global.exception.ErrorCode;
 
@@ -64,6 +66,8 @@ class ProductRecommendedQueryIntegrationTest {
     private ProductCursorCodec codec;
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
 
     private final List<Long> productIds = new ArrayList<>();
     private final List<Long> categoryIds = new ArrayList<>();
@@ -286,6 +290,7 @@ class ProductRecommendedQueryIntegrationTest {
         String cursor = response(null, List.of(category.getId()), null).pagination().nextCursor();
         profile.createNextSourceVersion();
         profile.markCompleted(2L);
+        publishCompletedVersion(2L);
         assertInvalidCursor(cursor);
     }
 
@@ -302,6 +307,7 @@ class ProductRecommendedQueryIntegrationTest {
         assertThat(first.appliedSort()).isEqualTo(ProductSort.POPULAR);
         profile.createNextSourceVersion();
         profile.markCompleted(1L);
+        publishCompletedVersion(1L);
         assertInvalidCursor(first.pagination().nextCursor());
     }
 
@@ -420,5 +426,14 @@ class ProductRecommendedQueryIntegrationTest {
         assertThatThrownBy(() -> response(null, List.of(category.getId()), cursor))
                 .isInstanceOfSatisfying(ProductException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_CURSOR));
+    }
+
+    private void publishCompletedVersion(long version) {
+        eventPublisher.publishEvent(new RecommendationAnalysisCompletedEvent(recipient.getId(), version));
+        entityManager.flush();
+        committedFixtures = true;
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
     }
 }
