@@ -2,40 +2,51 @@ package com.gift.gift.domain.notification.service;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.connection.Message;
+import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.connection.SubscriptionListener;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.domain.notification.dto.response.NotificationListItem;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class NotificationSseHub implements DisposableBean {
     private static final long CONNECTION_TIMEOUT_MILLIS = 30 * 60 * 1000L;
-    private final NotificationSseConnectionService connectionService;
-    private final String nodeId = UUID.randomUUID().toString();
-    private final Map<String, SseEmitter> connections = new ConcurrentHashMap<>();
-
-    private final Set<String> sending = ConcurrentHashMap.newKeySet();
+    private final RedisMessageListenerContainer subscriptions;
+    private final Object subscriptionMonitor = new Object();
+    private final ObjectMapper mapper;
+    private final MeterRegistry metrics;
+    private final Map<Long, RecipientConnections> recipients = new ConcurrentHashMap<>();
+    private final Map<String, Connection> connections = new ConcurrentHashMap<>();
+    private final AtomicBoolean closed = new AtomicBoolean();
     private final ThreadPoolExecutor sender = new ThreadPoolExecutor(
             4, 4, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100),
             Thread.ofPlatform().daemon(true).name("notification-sse-send-", 0).factory(),
             new ThreadPoolExecutor.AbortPolicy());
 
-    public String nodeId() {
-        return nodeId;
+    public NotificationSseHub(
+            @Qualifier("notificationRedisContainer") RedisMessageListenerContainer subscriptions,
+            ObjectMapper mapper, MeterRegistry metrics) {
+        this.subscriptions = subscriptions;
+        this.mapper = mapper;
+        this.metrics = metrics;
+        metrics.gauge("notification.sse.connections", connections, Map::size);
+        metrics.gauge("notification.redis.user.channels", recipients, Map::size);
     }
 
     public boolean hasConnections() {
@@ -43,95 +54,186 @@ public class NotificationSseHub implements DisposableBean {
     }
 
     public SseEmitter connect(Long recipientId) {
-        String connectionId = UUID.randomUUID().toString();
-        SseEmitter emitter = new SseEmitter(CONNECTION_TIMEOUT_MILLIS);
-        Runnable remove = () -> remove(connectionId, emitter);
-        emitter.onCompletion(remove);
-        emitter.onTimeout(() -> close(connectionId, emitter));
-        emitter.onError(ignored -> remove.run());
+        if (closed.get()) throw new IllegalStateException("SSE 서버가 종료 중입니다.");
+        var connection = new Connection(recipientId);
+        connection.emitter.onCompletion(() -> remove(connection));
+        connection.emitter.onTimeout(() -> close(connection));
+        connection.emitter.onError(ignored -> remove(connection));
         try {
-            emitter.send(SseEmitter.event().name("connected").data("connected"));
-            connectionService.register(connectionId, nodeId, recipientId);
+            connection.emitter.send(SseEmitter.event().name("connected").data("connected"));
         } catch (IOException failure) {
-            emitter.completeWithError(failure);
+            connection.emitter.completeWithError(failure);
             throw new UncheckedIOException(failure);
+        }
+        try {
+            recipients.compute(recipientId, (id, existing) -> {
+                if (closed.get()) throw new IllegalStateException("SSE 서버가 종료 중입니다.");
+                if (connection.terminated.get()) return existing;
+                var group = existing == null ? new RecipientConnections(id) : existing;
+                connections.put(connection.id, connection);
+                group.members.put(connection.id, connection);
+                if (existing == null) {
+                    synchronized (subscriptionMonitor) {
+                        try {
+                            subscriptions.addMessageListener(group, group.topic);
+                        } catch (RuntimeException failure) {
+                            group.active.set(false);
+                            group.members.remove(connection.id);
+                            connections.remove(connection.id, connection);
+                            metrics.counter("notification.redis.subscription.failure").increment();
+                            try {
+                                subscriptions.removeMessageListener(group, group.topic);
+                            } catch (RuntimeException cleanupFailure) {
+                                failure.addSuppressed(cleanupFailure);
+                            }
+                            throw failure;
+                        }
+                    }
+                }
+                return group;
+            });
         } catch (RuntimeException failure) {
-            emitter.completeWithError(failure);
+            connection.emitter.completeWithError(failure);
             throw failure;
         }
-        connections.put(connectionId, emitter);
-        return emitter;
+        return connection.emitter;
     }
 
-    public boolean send(String connectionId, Long deliveryId, NotificationListItem notification) {
-        SseEmitter emitter = connections.get(connectionId);
-        return emitter != null && offer(connectionId, emitter, SseEmitter.event()
-                .id(deliveryId.toString()).name("notification").data(notification));
-    }
-
-    private boolean offer(String connectionId, SseEmitter emitter, SseEmitter.SseEventBuilder event) {
-        if (!sending.add(connectionId)) return false;
+    private boolean offer(Connection connection, SseEmitter.SseEventBuilder event, String eventType) {
+        if (!connection.sending.compareAndSet(false, true)) {
+            metrics.counter("notification.sse.dropped", "reason", "busy", "event", eventType).increment();
+            return false;
+        }
         try {
             sender.execute(() -> {
                 try {
-                    if (connections.get(connectionId) == emitter) emitter.send(event);
+                    if (connections.get(connection.id) == connection) {
+                        if (connection.resync.getAndSet(false)) {
+                            connection.emitter.send(SseEmitter.event().name("resync").data("resync"));
+                            metrics.counter("notification.sse.resync").increment();
+                        }
+                        connection.emitter.send(event);
+                        metrics.counter("notification.sse.write", "result", "success", "event", eventType).increment();
+                    }
                 } catch (IOException | IllegalStateException failure) {
-                    remove(connectionId, emitter);
+                    metrics.counter("notification.sse.write", "result", "failure", "event", eventType).increment();
+                    remove(connection);
                 } finally {
-                    sending.remove(connectionId);
-                    if (connections.get(connectionId) != emitter) emitter.complete();
+                    connection.sending.set(false);
+                    if (connections.get(connection.id) != connection) {
+                        connection.emitter.complete();
+                    } else if (connection.resync.get()) {
+                        offer(connection, SseEmitter.event().comment("resubscribed"), "resync");
+                    }
                 }
             });
             return true;
         } catch (RejectedExecutionException full) {
-            sending.remove(connectionId);
+            connection.sending.set(false);
+            metrics.counter("notification.sse.dropped", "reason", "queue_full", "event", eventType).increment();
             return false;
         }
     }
 
     public void sendHeartbeats() {
-        var snapshot = Map.copyOf(connections);
-        try {
-            var active = connectionService.renew(nodeId);
-            snapshot.forEach((id, emitter) -> {
-                if (!active.contains(id)) {
-                    close(id, emitter);
-                    return;
-                }
-                offer(id, emitter, SseEmitter.event().comment("keepalive"));
-            });
-        } catch (RuntimeException failure) {
-            log.warn("SSE 연결 임대 갱신 실패: errorType={}", failure.getClass().getName());
-            closeAll();
-        }
+        connections.values().forEach(
+                connection -> offer(connection, SseEmitter.event().comment("keepalive"), "heartbeat"));
     }
 
     public void closeAll() {
-        connections.forEach(this::close);
+        connections.values().forEach(this::close);
     }
 
-    private void close(String connectionId, SseEmitter emitter) {
-        remove(connectionId, emitter);
-        if (sending.contains(connectionId)) return;
+    private void close(Connection connection) {
+        remove(connection);
+        if (connection.sending.get()) return;
         try {
-            sender.execute(emitter::complete);
+            sender.execute(connection.emitter::complete);
         } catch (RejectedExecutionException full) {
             log.warn("SSE 연결 종료 대기: 전송 풀 포화 또는 종료");
         }
     }
 
+    private void remove(Connection connection) {
+        connection.terminated.set(true);
+        recipients.computeIfPresent(connection.recipientId, (id, group) -> {
+            if (!connections.remove(connection.id, connection)) return group;
+            group.members.remove(connection.id);
+            if (!group.members.isEmpty()) return group;
+            group.active.set(false);
+            try {
+                synchronized (subscriptionMonitor) {
+                    subscriptions.removeMessageListener(group, group.topic);
+                }
+            } catch (RuntimeException failure) {
+                metrics.counter("notification.redis.subscription.failure").increment();
+                log.warn("알림 Redis 구독 해제 실패: errorType={}", failure.getClass().getName());
+            }
+            return null;
+        });
+    }
+
     @Override
     public void destroy() {
+        closed.set(true);
         closeAll();
         sender.shutdownNow();
     }
 
-    private void remove(String connectionId, SseEmitter emitter) {
-        if (!connections.remove(connectionId, emitter)) return;
-        try {
-            connectionService.disconnect(connectionId);
-        } catch (RuntimeException failure) {
-            log.warn("SSE 연결 정리 대기: errorType={}", failure.getClass().getName());
+    private class RecipientConnections implements MessageListener, SubscriptionListener {
+        private final Long recipientId;
+        private final ChannelTopic topic;
+        private final Map<String, Connection> members = new ConcurrentHashMap<>();
+        private final AtomicBoolean active = new AtomicBoolean(true);
+
+        private RecipientConnections(Long recipientId) {
+            this.recipientId = recipientId;
+            this.topic = new ChannelTopic(NotificationRedisPublisher.channel(recipientId));
+        }
+
+        @Override
+        public void onMessage(Message message, byte[] pattern) {
+            if (!active.get()) return;
+            try {
+                var event = mapper.readValue(message.getBody(), NotificationCreatedEvent.class);
+                if (!topic.getTopic().equals(new String(message.getChannel(), StandardCharsets.UTF_8))
+                        || !recipientId.equals(event.recipientId()) || event.notification() == null
+                        || event.notification().notificationId() == null) {
+                    metrics.counter("notification.redis.received", "result", "invalid").increment();
+                    return;
+                }
+                metrics.counter("notification.redis.received", "result", "valid").increment();
+                NotificationListItem notification = event.notification();
+                members.values().forEach(connection -> offer(connection, SseEmitter.event()
+                                .id(notification.notificationId().toString()).name("notification").data(notification),
+                        "notification"));
+            } catch (RuntimeException failure) {
+                metrics.counter("notification.redis.received", "result", "invalid").increment();
+                log.warn("알림 Redis 메시지 처리 실패: errorType={}", failure.getClass().getName());
+            }
+        }
+
+        @Override
+        public void onChannelSubscribed(byte[] channel, long count) {
+            if (!active.get() || !topic.getTopic().equals(new String(channel, StandardCharsets.UTF_8))) return;
+            metrics.counter("notification.redis.subscribed").increment();
+            members.values().forEach(connection -> {
+                connection.resync.set(true);
+                offer(connection, SseEmitter.event().comment("subscribed"), "resync");
+            });
+        }
+    }
+
+    private static class Connection {
+        private final String id = UUID.randomUUID().toString();
+        private final Long recipientId;
+        private final SseEmitter emitter = new SseEmitter(CONNECTION_TIMEOUT_MILLIS);
+        private final AtomicBoolean terminated = new AtomicBoolean();
+        private final AtomicBoolean sending = new AtomicBoolean();
+        private final AtomicBoolean resync = new AtomicBoolean();
+
+        private Connection(Long recipientId) {
+            this.recipientId = recipientId;
         }
     }
 }

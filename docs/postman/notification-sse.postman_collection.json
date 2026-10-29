@@ -1,8 +1,7 @@
 {
   "info": {
-    "name": "Notification SSE without browser ACK",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "B단계: DB 중계는 유지하고 전송 시도 전 완료 처리한다. 브라우저 ACK와 자동 재전송 없음. 누락은 목록·미읽음 개수 재조회로 복구한다."
+    "name": "Notification SSE user-channel Redis relay",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
     "type": "bearer",
