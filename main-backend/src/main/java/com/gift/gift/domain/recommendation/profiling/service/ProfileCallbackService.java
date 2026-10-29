@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.repository.ProductRepository;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientRecommendedProduct;
+import com.gift.gift.domain.recommendation.profiling.event.RecommendationAnalysisCompletedEvent;
 import com.gift.gift.domain.recommendation.profiling.exception.RecommendationErrorCode;
 import com.gift.gift.domain.recommendation.profiling.exception.RecommendationException;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
@@ -30,6 +32,7 @@ public class ProfileCallbackService {
     private final RecipientProfileRepository profileRepository;
     private final RecipientRecommendedProductRepository recommendationRepository;
     private final ProductRepository productRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void saveCallback(
@@ -86,6 +89,10 @@ public class ProfileCallbackService {
         recommendationRepository.saveAllAndFlush(recommendations);
 
         profile.markCompleted(sourceVersion);
+        eventPublisher.publishEvent(new RecommendationAnalysisCompletedEvent(
+                pathRecipientId,
+                profile.getAnalyzedSourceVersion()
+        ));
 
         if (!droppedProductIds.isEmpty()) {
             log.warn(

@@ -44,11 +44,6 @@ spring:
     elasticsearch:
       repositories:
         enabled: false
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      timeout: 2s
 
   mail:
     host: ${SMTP_HOST:localhost}
@@ -71,6 +66,23 @@ storage:
     bucket: ${PRODUCT_IMAGE_BUCKET}
 
 app:
+  redis:
+    auth:
+      host: ${REDIS_AUTH_HOST:${REDIS_HOST:localhost}}
+      port: ${REDIS_AUTH_PORT:${REDIS_PORT:6379}}
+      password: ${REDIS_AUTH_PASSWORD:${REDIS_PASSWORD:}}
+      connect-timeout: ${REDIS_AUTH_CONNECT_TIMEOUT:2s}
+      command-timeout: ${REDIS_AUTH_COMMAND_TIMEOUT:2s}
+
+    product:
+      host: ${REDIS_PRODUCT_HOST:${REDIS_HOST:localhost}}
+      port: ${REDIS_PRODUCT_PORT:${REDIS_PORT:6379}}
+      password: ${REDIS_PRODUCT_PASSWORD:${REDIS_PASSWORD:}}
+      connect-timeout: ${REDIS_PRODUCT_CONNECT_TIMEOUT:2s}
+      command-timeout: ${REDIS_PRODUCT_COMMAND_TIMEOUT:2s}
+      ai-recommended-cache:
+        ttl: 30m
+
   scheduling:
     enabled: ${SCHEDULING_ENABLED:true}
   email:

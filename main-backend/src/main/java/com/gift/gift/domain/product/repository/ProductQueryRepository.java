@@ -21,7 +21,19 @@ public interface ProductQueryRepository {
             int fetchCount
     );
 
+    List<ProductSummaryProjection> searchProducts(
+            ProductSearchCondition condition,
+            ProductCursor cursor,
+            int fetchCount,
+            List<Long> cachedRecommendationIds
+    );
+
     boolean hasMatchingRecommendedProducts(
             ProductSearchCondition condition
+    );
+
+    boolean hasMatchingRecommendedProducts(
+            ProductSearchCondition condition,
+            List<Long> cachedRecommendationIds
     );
 }
