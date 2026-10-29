@@ -56,9 +56,6 @@ public class RouletteParticipationDay {
     }
 
     public void consumeTicket() {
-        if (used != 0) {
-            throw new IllegalStateException("이미 오늘의 룰렛 참여권을 사용했습니다.");
-        }
-        used = 1;
+        used = Math.incrementExact(used);
     }
 }

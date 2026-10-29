@@ -13,14 +13,13 @@ public record RouletteAttendanceResponse(
         int attendanceGranted,
         int giftGranted,
         int used,
-        long remaining,
-        int dailyRemaining
+        long remaining
 ) {
 
     public static RouletteAttendanceResponse from(boolean granted, RouletteDay day) {
         return new RouletteAttendanceResponse(
                 granted, day.date(), day.date().plusDays(1).atStartOfDay(RoulettePolicy.ZONE).toOffsetDateTime(),
-                day.attendanceGranted(), day.giftGranted(), day.used(), day.remaining(), day.dailyRemaining()
+                day.attendanceGranted(), day.giftGranted(), day.used(), day.remaining()
         );
     }
 }

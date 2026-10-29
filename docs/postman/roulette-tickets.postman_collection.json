@@ -70,7 +70,7 @@
               "pm.test('조회 성공', () => pm.response.to.have.status(200));",
               "const data = pm.response.json().data;",
               "pm.test('잔액은 음수가 아니다', () => pm.expect(data.remaining).to.be.at.least(0));",
-              "pm.test('일일 한도', () => pm.expect(data.dailyRemaining).to.be.oneOf([0, 1]));"
+              "pm.test('일일 한도 필드 제거', () => pm.expect(data).not.to.have.property('dailyRemaining'));"
             ]
           }
         }
