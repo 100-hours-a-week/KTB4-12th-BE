@@ -1,295 +1,205 @@
 package com.gift.gift.domain.notification.service;
 
-import java.io.IOException;
-import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.*;
-import java.util.function.Consumer;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter.DataWithMediaType;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.*;
+import org.springframework.data.redis.connection.DefaultMessage;
+import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.connection.SubscriptionListener;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.notification.dto.response.NotificationListItem;
 import com.gift.gift.domain.notification.entity.NotificationReferenceType;
 import com.gift.gift.domain.notification.entity.NotificationType;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.*;
+import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.*;
 
 class NotificationSseHubTest {
+    private final RedisMessageListenerContainer container = mock(RedisMessageListenerContainer.class);
+    private final JsonMapper mapper = JsonMapper.builder().findAndAddModules().build();
+    private final SimpleMeterRegistry metrics = new SimpleMeterRegistry();
+    private final NotificationSseHub hub = new NotificationSseHub(container, mapper, metrics);
+    private final Map<String, MessageListener> listeners = new ConcurrentHashMap<>();
 
-    private final NotificationSseConnectionService registry = org.mockito.Mockito.mock(NotificationSseConnectionService.class);
-    private final NotificationSseHub hub = new NotificationSseHub(registry);
-    private String lastConnectionId;
+    @BeforeEach
+    void setup() {
+        doAnswer(call -> {
+            ChannelTopic topic = call.getArgument(1);
+            listeners.put(topic.getTopic(), call.getArgument(0));
+            return null;
+        }).when(container).addMessageListener(any(), any(ChannelTopic.class));
+        doAnswer(call -> {
+            ChannelTopic topic = call.getArgument(1);
+            listeners.remove(topic.getTopic(), call.getArgument(0));
+            return null;
+        }).when(container).removeMessageListener(any(), any(ChannelTopic.class));
+    }
 
     @AfterEach
-    void cleanup() {
-        hub.destroy();
+    void cleanup() { hub.destroy(); metrics.close(); }
+
+    @Test
+    @DisplayName("첫 탭에서 구독하고 마지막 탭이 닫힐 때만 구독을 해제한다")
+    void multipleTabs_shareSubscriptionUntilLastDisconnect() {
+        var a = new SseEmitterProbe(hub.connect(1L));
+        var b = new SseEmitterProbe(hub.connect(1L));
+        assertThat(a.data).contains("connected");
+        verify(container, times(1)).addMessageListener(any(), any(ChannelTopic.class));
+        a.complete();
+        verify(container, never()).removeMessageListener(any(), any(ChannelTopic.class));
+        publish(1L, 1L);
+        b.awaitNotifications(1);
+        assertThat(a.notifications()).isEmpty();
+        b.complete();
+        assertThat(listeners).isEmpty();
+        assertThat(hub.hasConnections()).isFalse();
     }
 
     @Test
-    @DisplayName("연결 직후 알림 없이도 connected 이벤트를 먼저 전송한다")
-    void connect_sendsConnectedEvent() {
-        EmitterProbe emitter = connect(1L);
-
-        assertThat(emitter.initialData()).extracting(item -> ((DataWithMediaType) item).getData())
-                .containsExactly("event:connected\ndata:", "connected", "\n\n");
-        assertThat(emitter.sentData()).isEmpty();
+    @DisplayName("대상 사용자의 모든 탭에만 보내며 채널과 수신자가 다른 메시지는 버린다")
+    void message_isolatesRecipientAndRejectsMismatchedChannel() {
+        var a = new SseEmitterProbe(hub.connect(1L));
+        var b = new SseEmitterProbe(hub.connect(1L));
+        var other = new SseEmitterProbe(hub.connect(2L));
+        publish(1L, 2L);
+        assertThat(metrics.get("notification.redis.received").tag("result", "invalid").counter().count()).isEqualTo(1);
+        publish(1L, 1L);
+        a.awaitNotifications(1); b.awaitNotifications(1);
+        assertThat(other.notifications()).isEmpty();
+        assertThat(a.notifications()).isEqualTo(b.notifications());
     }
 
     @Test
-    @DisplayName("알림은 해당 수신자의 SSE 연결에만 전달한다")
-    void publish_sendsOnlyToRecipientConnections() {
-        EmitterProbe recipient = connect(1L);
-        String recipientConnection = lastConnectionId;
-        EmitterProbe anotherRecipient = connect(2L);
-        NotificationListItem notification = notification();
-
-        hub.send(recipientConnection, 1L, notification);
-
-        recipient.awaitSend();
-        assertThat(recipient.sentData()).anySatisfy(item ->
-                assertThat(((DataWithMediaType) item).getData()).isSameAs(notification)
-        );
-        assertThat(anotherRecipient.sentData()).isEmpty();
+    @DisplayName("실제 채널 구독 완료 전에는 resync를 보내지 않고 완료된 사용자에게만 보낸다")
+    void subscriptionConfirmation_resyncsOnlyMatchingRecipient() {
+        var a = new SseEmitterProbe(hub.connect(1L));
+        var b = new SseEmitterProbe(hub.connect(2L));
+        assertThat(a.data).doesNotContain("resync");
+        confirm(1L);
+        await().atMost(Duration.ofSeconds(5)).until(() -> a.data.contains("resync"));
+        assertThat(b.data).doesNotContain("resync");
     }
 
     @Test
-    @DisplayName("연결이 완료되면 heartbeat 대상에서 제거한다")
-    void completion_removesConnection() {
-        EmitterProbe emitter = connect(1L);
-
-        emitter.completion().run();
-        hub.sendHeartbeats();
-
-        assertThat(emitter.sentData()).isEmpty();
+    @DisplayName("종료한 구독의 늦은 콜백은 재접속한 새 탭에 전달하지 않는다")
+    void retiredListener_doesNotSendToNewConnection() {
+        var old = new SseEmitterProbe(hub.connect(1L));
+        var listener = listeners.get(channel(1L));
+        old.complete();
+        var fresh = new SseEmitterProbe(hub.connect(1L));
+        ((SubscriptionListener) listener).onChannelSubscribed(bytes(channel(1L)), 1);
+        listener.onMessage(message(1L, 1L), null);
+        assertThat(fresh.data).doesNotContain("resync");
+        assertThat(fresh.notifications()).isEmpty();
+        publish(1L, 1L);
+        fresh.awaitNotifications(1);
     }
 
     @Test
-    @DisplayName("연결이 시간 초과되면 heartbeat 대상에서 제거한다")
-    void timeout_removesConnection() {
-        EmitterProbe emitter = connect(1L);
-
-        emitter.timeout().run();
-        hub.sendHeartbeats();
-
-        assertThat(emitter.sentData()).isEmpty();
+    @DisplayName("동시 탭 연결과 종료 후에도 남은 탭의 구독을 유지한다")
+    void concurrentConnections_keepRemainingSubscription() throws Exception {
+        var initial = new SseEmitterProbe(hub.connect(1L));
+        try (var executor = Executors.newFixedThreadPool(8)) {
+            var tasks = new java.util.ArrayList<Future<?>>();
+            for (int i = 0; i < 30; i++) tasks.add(executor.submit(() -> {
+                var tab = new SseEmitterProbe(hub.connect(1L));
+                tab.complete();
+            }));
+            for (var task : tasks) task.get(10, TimeUnit.SECONDS);
+        }
+        verify(container, times(1)).addMessageListener(any(), any(ChannelTopic.class));
+        verify(container, never()).removeMessageListener(any(), any(ChannelTopic.class));
+        publish(1L, 1L); initial.awaitNotifications(1);
+        initial.complete();
+        assertThat(listeners).isEmpty();
     }
 
     @Test
-    @DisplayName("연결 오류가 발생하면 heartbeat 대상에서 제거한다")
-    void error_removesConnection() {
-        EmitterProbe emitter = connect(1L);
-
-        emitter.error().accept(new IllegalStateException("disconnected"));
-        hub.sendHeartbeats();
-
-        assertThat(emitter.sentData()).isEmpty();
+    @DisplayName("시간 초과와 오류는 연결과 구독을 정리한다")
+    void timeoutAndError_removeConnections() {
+        var a = new SseEmitterProbe(hub.connect(1L));
+        var b = new SseEmitterProbe(hub.connect(2L));
+        a.timeout(); b.error();
+        assertThat(listeners).isEmpty();
+        assertThat(hub.hasConnections()).isFalse();
     }
 
     @Test
-    @DisplayName("이벤트 전송 중 IOException이 발생한 연결을 정리한다")
-    void publish_removesConnectionWhenSendFails() {
-        EmitterProbe emitter = connect(1L, new IOException("disconnected"));
-
-        hub.send(lastConnectionId, 1L, notification());
-        emitter.awaitSend();
-        org.mockito.Mockito.verify(registry, org.mockito.Mockito.timeout(5000)).disconnect(lastConnectionId);
-        int attemptedDataCount = emitter.sentData().size();
-        hub.sendHeartbeats();
-
-        assertThat(attemptedDataCount).isPositive();
-        assertThat(emitter.sentData()).hasSize(attemptedDataCount);
+    @DisplayName("전송 실패 연결을 제거하고 같은 사용자의 다른 탭은 유지한다")
+    void sendFailure_keepsOtherTabs() {
+        new SseEmitterProbe(hub.connect(1L), () -> { throw new java.io.IOException("closed"); });
+        var good = new SseEmitterProbe(hub.connect(1L));
+        publish(1L, 1L); good.awaitNotifications(1);
+        await().atMost(Duration.ofSeconds(5)).until(() -> metrics.get("notification.sse.connections").gauge().value() == 1);
+        assertThat(listeners).containsKey(channel(1L));
     }
 
     @Test
-    @DisplayName("heartbeat는 연결된 스트림에 keepalive 주석을 전송한다")
-    void sendHeartbeats_sendsKeepaliveComment() {
-        EmitterProbe emitter = connect(1L);
-
-        hub.sendHeartbeats();
-        emitter.awaitSend();
-
-        assertThat(emitter.sentData()).anySatisfy(item ->
-                assertThat(((DataWithMediaType) item).getData()).asString().contains("keepalive")
-        );
-    }
-
-    @Test
-    @DisplayName("heartbeat 조회 도중 등록한 새 연결을 이전 조회 결과로 종료하지 않는다")
-    void heartbeat_preservesConnectionRegisteredDuringRenewal() {
-        org.mockito.Mockito.when(registry.renew(hub.nodeId())).thenAnswer(ignored -> {
-            hub.connect(1L);
-            return Set.of();
+    @DisplayName("느린 연결은 후속 알림을 버리되 연결을 유지하고 재구독 resync는 쓰기 완료 후 전송한다")
+    void busyConnection_dropsNotificationButDefersResync() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var slow = new SseEmitterProbe(hub.connect(1L), () -> {
+            entered.countDown(); release.await(10, TimeUnit.SECONDS);
         });
-        hub.sendHeartbeats();
-        assertThat(hub.hasConnections()).isTrue();
-        org.mockito.Mockito.verify(registry, org.mockito.Mockito.never())
-                .disconnect(org.mockito.ArgumentMatchers.anyString());
+        var fast = new SseEmitterProbe(hub.connect(2L));
+        try {
+            publish(1L, 1L);
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            publish(1L, 1L);
+            confirm(1L);
+            publish(2L, 2L); fast.awaitNotifications(1);
+            assertThat(slow.data).doesNotContain("resync");
+            assertThat(hub.hasConnections()).isTrue();
+        } finally { release.countDown(); }
+        slow.awaitNotifications(1);
+        await().atMost(Duration.ofSeconds(5)).until(() -> slow.data.contains("resync"));
+        assertThat(metrics.get("notification.sse.dropped").tag("reason", "busy").tag("event", "notification").counter().count()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("느린 연결의 쓰기가 막혀도 다른 연결 전송과 임대 갱신은 계속된다")
-    void slowConnection_doesNotBlockOtherConnectionsOrRenewal() throws Exception {
-        var started = new CountDownLatch(1);
-        var release = new CountDownLatch(1);
-        connect(1L, null, started, release);
-        String slow = lastConnectionId;
-        var fast = connect(2L);
-        String fastId = lastConnectionId;
-        try {
-            assertThat(hub.send(slow, 1L, notification())).isTrue();
-            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
-            assertThat(hub.send(slow, 2L, notification())).isFalse();
-            assertThat(hub.send(fastId, 3L, notification())).isTrue();
-            fast.awaitSend();
-            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2), hub::sendHeartbeats);
-            org.mockito.Mockito.verify(registry).renew(hub.nodeId());
-            assertThat(release.getCount()).isEqualTo(1);
-        } finally {
-            release.countDown();
-        }
-    }
-
-    @Test
-    @DisplayName("전송 풀 4개와 대기열 100개가 차도 호출 스레드에서 전송하지 않고 임대를 갱신한다")
-    void saturatedPool_rejectsWithoutCallerRunsOrUnboundedGrowth() throws Exception {
-        var started = new CountDownLatch(4);
+    @DisplayName("전송 풀과 큐 포화 시 호출 스레드에서 쓰지 않고 연결을 유지한다")
+    void saturatedPool_dropsAndKeepsConnection() throws Exception {
+        var entered = new CountDownLatch(4);
         var release = new CountDownLatch(1);
         try {
-            for (long i = 1; i <= 4; i++) {
-                connect(i, null, started, release);
-                assertThat(hub.send(lastConnectionId, i, notification())).isTrue();
+            for (long id = 1; id <= 4; id++) {
+                new SseEmitterProbe(hub.connect(id), () -> { entered.countDown(); release.await(10, TimeUnit.SECONDS); });
+                publish(id, id);
             }
-            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
-            for (long i = 5; i <= 104; i++) {
-                connect(i);
-                assertThat(hub.send(lastConnectionId, i, notification())).isTrue();
-            }
-            connect(105L);
-            String rejected = lastConnectionId;
-            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
-                assertThat(hub.send(rejected, 105L, notification())).isFalse();
-                hub.sendHeartbeats();
-            });
-            var pool = (ThreadPoolExecutor) ReflectionTestUtils.getField(hub, "sender");
-            assertThat(pool.getLargestPoolSize()).isEqualTo(4);
-            assertThat(pool.getQueue()).hasSize(100);
-            org.mockito.Mockito.verify(registry).renew(hub.nodeId());
-            assertThat(release.getCount()).isEqualTo(1);
-        } finally {
-            release.countDown();
-        }
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            for (long id = 5; id <= 104; id++) { new SseEmitterProbe(hub.connect(id)); publish(id, id); }
+            var rejected = new SseEmitterProbe(hub.connect(105L));
+            Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2), () -> publish(105L, 105L));
+            assertThat(rejected.notifications()).isEmpty();
+            assertThat(metrics.get("notification.sse.dropped").tag("reason", "queue_full").counter().count()).isEqualTo(1);
+            assertThat(metrics.get("notification.sse.connections").gauge().value()).isEqualTo(105);
+        } finally { release.countDown(); }
     }
 
-    private EmitterProbe connect(Long recipientId) {
-        return connect(recipientId, null);
+    private void confirm(Long user) {
+        ((SubscriptionListener) listeners.get(channel(user))).onChannelSubscribed(bytes(channel(user)), 1);
     }
-
-    private EmitterProbe connect(Long recipientId, IOException sendFailure) {
-        return connect(recipientId, sendFailure, null, null);
+    private void publish(Long channelUser, Long bodyUser) {
+        listeners.get(channel(channelUser)).onMessage(message(channelUser, bodyUser), null);
     }
-
-    private EmitterProbe connect(Long recipientId, IOException sendFailure,
-                                 CountDownLatch started, CountDownLatch release) {
-        SseEmitter emitter = hub.connect(recipientId);
-        var ids = org.mockito.ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.verify(registry, org.mockito.Mockito.atLeastOnce()).register(ids.capture(),
-                org.mockito.ArgumentMatchers.eq(hub.nodeId()), org.mockito.ArgumentMatchers.anyLong());
-        lastConnectionId = ids.getValue();
-        org.mockito.Mockito.when(registry.renew(hub.nodeId())).thenAnswer(ignored ->
-                new java.util.HashSet<>(ids.getAllValues()));
-        List<Object> sentData = new CopyOnWriteArrayList<>();
-        List<Object> initialData = new CopyOnWriteArrayList<>();
-        CountDownLatch sent = new CountDownLatch(1);
-        Map<String, Object> callbacks = new HashMap<>();
-        Class<?> handlerType = handlerType();
-        Object handler = Proxy.newProxyInstance(
-                handlerType.getClassLoader(),
-                new Class<?>[] {handlerType},
-                (proxy, method, arguments) -> {
-                    if (method.getName().equals("send")) {
-                        if (arguments[0] instanceof Set<?> items && items.stream().anyMatch(item ->
-                                ((DataWithMediaType) item).getData().equals("event:connected\ndata:"))) {
-                            initialData.addAll(items);
-                            return null;
-                        }
-                        if (started != null) {
-                            started.countDown();
-                            release.await(10, TimeUnit.SECONDS);
-                        }
-                        Object value = arguments[0];
-                        if (value instanceof Set<?> items) {
-                            sentData.addAll(items);
-                        } else {
-                            sentData.add(value);
-                        }
-                        sent.countDown();
-                        if (sendFailure != null) {
-                            throw sendFailure;
-                        }
-                    } else if (method.getName().startsWith("on")) {
-                        callbacks.put(method.getName(), arguments[0]);
-                    }
-                    return null;
-                }
-        );
-        ReflectionTestUtils.invokeMethod(emitter, "initialize", handler);
-        return new EmitterProbe(sentData, callbacks, sent, initialData);
+    private DefaultMessage message(Long channelUser, Long bodyUser) {
+        return new DefaultMessage(bytes(channel(channelUser)), mapper.writeValueAsBytes(event(bodyUser)));
     }
-
-    private Class<?> handlerType() {
-        try {
-            return Class.forName(ResponseBodyEmitter.class.getName() + "$Handler");
-        } catch (ClassNotFoundException exception) {
-            throw new AssertionError(exception);
-        }
+    static NotificationCreatedEvent event(Long recipient) {
+        return new NotificationCreatedEvent(recipient, new NotificationListItem(10L, NotificationType.FRIEND_REQUEST_RECEIVED,
+                "친구 요청", "친구 요청이 도착했습니다.", NotificationReferenceType.FRIEND_REQUEST, 501L,
+                LocalDateTime.of(2026, 10, 29, 0, 0), false));
     }
-
-    private NotificationListItem notification() {
-        return new NotificationListItem(
-                10L,
-                NotificationType.GIFT_RECEIVED,
-                "선물이 도착했어요",
-                "새 선물이 도착했습니다.",
-                NotificationReferenceType.GIFT,
-                501L,
-                LocalDateTime.now(),
-                false
-        );
-    }
-
-    private record EmitterProbe(List<Object> sentData, Map<String, Object> callbacks, CountDownLatch sent,
-                                List<Object> initialData) {
-        private void awaitSend() {
-            try {
-                assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new AssertionError(e);
-            }
-        }
-
-        private Runnable timeout() {
-            return (Runnable) callbacks.get("onTimeout");
-        }
-
-        @SuppressWarnings("unchecked")
-        private Consumer<Throwable> error() {
-            return (Consumer<Throwable>) callbacks.get("onError");
-        }
-
-        private Runnable completion() {
-            return (Runnable) callbacks.get("onCompletion");
-        }
-    }
+    private String channel(Long user) { return NotificationRedisPublisher.channel(user); }
+    private byte[] bytes(String value) { return value.getBytes(StandardCharsets.UTF_8); }
 }
