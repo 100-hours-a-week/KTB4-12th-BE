@@ -10,6 +10,7 @@ import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
+import com.gift.gift.domain.product.cache.AiRecommendedProductCache;
 import com.gift.gift.domain.product.cursor.ProductCursorCodec;
 import com.gift.gift.domain.product.dto.response.ProductDetailResponse;
 import com.gift.gift.domain.product.entity.Category;
@@ -25,6 +26,7 @@ import com.gift.gift.domain.product.search.ProductSearchRepository;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
 import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientRecommendedProductRepository;
 import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.*;
@@ -55,6 +57,8 @@ class ProductDetailQueryServiceTest {
                 mock(UserQueryService.class),
                 mock(FriendQueryService.class),
                 mock(RecipientProfileRepository.class),
+                mock(RecipientRecommendedProductRepository.class),
+                mock(AiRecommendedProductCache.class),
                 new StaticListableBeanFactory().getBeanProvider(ProductSearchRepository.class)
         );
     }

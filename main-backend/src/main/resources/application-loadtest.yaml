@@ -1,0 +1,5 @@
+# Local load tests only; normal profiles retain the 6-second refill interval.
+app:
+  security:
+    login-rate-limit:
+      ip-refill-seconds: ${LOADTEST_LOGIN_IP_REFILL_SECONDS:6}

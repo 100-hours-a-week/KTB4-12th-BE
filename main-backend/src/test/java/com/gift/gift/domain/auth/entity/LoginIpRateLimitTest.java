@@ -12,6 +12,7 @@ import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class LoginIpRateLimitTest {
 
@@ -132,6 +133,32 @@ class LoginIpRateLimitTest {
         assertFalse(decision.permitted());
         assertEquals(6, decision.retryAfterSeconds());
         assertTrue(decision.retryAfterSeconds() > 0);
+    }
+
+    @Test
+    @DisplayName("보충 간격이 1초이면 대기 시간과 다음 토큰 보충에도 1초를 적용한다")
+    void consume_usesConfiguredRefillInterval() {
+        LoginIpRateLimit rateLimit = emptyRateLimit();
+
+        assertEquals(
+                LoginRateLimitDecision.reject(1),
+                rateLimit.consume(BASE_TIME, 1)
+        );
+        assertTrue(rateLimit.consume(BASE_TIME.plusSeconds(1), 1).permitted());
+        assertEquals(BigDecimal.ZERO, rateLimit.getAvailableTokens());
+        assertEquals(
+                LoginRateLimitDecision.reject(1),
+                rateLimit.consume(BASE_TIME.plusSeconds(1), 1)
+        );
+    }
+
+    @Test
+    @DisplayName("0초 이하의 토큰 보충 간격은 허용하지 않는다")
+    void consume_rejectsNonPositiveRefillInterval() {
+        LoginIpRateLimit rateLimit = emptyRateLimit();
+
+        assertThrows(IllegalArgumentException.class, () -> rateLimit.consume(BASE_TIME, 0));
+        assertThrows(IllegalArgumentException.class, () -> rateLimit.consume(BASE_TIME, -1));
     }
 
     private LoginIpRateLimit emptyRateLimit() {

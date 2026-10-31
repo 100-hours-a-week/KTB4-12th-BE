@@ -18,6 +18,20 @@ public interface RecipientRecommendedProductRepository
             long sourceVersion
     );
 
+    @Query("""
+        select recommendation.product.id
+        from RecipientRecommendedProduct recommendation
+        where recommendation.recipientProfile.recipient.id = :recipientId
+          and recommendation.sourceVersion = :sourceVersion
+          and recommendation.product.deletedAt is null
+          and recommendation.product.quantity > 0
+        order by recommendation.rankOrder asc
+        """)
+    List<Long> findAvailableRecommendedProductIds(
+            @Param("recipientId") Long recipientId,
+            @Param("sourceVersion") long sourceVersion
+    );
+
     @Modifying(flushAutomatically = true)
     @Query("""
             delete from RecipientRecommendedProduct recommendation
