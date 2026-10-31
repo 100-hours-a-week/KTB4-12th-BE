@@ -3,6 +3,7 @@ package com.gift.gift.domain.notification.service;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -26,6 +27,7 @@ import com.gift.gift.domain.notification.dto.response.NotificationListItem;
 @Component
 @Slf4j
 public class NotificationSseHub implements DisposableBean {
+    private static final int CONNECTION_QUEUE_CAPACITY = 100;
     private static final long CONNECTION_TIMEOUT_MILLIS = 30 * 60 * 1000L;
     private final RedisMessageListenerContainer subscriptions;
     private final Object subscriptionMonitor = new Object();
@@ -100,38 +102,76 @@ public class NotificationSseHub implements DisposableBean {
     }
 
     private boolean offer(Connection connection, SseEmitter.SseEventBuilder event, String eventType) {
-        if (!connection.sending.compareAndSet(false, true)) {
-            metrics.counter("notification.sse.dropped", "reason", "busy", "event", eventType).increment();
-            return false;
-        }
-        try {
-            sender.execute(() -> {
-                try {
-                    if (connections.get(connection.id) == connection) {
-                        if (connection.resync.getAndSet(false)) {
-                            connection.emitter.send(SseEmitter.event().name("resync").data("resync"));
-                            metrics.counter("notification.sse.resync").increment();
-                        }
-                        connection.emitter.send(event);
-                        metrics.counter("notification.sse.write", "result", "success", "event", eventType).increment();
-                    }
-                } catch (IOException | IllegalStateException failure) {
-                    metrics.counter("notification.sse.write", "result", "failure", "event", eventType).increment();
-                    remove(connection);
-                } finally {
-                    connection.sending.set(false);
-                    if (connections.get(connection.id) != connection) {
-                        connection.emitter.complete();
-                    } else if (connection.resync.get()) {
-                        offer(connection, SseEmitter.event().comment("resubscribed"), "resync");
-                    }
+        synchronized (connection) {
+            if (connection.terminated.get()) return false;
+            boolean accepted = true;
+            if (eventType.equals("notification")) {
+                if (connection.pendingNotifications == CONNECTION_QUEUE_CAPACITY) {
+                    enqueueResync(connection);
+                    metrics.counter("notification.sse.dropped", "reason", "connection_queue_full",
+                            "event", eventType).increment();
+                    accepted = false;
+                } else {
+                    connection.pending.addLast(new PendingEvent(event, eventType));
+                    connection.pendingNotifications++;
                 }
-            });
-            return true;
+            } else if (eventType.equals("resync")) {
+                enqueueResync(connection);
+            } else if (eventType.equals("heartbeat") && !connection.sending.get()
+                    && connection.pending.isEmpty() && !connection.resync.get()) {
+                connection.pending.addLast(new PendingEvent(event, eventType));
+            }
+            schedule(connection);
+            return accepted;
+        }
+    }
+
+    private void enqueueResync(Connection connection) {
+        if (connection.resync.compareAndSet(false, true)) {
+            connection.pending.addLast(new PendingEvent(SseEmitter.event().name("resync").data("resync"), "resync"));
+        }
+    }
+
+    private void schedule(Connection connection) {
+        if (connection.terminated.get() || connection.sending.get()
+                || connection.pending.isEmpty()) return;
+        connection.sending.set(true);
+        try {
+            sender.execute(() -> drain(connection));
         } catch (RejectedExecutionException full) {
             connection.sending.set(false);
-            metrics.counter("notification.sse.dropped", "reason", "queue_full", "event", eventType).increment();
-            return false;
+            metrics.counter("notification.sse.schedule.rejected").increment();
+        }
+    }
+
+    private void drain(Connection connection) {
+        String eventType = "resync";
+        try {
+            for (int sent = 0; sent < CONNECTION_QUEUE_CAPACITY; sent++) {
+                PendingEvent next;
+                synchronized (connection) {
+                    if (connection.terminated.get()) return;
+                    next = connection.pending.pollFirst();
+                    if (next == null) return;
+                    if (next.type().equals("notification")) connection.pendingNotifications--;
+                    if (next.type().equals("resync")) connection.resync.set(false);
+                }
+                eventType = next.type();
+                connection.emitter.send(next.event());
+                if (eventType.equals("resync")) {
+                    metrics.counter("notification.sse.resync").increment();
+                }
+                metrics.counter("notification.sse.write", "result", "success", "event", eventType).increment();
+            }
+        } catch (IOException | IllegalStateException failure) {
+            metrics.counter("notification.sse.write", "result", "failure", "event", eventType).increment();
+            remove(connection);
+        } finally {
+            synchronized (connection) {
+                connection.sending.set(false);
+                schedule(connection);
+            }
+            if (connection.terminated.get()) connection.emitter.complete();
         }
     }
 
@@ -155,7 +195,12 @@ public class NotificationSseHub implements DisposableBean {
     }
 
     private void remove(Connection connection) {
-        connection.terminated.set(true);
+        synchronized (connection) {
+            connection.terminated.set(true);
+            connection.pending.clear();
+            connection.pendingNotifications = 0;
+            connection.resync.set(false);
+        }
         recipients.computeIfPresent(connection.recipientId, (id, group) -> {
             if (!connections.remove(connection.id, connection)) return group;
             group.members.remove(connection.id);
@@ -217,18 +262,20 @@ public class NotificationSseHub implements DisposableBean {
         public void onChannelSubscribed(byte[] channel, long count) {
             if (!active.get() || !topic.getTopic().equals(new String(channel, StandardCharsets.UTF_8))) return;
             metrics.counter("notification.redis.subscribed").increment();
-            members.values().forEach(connection -> {
-                connection.resync.set(true);
-                offer(connection, SseEmitter.event().comment("subscribed"), "resync");
-            });
+            members.values().forEach(connection ->
+                    offer(connection, SseEmitter.event().comment("subscribed"), "resync"));
         }
     }
+
+    private record PendingEvent(SseEmitter.SseEventBuilder event, String type) {}
 
     private static class Connection {
         private final String id = UUID.randomUUID().toString();
         private final Long recipientId;
         private final SseEmitter emitter = new SseEmitter(CONNECTION_TIMEOUT_MILLIS);
         private final AtomicBoolean terminated = new AtomicBoolean();
+        private int pendingNotifications;
+        private final ArrayDeque<PendingEvent> pending = new ArrayDeque<>();
         private final AtomicBoolean sending = new AtomicBoolean();
         private final AtomicBoolean resync = new AtomicBoolean();
 

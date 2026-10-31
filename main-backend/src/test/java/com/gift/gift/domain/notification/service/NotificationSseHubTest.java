@@ -144,8 +144,8 @@ class NotificationSseHubTest {
     }
 
     @Test
-    @DisplayName("느린 연결은 후속 알림을 버리되 연결을 유지하고 재구독 resync는 쓰기 완료 후 전송한다")
-    void busyConnection_dropsNotificationButDefersResync() throws Exception {
+    @DisplayName("느린 연결의 알림은 순서대로 전송하고 하트비트는 생략하며 재구독 resync를 보낸다")
+    void busyConnection_queuesNotificationsAndDefersResync() throws Exception {
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         var slow = new SseEmitterProbe(hub.connect(1L), () -> {
@@ -153,24 +153,29 @@ class NotificationSseHubTest {
         });
         var fast = new SseEmitterProbe(hub.connect(2L));
         try {
-            publish(1L, 1L);
+            publishNotification(1L, 1L);
             assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
-            publish(1L, 1L);
+            publishNotification(1L, 2L);
+            hub.sendHeartbeats();
+            publishNotification(1L, 3L);
             confirm(1L);
             publish(2L, 2L); fast.awaitNotifications(1);
             assertThat(slow.data).doesNotContain("resync");
             assertThat(hub.hasConnections()).isTrue();
         } finally { release.countDown(); }
-        slow.awaitNotifications(1);
+        slow.awaitNotifications(3);
         await().atMost(Duration.ofSeconds(5)).until(() -> slow.data.contains("resync"));
-        assertThat(metrics.get("notification.sse.dropped").tag("reason", "busy").tag("event", "notification").counter().count()).isEqualTo(1);
+        assertThat(slow.notifications()).extracting(NotificationListItem::notificationId).containsExactly(1L, 2L, 3L);
+        assertThat(metrics.find("notification.sse.dropped").counters()).isEmpty();
+        assertThat(slow.data).noneMatch(value -> value instanceof String text && text.contains("keepalive"));
     }
 
     @Test
-    @DisplayName("전송 풀과 큐 포화 시 호출 스레드에서 쓰지 않고 연결을 유지한다")
-    void saturatedPool_dropsAndKeepsConnection() throws Exception {
+    @DisplayName("전송 풀 포화 시 알림을 보존하고 다음 하트비트 주기에 전송을 재시도한다")
+    void saturatedPool_retainsPendingNotificationsUntilRetry() throws Exception {
         var entered = new CountDownLatch(4);
         var release = new CountDownLatch(1);
+        SseEmitterProbe rejected;
         try {
             for (long id = 1; id <= 4; id++) {
                 new SseEmitterProbe(hub.connect(id), () -> { entered.countDown(); release.await(10, TimeUnit.SECONDS); });
@@ -178,12 +183,124 @@ class NotificationSseHubTest {
             }
             assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
             for (long id = 5; id <= 104; id++) { new SseEmitterProbe(hub.connect(id)); publish(id, id); }
-            var rejected = new SseEmitterProbe(hub.connect(105L));
+            rejected = new SseEmitterProbe(hub.connect(105L));
             Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2), () -> publish(105L, 105L));
             assertThat(rejected.notifications()).isEmpty();
-            assertThat(metrics.get("notification.sse.dropped").tag("reason", "queue_full").counter().count()).isEqualTo(1);
+            assertThat(metrics.get("notification.sse.schedule.rejected").counter().count()).isEqualTo(1);
             assertThat(metrics.get("notification.sse.connections").gauge().value()).isEqualTo(105);
         } finally { release.countDown(); }
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            hub.sendHeartbeats();
+            assertThat(rejected.notifications()).hasSize(1);
+        });
+        assertThat(metrics.find("notification.sse.dropped").counters()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("연결 대기 큐 100건을 넘긴 새 알림만 버리고 기존 알림 뒤에 resync를 보낸다")
+    void fullConnectionQueue_keepsExistingOrderAndResyncsWithoutNewInput() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var slow = new SseEmitterProbe(hub.connect(1L), () -> {
+            entered.countDown(); release.await(10, TimeUnit.SECONDS);
+        });
+        try {
+            publishNotification(1L, 1L);
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            for (long id = 2; id <= 103; id++) publishNotification(1L, id);
+            assertThat(metrics.get("notification.sse.dropped").tag("reason", "connection_queue_full")
+                    .tag("event", "notification").counter().count()).isEqualTo(2);
+            assertThat(slow.data).doesNotContain("resync");
+        } finally { release.countDown(); }
+        slow.awaitNotifications(101);
+        await().atMost(Duration.ofSeconds(5)).until(() -> slow.data.contains("resync"));
+        assertThat(slow.notifications()).extracting(NotificationListItem::notificationId)
+                .containsExactlyElementsOf(java.util.stream.LongStream.rangeClosed(1, 101).boxed().toList());
+        assertThat(slow.data.indexOf("resync")).isGreaterThan(slow.data.indexOf(slow.notifications().getLast()));
+        assertThat(metrics.get("notification.sse.resync").counter().count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("연결 종료 시 대기 알림과 예약된 resync를 폐기한다")
+    void disconnect_discardsPendingNotificationsAndResync() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var slow = new SseEmitterProbe(hub.connect(1L), () -> {
+            entered.countDown(); release.await(10, TimeUnit.SECONDS);
+        });
+        try {
+            publishNotification(1L, 1L);
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            publishNotification(1L, 2L);
+            confirm(1L);
+            slow.complete();
+            assertThat(hub.hasConnections()).isFalse();
+        } finally { release.countDown(); }
+        var sender = (ThreadPoolExecutor) org.springframework.test.util.ReflectionTestUtils.getField(hub, "sender");
+        await().atMost(Duration.ofSeconds(5)).until(() -> sender.getActiveCount() == 0);
+        assertThat(slow.notifications()).extracting(NotificationListItem::notificationId).containsExactly(1L);
+        assertThat(slow.data).doesNotContain("resync");
+        assertThat(listeners).isEmpty();
+    }
+
+    @Test
+    @DisplayName("동시 알림 도착과 전송 작업 종료가 겹쳐도 큐에 남거나 중복 전송하지 않는다")
+    void concurrentOffers_deliverEveryAcceptedNotificationOnce() throws Exception {
+        var received = new SseEmitterProbe(hub.connect(1L));
+        try (var executor = Executors.newFixedThreadPool(8)) {
+            var tasks = new java.util.ArrayList<Future<?>>();
+            for (long id = 1; id <= 80; id++) {
+                long notificationId = id;
+                tasks.add(executor.submit(() -> publishNotification(1L, notificationId)));
+            }
+            for (var task : tasks) task.get(5, TimeUnit.SECONDS);
+        }
+        received.awaitNotifications(80);
+        assertThat(received.notifications()).extracting(NotificationListItem::notificationId)
+                .containsExactlyInAnyOrderElementsOf(java.util.stream.LongStream.rangeClosed(1, 80).boxed().toList());
+        assertThat(metrics.find("notification.sse.dropped").counters()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("포화 후 새 알림이 들어와도 예약된 resync 순서를 뒤로 밀지 않는다")
+    void overflowResync_precedesNotificationsAcceptedAfterOverflow() throws Exception {
+        var firstEntered = new CountDownLatch(1);
+        var firstRelease = new CountDownLatch(1);
+        var secondEntered = new CountDownLatch(1);
+        var secondRelease = new CountDownLatch(1);
+        var writes = new java.util.concurrent.atomic.AtomicInteger();
+        var slow = new SseEmitterProbe(hub.connect(1L), () -> {
+            int index = writes.incrementAndGet();
+            if (index == 1) {
+                firstEntered.countDown(); firstRelease.await(10, TimeUnit.SECONDS);
+            } else if (index == 2) {
+                secondEntered.countDown(); secondRelease.await(10, TimeUnit.SECONDS);
+            }
+        });
+        try {
+            publishNotification(1L, 1L);
+            assertThat(firstEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            for (long id = 2; id <= 102; id++) publishNotification(1L, id);
+            firstRelease.countDown();
+            assertThat(secondEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            publishNotification(1L, 103L);
+        } finally {
+            firstRelease.countDown(); secondRelease.countDown();
+        }
+        slow.awaitNotifications(102);
+        assertThat(slow.notifications()).extracting(NotificationListItem::notificationId).doesNotContain(102L);
+        var before = slow.notifications().stream().filter(n -> n.notificationId() == 101L).findFirst().orElseThrow();
+        var after = slow.notifications().stream().filter(n -> n.notificationId() == 103L).findFirst().orElseThrow();
+        assertThat(slow.data.indexOf("resync")).isBetween(slow.data.indexOf(before) + 1, slow.data.indexOf(after) - 1);
+    }
+
+    private void publishNotification(Long recipient, Long notificationId) {
+        var notification = new NotificationListItem(notificationId, NotificationType.FRIEND_REQUEST_RECEIVED,
+                "친구 요청", "친구 요청이 도착했습니다.", NotificationReferenceType.FRIEND_REQUEST, notificationId,
+                LocalDateTime.of(2026, 10, 29, 0, 0), false);
+        var message = new DefaultMessage(bytes(channel(recipient)),
+                mapper.writeValueAsBytes(new NotificationCreatedEvent(recipient, notification)));
+        listeners.get(channel(recipient)).onMessage(message, null);
     }
 
     private void confirm(Long user) {
