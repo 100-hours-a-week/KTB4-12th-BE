@@ -1,2 +1,3 @@
 org.springframework.context.ApplicationContextInitializer=\
-com.gift.gift.support.MySqlTestContainerInitializer
+com.gift.gift.support.MySqlTestContainerInitializer,\
+com.gift.gift.support.RedisTestContainerInitializer

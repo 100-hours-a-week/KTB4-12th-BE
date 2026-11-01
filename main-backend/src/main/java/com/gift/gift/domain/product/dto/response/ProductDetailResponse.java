@@ -3,6 +3,7 @@ package com.gift.gift.domain.product.dto.response;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.gift.gift.domain.product.cache.ProductDetailCache;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.repository.ProductDetailProjection;
 
@@ -11,11 +12,20 @@ public record ProductDetailResponse(
 ) {
 
     public static ProductDetailResponse from(
-            Product product,
+            ProductDetailCache cache,
+            Integer stockQuantity,
             List<ProductImageResponse> images
     ) {
         return new ProductDetailResponse(
-                ProductResponse.from(product, images)
+                new ProductResponse(
+                        cache.productId(),
+                        cache.brandName(),
+                        cache.productName(),
+                        cache.description(),
+                        cache.unitPrice(),
+                        images,
+                        stockQuantity
+                )
         );
     }
 
