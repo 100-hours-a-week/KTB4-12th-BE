@@ -83,6 +83,9 @@ app:
       ai-recommended-cache:
         ttl: 30m
 
+      detail-cache:
+        ttl: ${PRODUCT_DETAIL_CACHE_TTL:2h}
+
   scheduling:
     enabled: ${SCHEDULING_ENABLED:true}
   email:

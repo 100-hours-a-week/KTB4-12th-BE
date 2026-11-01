@@ -72,4 +72,14 @@ public interface ProductRepository
             @Param("productId") Long productId,
             @Param("quantity") int quantity
     );
+
+    @Query("""
+        SELECT product.quantity
+        FROM Product product
+        WHERE product.id = :productId
+          AND product.deletedAt IS NULL
+        """)
+    Optional<Integer> findActiveStockQuantityById(
+            @Param("productId") Long productId
+    );
 }
