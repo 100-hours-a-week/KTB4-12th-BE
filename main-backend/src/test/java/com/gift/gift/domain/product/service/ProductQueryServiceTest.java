@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.LongSupplier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +22,7 @@ import org.springframework.data.elasticsearch.core.SearchHits;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.friend.service.FriendQueryService;
+import com.gift.gift.domain.product.cache.AiRecommendedProductCache;
 import com.gift.gift.domain.product.cursor.ProductCursor;
 import com.gift.gift.domain.product.cursor.ProductCursorCodec;
 import com.gift.gift.domain.product.dto.request.ProductListRequest;
@@ -35,6 +37,7 @@ import com.gift.gift.domain.product.search.ProductSearchRepository;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfileStatus;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientRecommendedProductRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.domain.user.support.ActiveUserSummary;
@@ -54,6 +57,8 @@ class ProductQueryServiceTest {
     private UserQueryService userQueryService;
     private FriendQueryService friendQueryService;
     private RecipientProfileRepository recipientProfileRepository;
+    private RecipientRecommendedProductRepository recommendationRepository;
+    private AiRecommendedProductCache aiRecommendedProductCache;
     private StaticListableBeanFactory searchBeanFactory;
 
     @BeforeEach
@@ -63,6 +68,18 @@ class ProductQueryServiceTest {
         userQueryService = mock(UserQueryService.class);
         friendQueryService = mock(FriendQueryService.class);
         recipientProfileRepository = mock(RecipientProfileRepository.class);
+        recommendationRepository = mock(RecipientRecommendedProductRepository.class);
+        aiRecommendedProductCache = mock(AiRecommendedProductCache.class);
+        when(aiRecommendedProductCache.resolveAnalyzedSourceVersion(
+                anyLong(),
+                any(LongSupplier.class)
+        )).thenAnswer(invocation -> {
+            LongSupplier databaseVersionLoader = invocation.getArgument(1);
+            return new AiRecommendedProductCache.VersionLookup(
+                    databaseVersionLoader.getAsLong(),
+                    false
+            );
+        });
         searchBeanFactory = new StaticListableBeanFactory();
 
         cursorCodec = new ProductCursorCodec(
@@ -87,6 +104,8 @@ class ProductQueryServiceTest {
                 userQueryService,
                 friendQueryService,
                 recipientProfileRepository,
+                recommendationRepository,
+                aiRecommendedProductCache,
                 searchBeanFactory.getBeanProvider(ProductSearchRepository.class)
         );
     }

@@ -28,6 +28,7 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.gift.gift.domain.notification.service.NotificationOutboxDispatcher;
 import com.gift.gift.domain.order.service.PaymentService;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.global.exception.ErrorCode;
@@ -88,6 +89,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class CouponRewardLifecycleIntegrationTest {
 
+    @Autowired private NotificationOutboxDispatcher notificationDispatcher;
     @Autowired private MockMvc mockMvc;
     @Autowired private PaymentQueryService paymentQueries;
 
@@ -853,6 +855,7 @@ class CouponRewardLifecycleIntegrationTest {
     }
 
     private void assertRewardNotification(Order order, int multiplier, long amount) {
+        notificationDispatcher.dispatch();
         assertThat(rewardNotificationCount()).isEqualTo(1);
         var row = jdbc.queryForMap("SELECT title, message, reference_id, deduplication_key "
                 + "FROM notifications WHERE recipient_id = ? AND type = 'GIFT_COMPLETED_REWARD'", payerId);

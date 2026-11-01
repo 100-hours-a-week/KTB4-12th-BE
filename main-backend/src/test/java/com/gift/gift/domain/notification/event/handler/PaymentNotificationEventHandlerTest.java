@@ -11,7 +11,7 @@ import com.gift.gift.domain.gift.event.GiftCompletedRewardEvent;
 import com.gift.gift.domain.notification.dto.NotificationCreateCommand;
 import com.gift.gift.domain.notification.entity.NotificationReferenceType;
 import com.gift.gift.domain.notification.entity.NotificationType;
-import com.gift.gift.domain.notification.service.NotificationService;
+import com.gift.gift.domain.notification.service.NotificationOutboxWriter;
 import com.gift.gift.domain.notification.support.NotificationDeduplicationKeyGenerator;
 import com.gift.gift.domain.order.event.PaymentCanceledEvent;
 import com.gift.gift.domain.order.event.PaymentCompletedEvent;
@@ -28,15 +28,15 @@ class PaymentNotificationEventHandlerTest {
     private static final Long GIFT_ID = 501L;
     private static final String PRODUCT_NAME = "선물 상품";
 
-    private NotificationService notificationService;
+    private NotificationOutboxWriter outboxWriter;
     private NotificationDeduplicationKeyGenerator keyGenerator;
     private PaymentNotificationEventHandler handler;
 
     @BeforeEach
     void setUp() {
-        notificationService = mock(NotificationService.class);
+        outboxWriter = mock(NotificationOutboxWriter.class);
         keyGenerator = mock(NotificationDeduplicationKeyGenerator.class);
-        handler = new PaymentNotificationEventHandler(notificationService, keyGenerator);
+        handler = new PaymentNotificationEventHandler(outboxWriter, keyGenerator);
     }
 
     @Test
@@ -158,7 +158,7 @@ class PaymentNotificationEventHandlerTest {
         ArgumentCaptor<NotificationCreateCommand> captor =
                 ArgumentCaptor.forClass(NotificationCreateCommand.class);
 
-        verify(notificationService).create(captor.capture());
+        verify(outboxWriter).enqueue(captor.capture());
 
         return captor.getValue();
     }

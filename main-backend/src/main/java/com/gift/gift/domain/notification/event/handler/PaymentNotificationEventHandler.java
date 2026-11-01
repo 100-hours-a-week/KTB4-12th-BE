@@ -11,7 +11,7 @@ import com.gift.gift.domain.gift.event.GiftCompletedRewardEvent;
 import com.gift.gift.domain.notification.dto.NotificationCreateCommand;
 import com.gift.gift.domain.notification.entity.NotificationReferenceType;
 import com.gift.gift.domain.notification.entity.NotificationType;
-import com.gift.gift.domain.notification.service.NotificationService;
+import com.gift.gift.domain.notification.service.NotificationOutboxWriter;
 import com.gift.gift.domain.notification.support.NotificationDeduplicationKeyGenerator;
 import com.gift.gift.domain.notification.support.NotificationProductNameFormatter;
 import com.gift.gift.domain.order.event.PaymentCanceledEvent;
@@ -21,18 +21,18 @@ import com.gift.gift.domain.order.event.PaymentCompletedEvent;
 @RequiredArgsConstructor
 public class PaymentNotificationEventHandler {
 
-    private final NotificationService notificationService;
+    private final NotificationOutboxWriter outboxWriter;
     private final NotificationDeduplicationKeyGenerator keyGenerator;
 
     @TransactionalEventListener(
-            phase = TransactionPhase.AFTER_COMMIT
+            phase = TransactionPhase.BEFORE_COMMIT
     )
     public void handle(PaymentCompletedEvent event) {
         NotificationType type = NotificationType.PAYMENT_COMPLETED;
 
         String sourceIdentifier = event.orderRecordId().toString();
 
-        notificationService.create(
+        outboxWriter.enqueue(
                 new NotificationCreateCommand(
                         event.payerId(),
                         sourceIdentifier,
@@ -53,14 +53,14 @@ public class PaymentNotificationEventHandler {
     }
 
     @TransactionalEventListener(
-            phase = TransactionPhase.AFTER_COMMIT
+            phase = TransactionPhase.BEFORE_COMMIT
     )
     public void handle(PaymentCanceledEvent event) {
         NotificationType type = NotificationType.PAYMENT_CANCELED;
 
         String sourceIdentifier = event.orderRecordId().toString();
 
-        notificationService.create(
+        outboxWriter.enqueue(
                 new NotificationCreateCommand(
                         event.payerId(),
                         sourceIdentifier,
@@ -81,7 +81,7 @@ public class PaymentNotificationEventHandler {
     }
 
     @TransactionalEventListener(
-            phase = TransactionPhase.AFTER_COMMIT
+            phase = TransactionPhase.BEFORE_COMMIT
     )
     public void handle(GiftCompletedRewardEvent event) {
         NotificationType type =
@@ -119,7 +119,7 @@ public class PaymentNotificationEventHandler {
                 + formattedAmount
                 + " 크레딧이 지급되었습니다.";
 
-        notificationService.create(
+        outboxWriter.enqueue(
                 new NotificationCreateCommand(
                         event.senderId(),
                         sourceIdentifier,

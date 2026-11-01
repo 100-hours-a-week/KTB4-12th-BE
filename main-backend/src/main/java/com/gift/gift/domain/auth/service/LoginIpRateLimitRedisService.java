@@ -9,6 +9,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
+import com.gift.gift.domain.auth.support.LoginRateLimitProperties;
 
 @Service
 @RequiredArgsConstructor
@@ -17,7 +18,6 @@ public class LoginIpRateLimitRedisService {
     private static final String KEY_PREFIX = "gift:auth:login:ip:";
 
     private static final int CAPACITY = 10;
-    private static final int REFILL_INTERVAL_MILLIS = 6_000;
     private static final int KEY_TTL_MILLIS = 60_000;
 
     private static final DefaultRedisScript<Long> CONSUME_TOKEN_SCRIPT =
@@ -120,6 +120,7 @@ public class LoginIpRateLimitRedisService {
                     """, Long.class);
 
     private final StringRedisTemplate redisTemplate;
+    private final LoginRateLimitProperties properties;
 
     public LoginRateLimitDecision consume(
             String identifierHash
@@ -128,7 +129,7 @@ public class LoginIpRateLimitRedisService {
                 CONSUME_TOKEN_SCRIPT,
                 List.of(KEY_PREFIX + identifierHash),
                 Integer.toString(CAPACITY),
-                Integer.toString(REFILL_INTERVAL_MILLIS),
+                Integer.toString(properties.ipRefillSeconds() * 1_000),
                 Integer.toString(KEY_TTL_MILLIS)
         );
 

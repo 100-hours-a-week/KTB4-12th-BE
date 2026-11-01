@@ -163,6 +163,7 @@ class GiftAcceptanceFlowIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update("DELETE FROM notification_outbox WHERE recipient_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM roulette_ticket_grants WHERE user_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM roulette_days WHERE user_id = ?", senderId);
         jdbcTemplate.update("DELETE FROM roulette_accounts WHERE user_id = ?", senderId);
@@ -231,6 +232,13 @@ class GiftAcceptanceFlowIntegrationTest {
                 .orElseThrow();
 
         assertThat(first).isEqualTo(second);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_outbox WHERE recipient_id = ?"
+                        + " AND type = 'GIFT_COMPLETED_REWARD' AND status = 'PENDING'", Integer.class, senderId
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE recipient_id = ?", Integer.class, senderId
+        )).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, senderId
         )).isZero();

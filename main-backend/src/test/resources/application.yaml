@@ -72,6 +72,23 @@ logging:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
 
 app:
+  redis:
+    auth:
+      host: ${REDIS_TEST_HOST:localhost}
+      port: ${REDIS_TEST_PORT:6379}
+      password: ${REDIS_TEST_PASSWORD:}
+      connect-timeout: 2s
+      command-timeout: 2s
+
+    product:
+      host: ${REDIS_TEST_HOST:localhost}
+      port: ${REDIS_TEST_PORT:6379}
+      password: ${REDIS_TEST_PASSWORD:}
+      connect-timeout: 2s
+      command-timeout: 2s
+      ai-recommended-cache:
+        ttl: 30m
+
   email:
     from-address: no-reply@example.com
 

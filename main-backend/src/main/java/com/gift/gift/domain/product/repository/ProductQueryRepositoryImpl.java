@@ -20,6 +20,7 @@ import com.gift.gift.domain.product.cursor.ProductCursorValidator;
 public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
     private static final int MAX_FETCH_COUNT = 21;
+    private static final int MAX_CACHED_RECOMMENDATION_COUNT = 30;
 
     private final EntityManager entityManager;
 
@@ -402,5 +403,294 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
         // 구문 밖으로 빠져나가지 않도록 구분용 따옴표와 역슬래시를 제거한다.
         String phrase = keyword.replace('"', ' ').replace('\\', ' ').strip();
         return "\"" + phrase + "\"";
+    }
+
+    @Override
+    public List<ProductSummaryProjection> searchProducts(
+            ProductSearchCondition condition,
+            ProductCursor cursor,
+            int fetchCount,
+            List<Long> cachedRecommendationIds
+    ) {
+        Objects.requireNonNull(condition, "상품 검색 조건은 필수입니다.");
+
+        if (!condition.isAiRequested() || cachedRecommendationIds == null) {
+            return searchProducts(condition, cursor, fetchCount);
+        }
+
+        if (fetchCount < 1 || fetchCount > MAX_FETCH_COUNT) {
+            throw new IllegalArgumentException("상품 조회 개수는 1 이상 21 이하여야 한다.");
+        }
+
+        if (cursor != null) {
+            ProductCursorValidator.validate(cursor, condition);
+        }
+
+        validateCachedRecommendationIds(cachedRecommendationIds);
+
+        // 추천이 없거나 이미 인기 영역에 진입한 커서는 인기순으로만 조회한다.
+        if (condition.sort() != ProductSort.AI_RECOMMENDED
+                || cachedRecommendationIds.isEmpty()
+                || (cursor != null
+                && Boolean.FALSE.equals(cursor.recommendedRegion()))) {
+            return searchGeneralProducts(
+                    condition,
+                    cursor,
+                    fetchCount,
+                    false,
+                    cachedRecommendationIds
+            );
+        }
+
+        List<ProductSummaryProjection> recommendations =
+                searchCachedRecommendedProducts(
+                        condition,
+                        cursor,
+                        fetchCount,
+                        cachedRecommendationIds
+                );
+
+        int remainingCount = fetchCount - recommendations.size();
+        if (remainingCount == 0) {
+            return recommendations;
+        }
+
+        List<ProductSummaryProjection> popularProducts =
+                searchGeneralProducts(
+                        condition,
+                        null,
+                        remainingCount,
+                        false,
+                        cachedRecommendationIds
+                );
+
+        List<ProductSummaryProjection> result = new ArrayList<>(fetchCount);
+        result.addAll(recommendations);
+        result.addAll(popularProducts);
+
+        return List.copyOf(result);
+    }
+
+    @Override
+    public boolean hasMatchingRecommendedProducts(
+            ProductSearchCondition condition,
+            List<Long> cachedRecommendationIds
+    ) {
+        Objects.requireNonNull(condition, "상품 검색 조건은 필수입니다.");
+
+        if (!condition.isAiRequested()) {
+            throw new IllegalArgumentException(
+                    "AI 추천 요청 조건이 필요합니다."
+            );
+        }
+
+        if (cachedRecommendationIds == null) {
+            return hasMatchingRecommendedProducts(condition);
+        }
+
+        validateCachedRecommendationIds(cachedRecommendationIds);
+
+        if (cachedRecommendationIds.isEmpty()) {
+            return false;
+        }
+
+        StringBuilder sql = new StringBuilder("""
+        SELECT 1
+        FROM products p
+        WHERE p.id IN (:cachedRecommendationIds)
+          AND p.deleted_at IS NULL
+        """);
+
+        appendCachedRecommendationFilters(sql, condition);
+
+        Query query = entityManager.createNativeQuery(sql.toString());
+        query.setParameter(
+                "cachedRecommendationIds",
+                cachedRecommendationIds
+        );
+        bindProductFilters(query, condition);
+
+        return !query.setMaxResults(1).getResultList().isEmpty();
+    }
+
+    private void validateCachedRecommendationIds(
+            List<Long> cachedRecommendationIds
+    ) {
+        if (cachedRecommendationIds.size() > MAX_CACHED_RECOMMENDATION_COUNT
+                || cachedRecommendationIds.stream().anyMatch(
+                productId -> productId == null || productId <= 0
+        )
+                || cachedRecommendationIds.stream().distinct().count()
+                != cachedRecommendationIds.size()) {
+            throw new IllegalArgumentException(
+                    "추천 상품 ID 캐시 값이 올바르지 않습니다."
+            );
+        }
+    }
+
+    private List<ProductSummaryProjection> searchCachedRecommendedProducts(
+            ProductSearchCondition condition,
+            ProductCursor cursor,
+            int fetchCount,
+            List<Long> cachedRecommendationIds
+    ) {
+        String rankOrder = cachedRankOrderExpression(
+                cachedRecommendationIds.size()
+        );
+
+        StringBuilder sql = new StringBuilder("""
+        SELECT p.id, p.name, p.brand, p.price,
+               COALESCE(stats.views, 0), p.sales, p.created_at,
+               %s
+        FROM products p
+        LEFT JOIN product_view_stats stats ON stats.product_id = p.id
+        WHERE p.id IN (:cachedRecommendationIds)
+          AND p.deleted_at IS NULL
+        """.formatted(rankOrder));
+
+        appendCachedRecommendationFilters(sql, condition);
+
+        if (cursor != null) {
+            sql.append("""
+
+            AND (
+                %s > :cursorRankOrder
+                OR (
+                    %s = :cursorRankOrder
+                    AND p.id > :cursorProductId
+                )
+            )
+            """.formatted(rankOrder, rankOrder));
+        }
+
+        sql.append(" ORDER BY ").append(rankOrder).append(" ASC, p.id ASC");
+
+        Query query = entityManager.createNativeQuery(sql.toString());
+        query.setParameter("cachedRecommendationIds", cachedRecommendationIds);
+        bindProductFilters(query, condition);
+
+        for (int index = 0; index < cachedRecommendationIds.size(); index++) {
+            query.setParameter(
+                    "cachedProductId" + index,
+                    cachedRecommendationIds.get(index)
+            );
+        }
+
+        if (cursor != null) {
+            query.setParameter("cursorRankOrder", cursor.rankOrder());
+            query.setParameter("cursorProductId", cursor.productId());
+        }
+
+        return readProducts(query, fetchCount);
+    }
+
+    private String cachedRankOrderExpression(int productCount) {
+        StringBuilder expression = new StringBuilder("CASE p.id ");
+
+        for (int index = 0; index < productCount; index++) {
+            expression.append("WHEN :cachedProductId")
+                    .append(index)
+                    .append(" THEN ")
+                    .append(index + 1)
+                    .append(' ');
+        }
+
+        return expression
+                .append("ELSE ")
+                .append(MAX_CACHED_RECOMMENDATION_COUNT + 1)
+                .append(" END")
+                .toString();
+    }
+
+    private void appendCachedRecommendationFilters(
+            StringBuilder sql,
+            ProductSearchCondition condition
+    ) {
+        if (condition.hasQuery()) {
+            sql.append("""
+
+            AND MATCH(p.name, p.brand)
+                AGAINST(:keyword IN BOOLEAN MODE)
+            """);
+        }
+
+        if (condition.hasCategoryIds()) {
+            sql.append(" AND p.category_id IN (:categoryIds)");
+        }
+    }
+
+    private List<ProductSummaryProjection> searchGeneralProducts(
+            ProductSearchCondition condition,
+            ProductCursor cursor,
+            int fetchCount,
+            boolean excludeRecommendations,
+            List<Long> excludedRecommendationIds
+    ) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT p.id, p.name, p.brand, p.price,
+                       COALESCE(stats.views, 0), p.sales, p.created_at, NULL
+                FROM products p
+                LEFT JOIN product_view_stats stats ON stats.product_id = p.id
+                WHERE 1 = 1
+                """);
+
+        appendProductFilters(sql, condition);
+
+        if (excludeRecommendations) {
+            sql.append("""
+
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM recipient_recommended_products r
+                        WHERE r.product_id = p.id
+                          AND r.recipient_id = :recipientUserId
+                          AND r.source_version = :analyzedSourceVersion
+                    )
+                    """);
+        } else if (!excludedRecommendationIds.isEmpty()) {
+            sql.append("""
+
+                    AND p.id NOT IN (:excludedRecommendationIds)
+                    """);
+        }
+
+        ProductSort generalSort = condition.sort() == ProductSort.AI_RECOMMENDED
+                ? ProductSort.POPULAR
+                : condition.sort();
+
+        List<String> fields = sortFields(generalSort);
+
+        if (cursor != null) {
+            sql.append(" AND ").append(cursorPredicate(fields));
+        }
+
+        StringJoiner orderBy = new StringJoiner(", ", " ORDER BY ", "");
+        for (String field : fields) {
+            orderBy.add(sortExpression(field) + " DESC");
+        }
+        sql.append(orderBy);
+
+        Query query = entityManager.createNativeQuery(sql.toString());
+        bindProductFilters(query, condition);
+
+        if (excludeRecommendations) {
+            bindRecommendationContext(query, condition);
+        } else if (!excludedRecommendationIds.isEmpty()) {
+            query.setParameter(
+                    "excludedRecommendationIds",
+                    excludedRecommendationIds
+            );
+        }
+
+        if (cursor != null) {
+            for (String field : fields) {
+                query.setParameter(
+                        "cursor_" + field,
+                        cursorValue(cursor, field)
+                );
+            }
+        }
+
+        return readProducts(query, fetchCount);
     }
 }

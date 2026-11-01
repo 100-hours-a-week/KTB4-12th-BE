@@ -327,6 +327,11 @@ class PaymentFlowIntegrationTest {
                             );
                 });
 
+        assertThat(notificationCount(payerId, "PAYMENT_COMPLETED")).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_outbox WHERE recipient_id = ?"
+                        + " AND type = 'PAYMENT_COMPLETED' AND status = 'PENDING'", Integer.class, payerId
+        )).isEqualTo(1);
         notificationOutboxDispatcher.dispatch();
 
         assertThat(notificationCount(recipientId, "GIFT_RECEIVED")).isEqualTo(1);
@@ -741,6 +746,14 @@ class PaymentFlowIntegrationTest {
                 .get()
                 .extracting(cancellation -> cancellation.getStatus())
                 .isEqualTo(PaymentCancellationStatus.COMPLETED);
+
+        assertThat(notificationCount(payerId, "PAYMENT_CANCELED")).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_outbox WHERE recipient_id = ?"
+                        + " AND type = 'PAYMENT_CANCELED' AND status = 'PENDING'", Integer.class, payerId
+        )).isEqualTo(1);
+        notificationOutboxDispatcher.dispatch();
+        assertThat(notificationCount(payerId, "PAYMENT_CANCELED")).isEqualTo(1);
 
         verify(paymentClient, times(1)).cancel(
                 order.getPaymentKey(),

@@ -14,6 +14,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
+import com.gift.gift.domain.auth.support.LoginRateLimitProperties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -37,7 +38,10 @@ class LoginIpRateLimitRedisServiceTest {
 
     @BeforeEach
     void setUp() {
-        redisService = new LoginIpRateLimitRedisService(redisTemplate);
+        redisService = new LoginIpRateLimitRedisService(
+                redisTemplate,
+                new LoginRateLimitProperties("unused", 6)
+        );
     }
 
     @Test
@@ -69,6 +73,26 @@ class LoginIpRateLimitRedisServiceTest {
         assertEquals(
                 LoginRateLimitDecision.reject(4),
                 decision
+        );
+    }
+
+    @Test
+    @DisplayName("부하 테스트 보충 간격 1초를 Redis에 밀리초로 전달한다")
+    void consume_usesConfiguredRefillInterval() {
+        redisService = new LoginIpRateLimitRedisService(
+                redisTemplate,
+                new LoginRateLimitProperties("unused", 1)
+        );
+        givenRedisResult(0L);
+
+        redisService.consume(IDENTIFIER_HASH);
+
+        verify(redisTemplate).execute(
+                org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+                eq(List.of(KEY_PREFIX + IDENTIFIER_HASH)),
+                eq("10"),
+                eq("1000"),
+                eq("60000")
         );
     }
 
