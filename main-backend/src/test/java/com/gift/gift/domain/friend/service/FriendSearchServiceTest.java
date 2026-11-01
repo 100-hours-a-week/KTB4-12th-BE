@@ -7,6 +7,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -59,6 +60,7 @@ class FriendSearchServiceTest {
                 cursorCodec,
                 pageAssembler,
                 mock(FriendshipRepository.class),
+                mock(ApplicationEventPublisher.class),
                 Clock.systemUTC()
         );
     }

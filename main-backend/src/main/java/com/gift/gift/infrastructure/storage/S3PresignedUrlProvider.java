@@ -14,7 +14,7 @@ import com.gift.gift.domain.product.support.ImageUrlProvider;
 @Component
 public class S3PresignedUrlProvider implements ImageUrlProvider {
 
-    private static final Duration URL_DURATION = Duration.ofMinutes(15);
+    private static final Duration URL_DURATION = Duration.ofMinutes(30);
 
     private final S3Presigner presigner;
     private final String bucket;

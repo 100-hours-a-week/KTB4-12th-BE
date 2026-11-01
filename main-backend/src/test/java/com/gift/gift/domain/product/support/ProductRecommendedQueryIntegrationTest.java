@@ -163,8 +163,8 @@ class ProductRecommendedQueryIntegrationTest {
     }
 
     @Test
-    @DisplayName("삭제와 품절 상품은 추천 및 인기 영역 모두에서 제외한다")
-    void excludesDeletedAndSoldOutProducts() {
+    @DisplayName("삭제 상품은 제외하고 품절 상품은 추천 및 인기 영역에 포함한다")
+    void excludesDeletedButIncludesSoldOutProducts() {
         Product valid = product(category, "크림", 1, 0, BASE_TIME);
         Product deleted = product(category, "크림", 2, 0, BASE_TIME);
         Product soldOut = product(category, "크림", 3, 0, BASE_TIME);
@@ -180,7 +180,8 @@ class ProductRecommendedQueryIntegrationTest {
                 .setParameter("ids", List.of(soldOut.getId(), generalSoldOut.getId())).executeUpdate();
 
         assertThat(query(null, List.of(category.getId())))
-                .extracting(ProductSummaryProjection::productId).containsExactly(valid.getId());
+                .extracting(ProductSummaryProjection::productId)
+                .containsExactly(soldOut.getId(), valid.getId(), generalSoldOut.getId());
     }
 
     @ParameterizedTest

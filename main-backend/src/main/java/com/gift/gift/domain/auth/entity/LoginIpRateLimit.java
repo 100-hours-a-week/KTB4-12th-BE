@@ -28,8 +28,12 @@ import com.gift.gift.global.common.BaseTimeEntity;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class LoginIpRateLimit extends BaseTimeEntity {
 
-    private static final BigDecimal CAPACITY = BigDecimal.valueOf(10);
-    private static final BigDecimal ONE_TOKEN = BigDecimal.ONE;
+    private static final BigDecimal CAPACITY =
+            BigDecimal.valueOf(10);
+
+    private static final BigDecimal ONE_TOKEN =
+            BigDecimal.ONE;
+
     private static final long REFILL_SECONDS = 6;
 
     @Id
@@ -73,33 +77,29 @@ public class LoginIpRateLimit extends BaseTimeEntity {
         );
     }
 
-    public LoginRateLimitDecision consume(LocalDateTime now) {
-        return consume(now, REFILL_SECONDS);
-    }
-
-    public LoginRateLimitDecision consume(LocalDateTime now, long refillSeconds) {
-
+    public LoginRateLimitDecision consume(
+            LocalDateTime now
+    ) {
         Objects.requireNonNull(now, "현재 시각은 null일 수 없습니다.");
-        if (refillSeconds < 1) {
-            throw new IllegalArgumentException("토큰 보충 간격은 1초 이상이어야 합니다.");
-        }
 
-        refill(now, refillSeconds);
+        refill(now);
 
         if (availableTokens.compareTo(ONE_TOKEN) >= 0) {
-            availableTokens = availableTokens.subtract(ONE_TOKEN);
+            availableTokens = availableTokens.subtract(
+                    ONE_TOKEN
+            );
 
             return LoginRateLimitDecision.permit();
         }
 
         return LoginRateLimitDecision.reject(
-                calculateRetryAfterSeconds(now, refillSeconds)
+                calculateRetryAfterSeconds(now)
         );
     }
 
-    private void refill(LocalDateTime now, long refillSeconds) {
+    private void refill(LocalDateTime now) {
         long elapsedSeconds = elapsedSeconds(now);
-        long refillCount = elapsedSeconds / refillSeconds;
+        long refillCount = elapsedSeconds / REFILL_SECONDS;
 
         if (refillCount == 0) {
             return;
@@ -114,14 +114,20 @@ public class LoginIpRateLimit extends BaseTimeEntity {
             return;
         }
 
-        lastRefilledAt = lastRefilledAt.plusSeconds(refillCount * refillSeconds);
+        lastRefilledAt = lastRefilledAt.plusSeconds(
+                refillCount * REFILL_SECONDS
+        );
     }
 
-    private long calculateRetryAfterSeconds(LocalDateTime now, long refillSeconds) {
-
+    private long calculateRetryAfterSeconds(
+            LocalDateTime now
+    ) {
         long elapsedSeconds = elapsedSeconds(now);
 
-        return Math.max(1, refillSeconds - elapsedSeconds);
+        return Math.max(
+                1,
+                REFILL_SECONDS - elapsedSeconds
+        );
     }
 
     private long elapsedSeconds(LocalDateTime now) {

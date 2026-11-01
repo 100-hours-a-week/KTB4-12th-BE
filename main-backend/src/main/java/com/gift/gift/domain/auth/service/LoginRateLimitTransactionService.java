@@ -13,7 +13,6 @@ import com.gift.gift.domain.auth.entity.LoginIpRateLimit;
 import com.gift.gift.domain.auth.repository.LoginEmailFailureLimitRepository;
 import com.gift.gift.domain.auth.repository.LoginIpRateLimitRepository;
 import com.gift.gift.domain.auth.support.LoginRateLimitDecision;
-import com.gift.gift.domain.auth.support.LoginRateLimitProperties;
 
 @Service
 @RequiredArgsConstructor
@@ -22,7 +21,6 @@ public class LoginRateLimitTransactionService {
     private final LoginIpRateLimitRepository ipRepository;
     private final LoginEmailFailureLimitRepository emailRepository;
     private final Clock clock;
-    private final LoginRateLimitProperties properties;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public LoginRateLimitDecision consumeIpToken(
@@ -41,7 +39,7 @@ public class LoginRateLimitTransactionService {
                         "IP 요청 제한 데이터가 생성되지 않았습니다."
                 ));
 
-        return rateLimit.consume(now, properties.ipRefillSeconds());
+        return rateLimit.consume(now);
     }
 
     @Transactional(

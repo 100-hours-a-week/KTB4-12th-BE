@@ -75,10 +75,11 @@ public class ProductQueryService {
 
         Long analyzedSourceVersion = null;
         List<Long> cachedRecommendationIds = null;
+        AiRecommendedProductCache.VersionLookup versionLookup = null;
 
         if (requestedSort == ProductSort.AI_RECOMMENDED) {
             Long recipientUserId = request.recipientUserId();
-            AiRecommendedProductCache.VersionLookup versionLookup =
+            versionLookup =
                     aiRecommendedProductCache.resolveAnalyzedSourceVersion(
                             recipientUserId,
                             () -> recipientProfileRepository
@@ -88,25 +89,6 @@ public class ProductQueryService {
                     );
 
             analyzedSourceVersion = versionLookup.version();
-
-            if (versionLookup.redisAvailable()) {
-                long activeVersion = analyzedSourceVersion;
-                AiRecommendedProductCache.ProductIdsLookup productIdsLookup =
-                        aiRecommendedProductCache.getOrLoadProductIds(
-                                recipientUserId,
-                                activeVersion,
-                                () -> recommendationRepository
-                                        .findAvailableRecommendedProductIds(
-                                                recipientUserId,
-                                                activeVersion
-                                        )
-                        );
-
-                if (productIdsLookup.usable()) {
-                    cachedRecommendationIds =
-                            productIdsLookup.productIds();
-                }
-            }
         }
 
         ProductSearchCondition condition = new ProductSearchCondition(
@@ -117,6 +99,38 @@ public class ProductQueryService {
                 request.recipientUserId(),
                 analyzedSourceVersion
         );
+
+        if (condition.isAiRequested()) {
+            Optional<ProductListResponse> cachedResponse =
+                    aiRecommendedProductCache.findCachedResponse(
+                            condition,
+                            request.cursor()
+                    );
+            if (cachedResponse.isPresent()) {
+                ProductListResponse response = cachedResponse.get();
+                cursorCodec.decode(
+                        request.cursor(),
+                        condition.withAppliedSort(response.appliedSort())
+                );
+                return response;
+            }
+
+            if (versionLookup != null && versionLookup.redisAvailable()) {
+                long activeVersion = analyzedSourceVersion;
+                AiRecommendedProductCache.ProductIdsLookup productIdsLookup =
+                        aiRecommendedProductCache.getOrLoadProductIds(
+                                request.recipientUserId(),
+                                activeVersion,
+                                () -> recommendationRepository.findRecommendedProductIds(
+                                        request.recipientUserId(),
+                                        activeVersion
+                                )
+                        );
+                if (productIdsLookup.usable()) {
+                    cachedRecommendationIds = productIdsLookup.productIds();
+                }
+            }
+        }
 
         boolean hasMatchingRecommendedProducts = !condition.isAiRequested()
                 || (cachedRecommendationIds == null
@@ -160,11 +174,19 @@ public class ProductQueryService {
                 ))
                 .toList();
 
-        return ProductListResponse.from(
+        ProductListResponse response = ProductListResponse.from(
                 products,
                 condition.sort(),
                 page
         );
+        if (condition.isAiRequested()) {
+            aiRecommendedProductCache.cacheResponse(
+                    condition,
+                    request.cursor(),
+                    response
+            );
+        }
+        return response;
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -233,15 +255,19 @@ public class ProductQueryService {
             );
         }
 
-        if (userQueryService.findActiveUser(recipientUserId).isEmpty()) {
+        if (!aiRecommendedProductCache.isRecipientActive(
+                recipientUserId,
+                () -> userQueryService.findActiveUser(recipientUserId).isPresent()
+        )) {
             throw new ProductException(
                     ProductErrorCode.RECIPIENT_NOT_FOUND
             );
         }
 
-        if (!friendQueryService.areFriends(
+        if (!aiRecommendedProductCache.areFriends(
                 loginUserId,
-                recipientUserId
+                recipientUserId,
+                () -> friendQueryService.areFriends(loginUserId, recipientUserId)
         )) {
             throw new ProductException(
                     ProductErrorCode.RECIPIENT_NOT_FOUND

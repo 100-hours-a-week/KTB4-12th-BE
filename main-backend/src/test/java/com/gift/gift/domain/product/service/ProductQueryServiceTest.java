@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -70,6 +71,10 @@ class ProductQueryServiceTest {
         recipientProfileRepository = mock(RecipientProfileRepository.class);
         recommendationRepository = mock(RecipientRecommendedProductRepository.class);
         aiRecommendedProductCache = mock(AiRecommendedProductCache.class);
+        when(aiRecommendedProductCache.isRecipientActive(anyLong(), any(BooleanSupplier.class)))
+                .thenAnswer(invocation -> ((BooleanSupplier) invocation.getArgument(1)).getAsBoolean());
+        when(aiRecommendedProductCache.areFriends(anyLong(), anyLong(), any(BooleanSupplier.class)))
+                .thenAnswer(invocation -> ((BooleanSupplier) invocation.getArgument(2)).getAsBoolean());
         when(aiRecommendedProductCache.resolveAnalyzedSourceVersion(
                 anyLong(),
                 any(LongSupplier.class)
