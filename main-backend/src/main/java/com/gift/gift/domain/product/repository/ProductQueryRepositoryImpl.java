@@ -256,11 +256,6 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
     ) {
         sql.append(" AND p.deleted_at IS NULL");
 
-        // AI 조회와 그 Fallback에서 품절 상품을 제외한다.
-        if (condition.isAiRequested()) {
-            sql.append(" AND p.quantity > 0");
-        }
-
         if (condition.hasQuery()) {
             sql.append("""
 

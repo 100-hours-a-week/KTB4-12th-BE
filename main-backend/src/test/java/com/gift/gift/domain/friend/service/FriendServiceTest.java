@@ -7,6 +7,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import tools.jackson.databind.json.JsonMapper;
 
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
@@ -48,6 +49,7 @@ class FriendServiceTest {
                 cursorCodec,
                 pageAssembler,
                 mock(FriendshipRepository.class),
+                mock(ApplicationEventPublisher.class),
                 Clock.systemUTC()
         );
     }
@@ -125,6 +127,7 @@ class FriendServiceTest {
                 new OpaqueCursorCodec(JsonMapper.builder().build()),
                 pageAssembler,
                 mock(FriendshipRepository.class),
+                mock(ApplicationEventPublisher.class),
                 Clock.systemUTC()
         );
 

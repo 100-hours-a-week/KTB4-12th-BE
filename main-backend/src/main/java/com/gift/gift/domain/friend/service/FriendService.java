@@ -5,10 +5,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gift.gift.domain.friend.dto.response.FriendListItem;
+import com.gift.gift.domain.friend.event.FriendshipChangedEvent;
 import com.gift.gift.domain.friend.exception.FriendErrorCode;
 import com.gift.gift.domain.friend.exception.FriendException;
 import com.gift.gift.domain.friend.query.FriendPage;
@@ -31,6 +33,7 @@ public class FriendService {
     private final OpaqueCursorCodec cursorCodec;
     private final FriendPageAssembler pageAssembler;
     private final FriendshipRepository friendshipRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     @Transactional
@@ -38,6 +41,7 @@ public class FriendService {
         friendshipRepository.findForUpdate(friendId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FRIEND_NOT_FOUND))
                 .remove(LocalDateTime.now(clock));
+        eventPublisher.publishEvent(new FriendshipChangedEvent(userId, friendId));
     }
 
     public CursorPageResponse<FriendListItem> getFriends(

@@ -41,7 +41,7 @@ class S3PresignedUrlProviderTest {
     }
 
     @Test
-    @DisplayName("Object Key로 15분 유효한 S3 조회 URL을 생성한다")
+    @DisplayName("Object Key로 30분 유효한 S3 조회 URL을 생성한다")
     void generatePresignedGetUrl() throws MalformedURLException {
         URL expectedUrl = new URL(
                 "https://test-product-images.s3.ap-northeast-2.amazonaws.com/"
@@ -70,7 +70,7 @@ class S3PresignedUrlProviderTest {
 
         assertThat(result).isEqualTo(expectedUrl.toExternalForm());
         assertThat(request.signatureDuration())
-                .isEqualTo(Duration.ofMinutes(15));
+                .isEqualTo(Duration.ofMinutes(30));
         assertThat(request.getObjectRequest().bucket())
                 .isEqualTo("test-product-images");
         assertThat(request.getObjectRequest().key())

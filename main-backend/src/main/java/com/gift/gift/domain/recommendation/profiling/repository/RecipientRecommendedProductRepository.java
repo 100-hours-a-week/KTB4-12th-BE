@@ -24,10 +24,9 @@ public interface RecipientRecommendedProductRepository
         where recommendation.recipientProfile.recipient.id = :recipientId
           and recommendation.sourceVersion = :sourceVersion
           and recommendation.product.deletedAt is null
-          and recommendation.product.quantity > 0
         order by recommendation.rankOrder asc
         """)
-    List<Long> findAvailableRecommendedProductIds(
+    List<Long> findRecommendedProductIds(
             @Param("recipientId") Long recipientId,
             @Param("sourceVersion") long sourceVersion
     );
