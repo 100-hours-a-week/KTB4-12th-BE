@@ -42,11 +42,10 @@ public class PaymentApprovalService {
     }
 
     private Payment existing(Payment payment) {
-        if (payment.getStatus() == PaymentStatus.DECLINED) {
-            throw new BusinessException(ErrorCode.PAYMENT_DECLINED);
-        }
-
-        return payment;
+        return switch (payment.getStatus()) {
+            case PENDING, COMPLETED, CANCELED -> payment;
+            case DECLINED -> throw new BusinessException(ErrorCode.PAYMENT_DECLINED);
+        };
     }
 
     private Payment decline(Long paymentId) {
