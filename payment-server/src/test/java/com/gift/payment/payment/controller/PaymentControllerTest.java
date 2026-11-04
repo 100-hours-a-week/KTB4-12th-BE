@@ -13,6 +13,7 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import com.gift.payment.payment.entity.Payment;
 import com.gift.payment.payment.entity.PaymentCancel;
+import com.gift.payment.payment.entity.PaymentCancelStatus;
 import com.gift.payment.payment.entity.PaymentStatus;
 import com.gift.payment.payment.service.PaymentApprovalService;
 import com.gift.payment.payment.service.PaymentCancelService;
@@ -235,6 +236,7 @@ class PaymentControllerTest {
         PaymentCancel cancellation = mock(PaymentCancel.class);
 
         when(cancellation.getPayment()).thenReturn(payment);
+        when(cancellation.getStatus()).thenReturn(PaymentCancelStatus.COMPLETED);
         when(cancellation.getTransactionKey()).thenReturn(UUID.randomUUID().toString());
         when(cancellation.getCancelAmount()).thenReturn(AMOUNT);
         when(cancellation.getCanceledAt()).thenReturn(LocalDateTime.of(2026, 10, 14, 12, 0));
