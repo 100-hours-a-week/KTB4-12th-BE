@@ -46,6 +46,7 @@ import com.gift.gift.infrastructure.payment.client.PaymentClient;
 import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
+import com.gift.gift.infrastructure.payment.dto.PaymentServerCancellationStatus;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
@@ -394,7 +395,9 @@ class PaymentFlowIntegrationTest {
                 UUID.randomUUID().toString(),
                 PaymentServerStatus.CANCELED,
                 AMOUNT,
-                LocalDateTime.of(2026, 10, 15, 12, 0)
+                LocalDateTime.of(2026, 10, 15, 12, 0),
+                PaymentServerCancellationStatus.COMPLETED,
+                null
         ));
 
         assertThatThrownBy(() -> paymentService.pay(
@@ -887,7 +890,9 @@ class PaymentFlowIntegrationTest {
                 UUID.randomUUID().toString(),
                 PaymentServerStatus.CANCELED,
                 order.getAmount(),
-                canceledAt
+                canceledAt,
+                PaymentServerCancellationStatus.COMPLETED,
+                null
         ));
     }
 

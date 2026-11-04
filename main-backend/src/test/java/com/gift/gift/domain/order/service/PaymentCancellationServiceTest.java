@@ -20,6 +20,7 @@ import com.gift.gift.domain.order.support.PaymentCancellationRequestHasher;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
 import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
+import com.gift.gift.infrastructure.payment.dto.PaymentServerCancellationStatus;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
@@ -478,7 +479,9 @@ class PaymentCancellationServiceTest {
                 TRANSACTION_KEY,
                 PaymentServerStatus.CANCELED,
                 cancelAmount,
-                canceledAt
+                canceledAt,
+                PaymentServerCancellationStatus.COMPLETED,
+                null
         );
     }
 }

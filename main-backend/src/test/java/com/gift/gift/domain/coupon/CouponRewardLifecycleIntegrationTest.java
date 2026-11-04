@@ -34,6 +34,7 @@ import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
+import com.gift.gift.infrastructure.payment.dto.PaymentServerCancellationStatus;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
@@ -789,7 +790,8 @@ class CouponRewardLifecycleIntegrationTest {
     private com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse cancelResponse(Order order) {
         return new com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse(
                 order.getOrderId(), order.getPaymentKey(), key(), PaymentServerStatus.CANCELED,
-                order.getAmount(), LocalDateTime.now()
+                order.getAmount(), LocalDateTime.now(),
+                PaymentServerCancellationStatus.COMPLETED, null
         );
     }
 

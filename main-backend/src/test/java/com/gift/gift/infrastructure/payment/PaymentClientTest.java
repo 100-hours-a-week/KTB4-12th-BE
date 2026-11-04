@@ -15,6 +15,7 @@ import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerResponse;
+import com.gift.gift.infrastructure.payment.dto.PaymentServerCancellationStatus;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
@@ -94,7 +95,9 @@ class PaymentClientTest {
                         "542f1507-e235-47c2-93c1-a30ed5b31d49",
                         PaymentServerStatus.CANCELED,
                         64_000L,
-                        LocalDateTime.of(2026, 10, 15, 12, 0)
+                        LocalDateTime.of(2026, 10, 15, 12, 0),
+                        PaymentServerCancellationStatus.COMPLETED,
+                        null
                 );
 
         when(commandClient.cancel(paymentKey, idempotencyKey))
@@ -137,7 +140,9 @@ class PaymentClientTest {
                 "542f1507-e235-47c2-93c1-a30ed5b31d49",
                 PaymentServerStatus.CANCELED,
                 64_000L,
-                LocalDateTime.of(2026, 10, 15, 12, 0)
+                LocalDateTime.of(2026, 10, 15, 12, 0),
+                PaymentServerCancellationStatus.COMPLETED,
+                null
         );
 
         when(queryClient.getCancellation(paymentKey, idempotencyKey))
