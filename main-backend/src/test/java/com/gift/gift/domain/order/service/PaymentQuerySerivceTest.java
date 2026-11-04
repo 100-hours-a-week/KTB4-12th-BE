@@ -20,6 +20,7 @@ import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
+import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 import com.gift.gift.global.exception.ErrorCode;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +38,7 @@ class PaymentQueryServiceTest {
 
     private OrderRepository orderRepository;
     private GiftHistoryRepository giftHistoryRepository;
+    private PaymentCancellationRepository cancellationRepository;
     private PaymentQueryService paymentQueryService;
     private OrderRewardQueryService orderRewardQueryService;
 
@@ -44,6 +46,7 @@ class PaymentQueryServiceTest {
     void setUp() {
         orderRepository = mock(OrderRepository.class);
         giftHistoryRepository = mock(GiftHistoryRepository.class);
+        cancellationRepository = mock(PaymentCancellationRepository.class);
         orderRewardQueryService = mock(OrderRewardQueryService.class);
         when(orderRewardQueryService.summarize(any(), any()))
                 .thenReturn(new OrderRewardSummary(null, null, null, null));
@@ -53,6 +56,7 @@ class PaymentQueryServiceTest {
         paymentQueryService = new PaymentQueryService(
                 orderRepository,
                 giftHistoryRepository,
+                cancellationRepository,
                 orderRewardQueryService,
                 clock
         );

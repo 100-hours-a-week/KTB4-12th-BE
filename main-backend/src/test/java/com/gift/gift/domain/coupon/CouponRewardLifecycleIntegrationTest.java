@@ -34,6 +34,7 @@ import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.global.exception.ErrorCode;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
+import com.gift.gift.infrastructure.payment.dto.PaymentServerCancellationStatus;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
@@ -502,18 +503,19 @@ class CouponRewardLifecycleIntegrationTest {
         when(paymentClient.confirm(any(), any()))
                 .thenThrow(clientFailure(PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED));
         when(paymentClient.getByOrderId(any())).thenThrow(clientFailure(PaymentClientFailure.PAYMENT_NOT_FOUND));
-        for (int attempt = 0; attempt < 2; attempt++) {
-            assertThatThrownBy(() -> payments.pay(payerId, requestKey, null, paymentRequest(3)))
-                    .isInstanceOfSatisfying(OrderException.class,
-                            error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_RESULT_UNCONFIRMED));
-        }
+        var firstResult = payments.pay(payerId, requestKey, null, paymentRequest(3));
+        var repeatedResult = payments.pay(payerId, requestKey, null, paymentRequest(3));
+        assertThat(firstResult.isProcessing()).isTrue();
+        assertThat(firstResult.created()).isTrue();
+        assertThat(repeatedResult.isProcessing()).isTrue();
+        assertThat(repeatedResult.created()).isFalse();
         Order order = orders.findByPayerIdAndIdempotencyKey(payerId, requestKey).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(usageStatus(order)).isEqualTo("RESERVED");
         assertThat(quantity(payerId, 3)).isZero();
         assertThat(balance(payerId)).isEqualTo(500_000L);
-        verify(paymentClient, times(1)).confirm(any(), any());
-        verify(paymentClient, times(2)).getByOrderId(order.getOrderId());
+        verify(paymentClient, times(4)).confirm(any(), any());
+        verify(paymentClient, times(5)).getByOrderId(order.getOrderId());
     }
 
     @Test
@@ -535,8 +537,9 @@ class CouponRewardLifecycleIntegrationTest {
                     () -> payments.pay(payerId, requestKey, "APPROVE", paymentRequest(2)))
                     .isInstanceOf(OrderException.class));
             assertThat(submitted.await(10, TimeUnit.SECONDS)).isTrue();
-            assertThatThrownBy(() -> payments.pay(payerId, requestKey, null, paymentRequest(2)))
-                    .isInstanceOf(OrderException.class);
+            var repeatedResult = payments.pay(payerId, requestKey, null, paymentRequest(2));
+            assertThat(repeatedResult.isProcessing()).isTrue();
+            assertThat(repeatedResult.created()).isFalse();
             assertThat(quantity(payerId, 2)).isZero();
             finish.countDown();
             first.get(30, TimeUnit.SECONDS);
@@ -608,9 +611,9 @@ class CouponRewardLifecycleIntegrationTest {
         when(paymentClient.getByOrderId(any()))
                 .thenThrow(clientFailure(PaymentClientFailure.PAYMENT_NOT_FOUND));
 
-        assertThatThrownBy(() -> payments.pay(payerId, requestKey, null, paymentRequest(3)))
-                .isInstanceOfSatisfying(OrderException.class,
-                        error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_RESULT_UNCONFIRMED));
+        var processingResult = payments.pay(payerId, requestKey, null, paymentRequest(3));
+        assertThat(processingResult.isProcessing()).isTrue();
+        assertThat(processingResult.processing().orderId()).isNotBlank();
         Order pending = orders.findByPayerIdAndIdempotencyKey(payerId, requestKey).orElseThrow();
         assertThat(pending.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(usageStatus(pending)).isEqualTo("RESERVED");
@@ -629,8 +632,8 @@ class CouponRewardLifecycleIntegrationTest {
         assertThat(usageStatus(declined)).isEqualTo("RESTORED");
         assertThat(quantity(payerId, 3)).isEqualTo(1);
         assertThat(balance(payerId)).isEqualTo(500_000L);
-        verify(paymentClient, times(1)).confirm(any(), any());
-        verify(paymentClient, times(2)).getByOrderId(pending.getOrderId());
+        verify(paymentClient, times(4)).confirm(any(), any());
+        verify(paymentClient, times(5)).getByOrderId(pending.getOrderId());
     }
 
     @Test
@@ -789,7 +792,8 @@ class CouponRewardLifecycleIntegrationTest {
     private com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse cancelResponse(Order order) {
         return new com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse(
                 order.getOrderId(), order.getPaymentKey(), key(), PaymentServerStatus.CANCELED,
-                order.getAmount(), LocalDateTime.now()
+                order.getAmount(), LocalDateTime.now(),
+                PaymentServerCancellationStatus.COMPLETED, null
         );
     }
 

@@ -8,6 +8,8 @@ public record PaymentCancelResponse(
         String transactionKey,
         PaymentServerStatus status,
         Long cancelAmount,
-        LocalDateTime canceledAt
+        LocalDateTime canceledAt,
+        PaymentServerCancellationStatus cancellationStatus,
+        String cancellationFailureCode
 ) {
 }

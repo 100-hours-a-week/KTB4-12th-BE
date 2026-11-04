@@ -2,9 +2,11 @@ package com.gift.gift.domain.order.service;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +28,10 @@ public class PaymentCancellationTransactionService {
     private final GiftHistoryRepository giftHistoryRepository;
     private final Clock clock;
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            isolation = Isolation.READ_COMMITTED
+    )
     public PaymentCancellation create(
             Order order,
             Long requesterId,
@@ -38,6 +43,13 @@ public class PaymentCancellationTransactionService {
             claimAutomaticCancellation(order);
         } else {
             claimGiftCancellation(order);
+        }
+
+        if (cancellationRepository.existsByOrderRecordIdAndStatus(
+                order.getId(),
+                PaymentCancellationStatus.PENDING
+        )) {
+            throw new OrderException(OrderErrorCode.CANCELLATION_IN_PROGRESS);
         }
 
         PaymentCancellation cancellation = new PaymentCancellation(
@@ -59,8 +71,44 @@ public class PaymentCancellationTransactionService {
         ) == 1;
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordRemoteCancellation(
+            Long cancellationId,
+            String transactionKey,
+            long cancelAmount,
+            LocalDateTime canceledAt
+    ) {
+        int updated = cancellationRepository.storeRemoteResult(
+                cancellationId,
+                PaymentCancellationStatus.PENDING,
+                transactionKey,
+                cancelAmount,
+                canceledAt
+        );
+
+        if (updated == 1) {
+            return;
+        }
+
+        PaymentCancellation current = cancellationRepository
+                .findById(cancellationId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "결제 취소 원장을 찾을 수 없습니다."
+                ));
+
+        boolean sameResult =
+                Objects.equals(current.getCancelTransactionKey(), transactionKey)
+                        && Objects.equals(current.getCancelAmount(), cancelAmount)
+                        && Objects.equals(current.getCanceledAt(), canceledAt);
+
+        if (!sameResult) {
+            throw new IllegalStateException(
+                    "저장된 원격 취소 결과와 새 응답이 일치하지 않습니다."
+            );
+        }
+    }
+
     private void claimGiftCancellation(Order requestedOrder) {
-        // 외부 취소 호출 전에 수락과 직렬화해 PENDING 취소 기록을 저장한다.
         GiftHistory gift = giftHistoryRepository
                 .findForCancellation(requestedOrder.getId())
                 .orElseThrow(() -> new OrderException(
@@ -74,21 +122,15 @@ public class PaymentCancellationTransactionService {
                 ));
 
         if (order.getStatus() != OrderStatus.COMPLETED
-                || gift.getStatus()
-                != GiftStatus.WAITING_FOR_ACCEPTANCE
+                || gift.getStatus() != GiftStatus.WAITING_FOR_ACCEPTANCE
                 || gift.getDeletedAt() != null) {
-            throw new OrderException(
-                    OrderErrorCode.PAYMENT_NOT_CANCELABLE
-            );
+            throw new OrderException(OrderErrorCode.PAYMENT_NOT_CANCELABLE);
         }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markDeclined(Long cancellationId) {
-        cancellationRepository.decline(
-                cancellationId,
-                LocalDateTime.now(clock)
-        );
+        cancellationRepository.decline(cancellationId, LocalDateTime.now(clock));
     }
 
     private void claimAutomaticCancellation(Order order) {
@@ -111,8 +153,7 @@ public class PaymentCancellationTransactionService {
                 ));
 
         if (current.getStatus() != OrderStatus.PENDING
-                || current.getApprovalResult()
-                != PaymentApprovalResult.APPROVED
+                || current.getApprovalResult() != PaymentApprovalResult.APPROVED
                 || current.getFailureCode()
                 != OrderFailureCode.AUTO_CANCELLATION_PROCESSING) {
             throw new IllegalStateException(
@@ -139,6 +180,16 @@ public class PaymentCancellationTransactionService {
                 cancellationId,
                 PaymentCancellationStatus.PENDING,
                 failureCode,
+                LocalDateTime.now(clock)
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markReconciliationRequired(Long cancellationId) {
+        cancellationRepository.markFailure(
+                cancellationId,
+                PaymentCancellationStatus.PENDING,
+                PaymentCancellationFailureCode.CANCELLATION_RECONCILIATION_REQUIRED,
                 LocalDateTime.now(clock)
         );
     }

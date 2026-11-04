@@ -31,12 +31,9 @@ import com.gift.gift.global.exception.ErrorCode;
 public class PaymentCancellationRequestService {
 
     private static final String IDEMPOTENCY_CONSTRAINT = "uk_payment_cancellations_requester_idempotency";
-
     private static final String INTEGRITY_SQL_STATE = "23000";
     private static final int DUPLICATE_ENTRY_CODE = 1062;
-
     private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9:_-]{1,100}$");
-
     private static final String GIFT_EXPIRATION_PREFIX = "GIFT_EXPIRATION:";
     private static final String LOCAL_PROCESSING_FAILURE_PREFIX = "LOCAL_PROCESSING_FAILURE:";
 
@@ -55,18 +52,14 @@ public class PaymentCancellationRequestService {
         validateInput(requesterId, orderId, idempotencyKey, source);
 
         String requestHash = requestHasher.hash(orderId);
-
         Optional<PaymentCancellation> existing =
-                cancellationRepository
-                        .findByRequesterIdAndIdempotencyKey(requesterId, idempotencyKey);
+                cancellationRepository.findByRequesterIdAndIdempotencyKey(
+                        requesterId,
+                        idempotencyKey
+                );
 
         if (existing.isPresent()) {
-            return existing(
-                    existing.get(),
-                    requesterId,
-                    requestHash,
-                    source
-            );
+            return existing(existing.get(), requesterId, requestHash, source);
         }
 
         Order order = orderRepository
@@ -76,25 +69,42 @@ public class PaymentCancellationRequestService {
         validateCancelable(order, source);
 
         try {
-            PaymentCancellation cancellation =
-                    transactionService.create(
-                            order,
-                            requesterId,
-                            source,
-                            idempotencyKey,
-                            requestHash
-                    );
+            PaymentCancellation cancellation = transactionService.create(
+                    order,
+                    requesterId,
+                    source,
+                    idempotencyKey,
+                    requestHash
+            );
 
             return PaymentCancellationStartResult.created(cancellation, order);
+        } catch (OrderException exception) {
+            if (exception.getErrorCode() == ErrorCode.CONFLICT) {
+                Optional<PaymentCancellation> racedRequest =
+                        cancellationRepository.findByRequesterIdAndIdempotencyKey(
+                                requesterId,
+                                idempotencyKey
+                        );
+
+                if (racedRequest.isPresent()) {
+                    return existing(
+                            racedRequest.get(),
+                            requesterId,
+                            requestHash,
+                            source
+                    );
+                }
+            }
+
+            throw exception;
         } catch (DataIntegrityViolationException exception) {
             if (!isIdempotencyDuplicate(exception)) {
                 throw exception;
             }
 
-            PaymentCancellation cancellation =
-                    cancellationRepository
-                            .findByRequesterIdAndIdempotencyKey(requesterId, idempotencyKey)
-                            .orElseThrow(() -> exception);
+            PaymentCancellation cancellation = cancellationRepository
+                    .findByRequesterIdAndIdempotencyKey(requesterId, idempotencyKey)
+                    .orElseThrow(() -> exception);
 
             return existing(cancellation, requesterId, requestHash, source);
         }
@@ -137,7 +147,9 @@ public class PaymentCancellationRequestService {
 
         GiftHistory gift = giftHistoryRepository
                 .findByOrderRecordId(order.getId())
-                .orElseThrow(() -> new OrderException(OrderErrorCode.PAYMENT_NOT_CANCELABLE));
+                .orElseThrow(() -> new OrderException(
+                        OrderErrorCode.PAYMENT_NOT_CANCELABLE
+                ));
 
         if (gift.getStatus() != GiftStatus.WAITING_FOR_ACCEPTANCE
                 || gift.getDeletedAt() != null) {
@@ -161,11 +173,8 @@ public class PaymentCancellationRequestService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
-        if (source == null) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-
-        if (idempotencyKey == null
+        if (source == null
+                || idempotencyKey == null
                 || !IDEMPOTENCY_KEY_PATTERN.matcher(idempotencyKey).matches()
                 || (source == CancellationSource.USER
                 && (idempotencyKey.startsWith(GIFT_EXPIRATION_PREFIX)

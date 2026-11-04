@@ -279,7 +279,8 @@ class PaymentControllerTest {
                                 "2026-10-14T14:30:00+09:00"
                         ),
                         null,
-                        null, null, 50_000L, null
+                        null, null, 50_000L, null,
+                        null, null, null
                 );
 
         when(paymentQueryService.getStatus(
@@ -321,7 +322,8 @@ class PaymentControllerTest {
                 64_000L,
                 null,
                 null,
-                null, null, null, null
+                null, null, null, null,
+                null, null, null
         );
         when(paymentQueryService.getStatus(USER_ID, ORDER_ID)).thenReturn(response);
 

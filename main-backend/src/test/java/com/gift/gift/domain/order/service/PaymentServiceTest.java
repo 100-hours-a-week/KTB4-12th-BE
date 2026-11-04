@@ -11,6 +11,7 @@ import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
+import com.gift.gift.infrastructure.payment.PaymentSyncRetryPolicy;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,10 +30,12 @@ class PaymentServiceTest {
 
     private PaymentRequestService paymentRequestService;
     private PaymentClient paymentClient;
+    private PaymentSyncRetryPolicy retryPolicy;
     private OrderApprovalTransactionService approvalService;
     private PaymentCompletionService completionService;
     private PaymentLocalCompletionRetry localCompletionRetry;
     private PaymentAutoCancellationService autoCancellationService;
+    private PaymentReconciliationTransactionService reconciliationService;
     private PaymentService paymentService;
     private Order order;
     private PaymentCreateRequest request;
@@ -41,17 +44,21 @@ class PaymentServiceTest {
     void setUp() {
         paymentRequestService = mock(PaymentRequestService.class);
         paymentClient = mock(PaymentClient.class);
+        retryPolicy = mock(PaymentSyncRetryPolicy.class);
         approvalService = mock(OrderApprovalTransactionService.class);
         completionService = mock(PaymentCompletionService.class);
         localCompletionRetry = mock(PaymentLocalCompletionRetry.class);
         autoCancellationService = mock(PaymentAutoCancellationService.class);
+        reconciliationService = mock(PaymentReconciliationTransactionService.class);
         paymentService = new PaymentService(
                 paymentRequestService,
                 paymentClient,
+                retryPolicy,
                 approvalService,
                 completionService,
                 localCompletionRetry,
-                autoCancellationService
+                autoCancellationService,
+                reconciliationService
         );
 
         order = mock(Order.class);

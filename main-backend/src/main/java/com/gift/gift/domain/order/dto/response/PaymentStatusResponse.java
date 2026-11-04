@@ -11,6 +11,9 @@ import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
+import com.gift.gift.domain.order.entity.PaymentCancellation;
+import com.gift.gift.domain.order.entity.PaymentCancellationFailureCode;
+import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 import com.gift.gift.domain.order.service.OrderRewardSummary;
 
 public record PaymentStatusResponse(
@@ -26,11 +29,18 @@ public record PaymentStatusResponse(
         Integer couponMultiplier,
         OrderCouponUsageStatus couponStatus,
         Long expectedRewardAmount,
-        Long rewardAmount
+        Long rewardAmount,
+        Long cancellationId,
+        PaymentCancellationStatus cancellationStatus,
+        PaymentCancellationFailureCode cancellationFailureCode
 ) {
 
     public static PaymentStatusResponse from(
-            Order order, GiftHistory gift, OrderRewardSummary reward, ZoneId zoneId
+            Order order,
+            GiftHistory gift,
+            OrderRewardSummary reward,
+            ZoneId zoneId,
+            PaymentCancellation cancellation
     ) {
         return new PaymentStatusResponse(
                 order.getOrderId(),
@@ -45,11 +55,17 @@ public record PaymentStatusResponse(
                 reward.couponMultiplier(),
                 reward.couponStatus(),
                 reward.expectedRewardAmount(),
-                reward.rewardAmount()
+                reward.rewardAmount(),
+                cancellation == null ? null : cancellation.getId(),
+                cancellation == null ? null : cancellation.getStatus(),
+                cancellation == null ? null : cancellation.getFailureCode()
         );
     }
 
-    private static OffsetDateTime toOffset(LocalDateTime dateTime, ZoneId zoneId) {
+    private static OffsetDateTime toOffset(
+            LocalDateTime dateTime,
+            ZoneId zoneId
+    ) {
         return dateTime == null
                 ? null
                 : dateTime.atZone(zoneId).toOffsetDateTime();
