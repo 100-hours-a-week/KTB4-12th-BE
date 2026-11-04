@@ -6,6 +6,7 @@ import java.util.function.LongUnaryOperator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -24,6 +25,7 @@ public class PaymentSyncRetryPolicy {
     private final Sleeper sleeper;
     private final LongUnaryOperator random;
 
+    @Autowired
     public PaymentSyncRetryPolicy(PaymentClientProperties properties) {
         this(
                 properties.commandTimeout(),
