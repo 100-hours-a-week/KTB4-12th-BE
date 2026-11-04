@@ -13,56 +13,35 @@ import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerResponse;
-import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
 
 @Component
 public class PaymentClient {
 
-    private static final String CONFIRM_COMMAND = "PAYMENT_CONFIRM";
-    private static final String CANCEL_COMMAND = "PAYMENT_CANCEL";
-
     private final PaymentCommandClient commandClient;
     private final PaymentQueryClient queryClient;
-    private final PaymentCommandRetry commandRetry;
 
     public PaymentClient(
             PaymentCommandClient commandClient,
             PaymentQueryClient queryClient,
-            PaymentCommandRetry commandRetry
+            PaymentCommandRetry unusedCommandRetry
     ) {
         this.commandClient = commandClient;
         this.queryClient = queryClient;
-        this.commandRetry = commandRetry;
     }
 
     public PaymentResponse confirm(PaymentConfirmRequest request, String scenario) {
-
-        return commandRetry.execute(
-                CONFIRM_COMMAND,
-                request.orderId(),
-                () -> execute(
-                        () -> commandClient.confirm(request, scenario),
-                        PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
-                ),
-                response -> response.status() == PaymentServerStatus.PENDING
+        return execute(
+                () -> commandClient.confirm(request, scenario),
+                PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
         );
     }
 
     public PaymentCancelResponse cancel(String paymentKey, String idempotencyKey) {
-
-        return commandRetry.execute(
-                CANCEL_COMMAND,
-                paymentKey,
-                () -> execute(
-                        () -> commandClient.cancel(
-                                paymentKey,
-                                idempotencyKey
-                        ),
-                        PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
-                ),
-                response -> false
+        return execute(
+                () -> commandClient.cancel(paymentKey, idempotencyKey),
+                PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
         );
     }
 
@@ -73,16 +52,20 @@ public class PaymentClient {
         );
     }
 
-    public PaymentCancelResponse getCancellation(String paymentKey, String idempotencyKey) {
-
+    public PaymentCancelResponse getCancellation(
+            String paymentKey,
+            String idempotencyKey
+    ) {
         return execute(
                 () -> queryClient.getCancellation(paymentKey, idempotencyKey),
                 PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
         );
     }
 
-    private <T> T execute(Supplier<PaymentServerResponse<T>> request, PaymentClientFailure timeoutFailure) {
-
+    private <T> T execute(
+            Supplier<PaymentServerResponse<T>> request,
+            PaymentClientFailure timeoutFailure
+    ) {
         PaymentServerResponse<T> response;
 
         try {
@@ -104,7 +87,7 @@ public class PaymentClient {
                     PaymentClientFailure.INVALID_RESPONSE,
                     "Payment Server 응답을 처리하지 못했습니다.",
                     exception
-            );
+            ).withUncertainOutcome();
         }
 
         if (response == null || response.data() == null) {
@@ -112,7 +95,7 @@ public class PaymentClient {
                     PaymentClientFailure.INVALID_RESPONSE,
                     "Payment Server 성공 응답에 data가 없습니다.",
                     (String) null
-            );
+            ).withUncertainOutcome();
         }
 
         return response.data();

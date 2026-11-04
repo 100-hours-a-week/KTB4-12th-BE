@@ -13,14 +13,18 @@ public record PaymentCancelResponse(
         String transactionKey,
         PaymentStatus status,
         Long cancelAmount,
-        LocalDateTime canceledAt
+        LocalDateTime canceledAt,
+        String cancellationStatus,
+        String cancellationFailureCode
 ) {
 
     public static PaymentCancelResponse from(PaymentCancel cancellation) {
-
         Objects.requireNonNull(cancellation, "결제 취소 정보는 null일 수 없습니다.");
 
-        Payment payment = Objects.requireNonNull(cancellation.getPayment(), "원결제 정보는 null일 수 없습니다.");
+        Payment payment = Objects.requireNonNull(
+                cancellation.getPayment(),
+                "원결제 정보는 null일 수 없습니다."
+        );
 
         return new PaymentCancelResponse(
                 payment.getOrderId(),
@@ -28,7 +32,11 @@ public record PaymentCancelResponse(
                 cancellation.getTransactionKey(),
                 payment.getStatus(),
                 cancellation.getCancelAmount(),
-                cancellation.getCanceledAt()
+                cancellation.getCanceledAt(),
+                cancellation.getStatus().name(),
+                cancellation.getFailureCode() == null
+                        ? null
+                        : cancellation.getFailureCode().name()
         );
     }
 }

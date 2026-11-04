@@ -11,9 +11,12 @@ import com.gift.gift.domain.gift.entity.GiftHistory;
 import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
 import com.gift.gift.domain.order.entity.Order;
+import com.gift.gift.domain.order.entity.PaymentCancellation;
+import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
+import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -22,11 +25,11 @@ public class PaymentQueryService {
 
     private final OrderRepository orderRepository;
     private final GiftHistoryRepository giftHistoryRepository;
+    private final PaymentCancellationRepository cancellationRepository;
     private final OrderRewardQueryService orderRewardQueryService;
     private final Clock clock;
 
     public PaymentStatusResponse getStatus(Long payerId, String orderId) {
-
         Order order = orderRepository
                 .findByOrderIdAndPayerId(orderId, payerId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.PAYMENT_NOT_FOUND));
@@ -35,7 +38,21 @@ public class PaymentQueryService {
                 .findByOrderRecordId(order.getId())
                 .orElse(null);
 
-        return PaymentStatusResponse.from(order, gift,
-                orderRewardQueryService.summarize(order, gift), clock.getZone());
+        PaymentCancellation cancellation = cancellationRepository
+                .findFirstByOrderRecordIdAndStatusOrderByUpdatedAtDescIdDesc(
+                        order.getId(),
+                        PaymentCancellationStatus.PENDING
+                )
+                .orElseGet(() -> cancellationRepository
+                        .findFirstByOrderRecordIdOrderByUpdatedAtDescIdDesc(order.getId())
+                        .orElse(null));
+
+        return PaymentStatusResponse.from(
+                order,
+                gift,
+                orderRewardQueryService.summarize(order, gift),
+                clock.getZone(),
+                cancellation
+        );
     }
 }

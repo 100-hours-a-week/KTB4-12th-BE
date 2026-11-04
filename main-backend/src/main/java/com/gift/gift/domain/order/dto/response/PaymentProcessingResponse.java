@@ -8,6 +8,7 @@ public record PaymentProcessingResponse(
         String orderId,
         OrderStatus paymentStatus,
         PaymentApprovalResult approvalResult,
+        String statusUrl,
         int retryAfterSeconds
 ) {
 
@@ -19,6 +20,7 @@ public record PaymentProcessingResponse(
                 processing.orderId(),
                 OrderStatus.PENDING,
                 processing.approvalResult(),
+                "/payments/" + processing.orderId(),
                 retryAfterSeconds
         );
     }

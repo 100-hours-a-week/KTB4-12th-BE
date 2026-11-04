@@ -21,10 +21,21 @@ public interface PaymentCancellationRepository
             String idempotencyKey
     );
 
-    @Modifying(
-            flushAutomatically = true,
-            clearAutomatically = true
-    )
+    Optional<PaymentCancellation>
+    findFirstByOrderRecordIdAndStatusOrderByUpdatedAtDescIdDesc(
+            Long orderRecordId,
+            PaymentCancellationStatus status
+    );
+
+    Optional<PaymentCancellation>
+    findFirstByOrderRecordIdOrderByUpdatedAtDescIdDesc(Long orderRecordId);
+
+    boolean existsByOrderRecordIdAndStatus(
+            Long orderRecordId,
+            PaymentCancellationStatus status
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             update PaymentCancellation cancellation
             set cancellation.status = :completedStatus,
@@ -45,10 +56,30 @@ public interface PaymentCancellationRepository
             @Param("canceledAt") LocalDateTime canceledAt
     );
 
-    @Modifying(
-            flushAutomatically = true,
-            clearAutomatically = true
-    )
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update PaymentCancellation cancellation
+            set cancellation.cancelTransactionKey = :transactionKey,
+                cancellation.cancelAmount = :cancelAmount,
+                cancellation.failureCode = null,
+                cancellation.canceledAt = :canceledAt,
+                cancellation.updatedAt = :canceledAt
+            where cancellation.id = :cancellationId
+              and cancellation.status = :pendingStatus
+              and (
+                    cancellation.cancelTransactionKey is null
+                    or cancellation.cancelTransactionKey = :transactionKey
+              )
+            """)
+    int storeRemoteResult(
+            @Param("cancellationId") Long cancellationId,
+            @Param("pendingStatus") PaymentCancellationStatus pendingStatus,
+            @Param("transactionKey") String transactionKey,
+            @Param("cancelAmount") long cancelAmount,
+            @Param("canceledAt") LocalDateTime canceledAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             update PaymentCancellation cancellation
             set cancellation.failureCode = :failureCode,
@@ -86,10 +117,7 @@ public interface PaymentCancellationRepository
             @Param("updatedAt") LocalDateTime updatedAt
     );
 
-    @Modifying(
-            flushAutomatically = true,
-            clearAutomatically = true
-    )
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             update PaymentCancellation cancellation
             set cancellation.status =
