@@ -549,7 +549,7 @@ class PaymentFlowIntegrationTest {
                         any(PaymentConfirmRequest.class),
                         eq("TIMEOUT_AFTER_APPROVAL")
                 );
-        verify(paymentClient, times(2))
+        verify(paymentClient, times(5))
                 .getByOrderId(unknownOrder.getOrderId());
     }
 
