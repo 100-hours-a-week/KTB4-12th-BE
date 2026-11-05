@@ -3,34 +3,31 @@ package com.gift.gift.infrastructure.ai.profiling.amqp;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.Executors;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.core.Message;
-import org.springframework.amqp.core.MessageDeliveryMode;
-import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration;
 import org.springframework.boot.amqp.health.RabbitHealthIndicator;
-import org.springframework.amqp.core.TopicExchange;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.BindingBuilder;
-
-import com.gift.gift.global.messaging.RabbitConnectionConfiguration;
-import com.gift.gift.global.messaging.RabbitPublisherConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
+import com.gift.gift.domain.recommendation.profiling.repository.ProfilingPublishStore;
+import com.gift.gift.global.messaging.RabbitConnectionConfiguration;
+import com.gift.gift.global.messaging.RabbitPublisherConfiguration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
 
 class ProfilingAmqpBrokerIntegrationTest {
     @Test
@@ -47,7 +44,7 @@ class ProfilingAmqpBrokerIntegrationTest {
             new ApplicationContextRunner()
                     .withConfiguration(AutoConfigurations.of(RabbitAutoConfiguration.class))
                     .withUserConfiguration(RabbitConnectionConfiguration.class, RabbitPublisherConfiguration.class,
-                            ProfilingAmqpConfiguration.class)
+                            ProfilingAmqpConfiguration.class, ProfilingPublisherState.class)
                     .withPropertyValues("app.ai-profile.amqp.enabled=true",
                             "spring.rabbitmq.host=" + broker.getHost(),
                             "spring.rabbitmq.port=" + broker.getMappedPort(5672),
@@ -144,6 +141,25 @@ class ProfilingAmqpBrokerIntegrationTest {
                         assertMessages(outboxTemplate, "reports.test.discord", "outbox-");
                         assertMessages(template, ProfilingAmqpConfiguration.REQUEST_QUEUE, "profiling-");
 
+                        var repository = mock(ProfilingPublishStore.class);
+                        var claim = new ProfilingPublishStore.Claim(UUID.randomUUID().toString(), 1,
+                                "{\"payload\":\"saved snapshot\"}", UUID.randomUUID().toString(), "READY", null);
+                        when(repository.claimOne()).thenReturn(Optional.of(claim));
+                        var publisher = new ProfilingJobPublisher(template,
+                                context.getBean(ProfilingAmqpProperties.class), repository,
+                                context.getBean(ProfilingPublisherState.class));
+                        try {
+                            publisher.publishOne();
+                            verify(repository).markPublished(claim);
+                            var published = template.receive("profiling.request", 3000);
+                            assertThat(published).isNotNull();
+                            assertThat(published.getBody()).isEqualTo(claim.body().getBytes(StandardCharsets.UTF_8));
+                            assertThat(published.getMessageProperties().getMessageId()).isEqualTo(claim.requestId());
+                            assertThat(published.getMessageProperties().getReceivedDeliveryMode())
+                                    .isEqualTo(MessageDeliveryMode.PERSISTENT);
+                        } finally {
+                            publisher.stop();
+                        }
                     });
         }
     }

@@ -27,7 +27,7 @@ BE 실행 환경에 `AI_PROFILE_AMQP_ENABLED=true`와 접속 정보를 전달하
 - Quorum 큐·Routing Key `profiling.request`, `profiling.result`
 - Durable·exclusive=false·auto-delete=false, Persistent JSON/UTF-8
 - 공통 `rabbitConnectionFactory`를 Outbox·프로파일링 템플릿과 Admin이 명시적으로 주입받는다. 프로파일링 템플릿은 별도 발행 연결을 사용한다.
-- 연결 3초·Heartbeat 요청 20초·프로파일링 Confirm 대기 설정 30초이며 실제 대기는 PR 3-2에서 구현한다. Outbox Confirm 대기는 기존 발행 코드의 정책을 유지한다.
+- 연결 3초·Heartbeat 요청 20초·프로파일링 Confirm 대기 설정 30초이며 실제 발행에서는 Confirm을 최대 30초 대기한다. Outbox Confirm 대기는 기존 발행 코드의 정책을 유지한다.
 - 기본 멤버 1은 로컬용이며 AZ 장애 대응이나 복제 가용성을 보장하지 않는다
 
 ```bash
@@ -54,7 +54,7 @@ CI는 같은 테스트 작업에서 RabbitMQ 컨테이너를 실행한다. Docke
 - Compose는 `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST`를 사용한다. BE의 대응 값과 같은 접속 대상을 지정한다. BE가 컨테이너 안에서 실행되면 host는 해당 네트워크 주소를 사용한다.
 - 기존 계정·vhost `profiling`을 그대로 공유하는 예시이며, 기존 볼륨·큐·메시지를 삭제하지 않는다. 기존 볼륨의 계정·vhost는 환경변수만 바꿔 갱신되지 않는다.
 - Boot의 자동 연결 생성을 사용하므로 `spring.rabbitmq.addresses`·TLS 설정을 별도의 수동 복사 없이 유지한다. `RabbitConnectionConfiguration`은 클라이언트 I/O 제한과 Spring 연결 종료·채널 확보 대기만 보완한다.
-- Handshake·Channel RPC·Shutdown·채널 확보·연결 종료 대기는 각 3초, NIO 쓰기 큐는 64프레임·삽입 대기 3초다. 공유 채널 캐시는 Boot 기본 25개이며 `spring.rabbitmq.cache.channel.size`로 조정할 수 있다. 프로파일링 워커는 후속 PR 3-2에서 인스턴스당 1개로 구현한다. 운영 적정 용량은 별도 부하 측정 대상이다.
+- Handshake·Channel RPC·Shutdown·채널 확보·연결 종료 대기는 각 3초, NIO 쓰기 큐는 64프레임·삽입 대기 3초다. 공유 채널 캐시는 Boot 기본 25개이며 `spring.rabbitmq.cache.channel.size`로 조정할 수 있다. 프로파일링 워커는 인스턴스당 1개로 순차 발행한다. 운영 적정 용량은 별도 부하 측정 대상이다.
 - `RabbitPublisherConfiguration`·`RabbitRoutingProperties`는 원격 develop `6093c9b`의 공통 Publisher 설정을 반영하고, 연결 주입에 `@Qualifier("rabbitConnectionFactory")`를 지정했다. 이 변경에서 공통 Relay·업무 Consumer를 새로 구현하지 않는다.
 - `OUTBOX_ENABLED=true`인 경우 기존 공통 Outbox의 Exchange·알림/검색 Routing Key를 설정해야 한다. 관련 값은 `.env.example`을 따른다. 프로파일링의 Direct Exchange·Quorum 큐와 작업 테이블·재시도 정책은 유지한다.
 - `spring.rabbitmq.dynamic=false`로 기본 Admin 자동 선언을 끄고, 프로파일링 Admin은 자신에게 지정된 리소스만 선언한다. 다른 도메인도 별도 Admin/인프라에서 해당 리소스를 선언해야 한다.
@@ -72,3 +72,19 @@ CI는 같은 테스트 작업에서 RabbitMQ 컨테이너를 실행한다. Docke
 ```
 
 네 조합에서 잘못된 기존 프로파일링 접속 속성이 남아 있어도 공통 접속 대상이 바뀌지 않는지 검증한다. 실제 RabbitMQ 4.4에서는 공통 연결로 Outbox Topic/Classic과 프로파일링 Direct/Quorum을 함께 선언·발행하고 Confirm·Return·재접속을 검증한다. 두 템플릿에서 각각 10건을 병렬 발행해 대상 큐·메시지 ID·본문과 Confirm이 서로 섞이지 않는지 확인한다. 두 기능을 함께 켰을 때 Outbox Exchange·Routing Key가 비어 있으면 기동 시 거부하는 경우도 검증한다. 운영 계정 권한·TLS 연결·3노드 장애 전환·미포함 공통 Relay 회귀는 별도 검증 범위다.
+
+## PR 3-2 — 발행 선점·전달 확인·재시도
+
+- `ProfilingPublishStore`가 DB UTC 시각으로 WAITING 상태의 READY·기한 도래 RETRY_WAIT 작업을 선점한다. 선점 2분·시도별 UUID 토큰을 사용하고, 만료 선점은 실패로 회수한다.
+- `ProfilingJobPublisher.publishOne()`은 DB 트랜잭션 밖에서 호출한다. 저장 JSON을 UTF-8로 재사용하고 256 KiB를 검증하며 requestId를 messageId로, 시도 토큰을 CorrelationData ID로 사용한다.
+- Confirm 최대 30초·ACK이며 Return이 없는 경우만 PUBLISHED로 기록한다. 전체 발행 작업의 대기는 45초이며 실제 워커 종료까지 새 선점을 제한한다. 실행 전 취소 시에도 busy가 해제된다.
+- 일시 실패는 최초 포함 최대 3회, 1분 → 2분의 ±20% 지터다. 최초 실패 후 30분 예산 소진 또는 인증·라우팅 오류는 BLOCKED이며 자동 재선점하지 않는다.
+- 결과 저장은 요청 버전·선점 토큰·유효 임대·WAITING 상태를 확인한다. 늦은 이전 시도의 확인은 무시한다. 발행 성공 후 DB 기록 실패는 임대 만료 후 동일 본문으로 복구한다. Consumer 멱등 처리는 별도로 필요하다.
+- 브로커 차단·연결 교체·종료를 관측한다. 이전 연결 이벤트는 무시하고 미전송 선점 반납 시 이전 시도 횟수·재시도 시각을 복원한다.
+- 일반/복구 스케줄러 연결·HTTP 경로 제거는 PR 3-3이며 자동 MQ 발행은 아직 연결하지 않는다.
+
+```bash
+./gradlew :main-backend:test --tests '*ProfilingPublish*Test' --tests '*ProfilingJobPublisherTest' --tests '*ProfilingAmqp*Test'
+```
+
+공통 연결 수정 PR #553이 병합된 develop을 기준으로 구현한다. 이 변경에는 공통 접속 설정 수정이 중복 포함되지 않는다.
