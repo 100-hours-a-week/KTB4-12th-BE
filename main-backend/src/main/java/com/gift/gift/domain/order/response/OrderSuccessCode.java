@@ -15,6 +15,10 @@ public enum OrderSuccessCode {
             "결제는 승인되었으며 주문 처리를 완료하고 있습니다. 완료되면 알려드리겠습니다."
     ),
     PAYMENT_STATUS_RETRIEVED(HttpStatus.OK, "결제 상태를 조회했습니다."),
+    PAYMENT_PENDING_ORDERS_RETRIEVED(
+            HttpStatus.OK,
+            "미확정 결제 목록을 조회했습니다."
+    ),
     PAYMENT_CANCELLATION_CREATED(
             HttpStatus.CREATED,
             "결제와 선물을 취소했습니다."

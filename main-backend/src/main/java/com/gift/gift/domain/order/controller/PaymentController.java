@@ -1,6 +1,7 @@
 package com.gift.gift.domain.order.controller;
 
 import java.time.Clock;
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
@@ -11,11 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
-import com.gift.gift.domain.order.dto.response.PaymentCancellationProcessingResponse;
-import com.gift.gift.domain.order.dto.response.PaymentCancellationResponse;
-import com.gift.gift.domain.order.dto.response.PaymentCreateResponse;
-import com.gift.gift.domain.order.dto.response.PaymentProcessingResponse;
-import com.gift.gift.domain.order.dto.response.PaymentStatusResponse;
+import com.gift.gift.domain.order.dto.response.*;
 import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
@@ -86,6 +83,21 @@ public class PaymentController {
         return ResponseEntity
                 .status(successCode.status())
                 .body(ApiResponse.success(successCode.message(), response));
+    }
+
+    @GetMapping("/pending")
+    public ResponseEntity<ApiResponse<List<PendingPaymentOrderResponse>>> getPendingPayments(
+            @CurrentUserId Long payerId
+    ) {
+        List<PendingPaymentOrderResponse> response =
+                paymentQueryService.getPendingPayments(payerId);
+
+        return ResponseEntity
+                .status(OrderSuccessCode.PAYMENT_PENDING_ORDERS_RETRIEVED.status())
+                .body(ApiResponse.success(
+                        OrderSuccessCode.PAYMENT_PENDING_ORDERS_RETRIEVED.message(),
+                        response
+                ));
     }
 
     @GetMapping("/{orderId}")
