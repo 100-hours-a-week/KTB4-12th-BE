@@ -1,6 +1,7 @@
 package com.gift.gift.domain.order.service;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
@@ -22,6 +23,9 @@ import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 @Service
 @RequiredArgsConstructor
 public class PaymentCancellationTransactionService {
+
+    private static final Duration SYNC_REQUEST_LEASE = Duration.ofSeconds(10);
+    private static final Duration FIRST_RECONCILIATION_DELAY = Duration.ofSeconds(5);
 
     private final PaymentCancellationRepository cancellationRepository;
     private final OrderRepository orderRepository;
@@ -52,15 +56,27 @@ public class PaymentCancellationTransactionService {
             throw new OrderException(OrderErrorCode.CANCELLATION_IN_PROGRESS);
         }
 
-        PaymentCancellation cancellation = new PaymentCancellation(
-                order.getId(),
-                requesterId,
-                source,
-                idempotencyKey,
-                requestHash
+        PaymentCancellation cancellation = cancellationRepository.saveAndFlush(
+                new PaymentCancellation(
+                        order.getId(),
+                        requesterId,
+                        source,
+                        idempotencyKey,
+                        requestHash
+                )
         );
 
-        return cancellationRepository.saveAndFlush(cancellation);
+        LocalDateTime now = LocalDateTime.now(clock);
+        cancellationRepository.startReconciliation(
+                cancellation.getId(),
+                now,
+                now.plus(SYNC_REQUEST_LEASE)
+        );
+
+        return cancellationRepository.findById(cancellation.getId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "결제 취소 원장을 찾을 수 없습니다."
+                ));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -72,18 +88,30 @@ public class PaymentCancellationTransactionService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordRemoteCancellation(
+    public boolean reserveRecoveryCancelPost(Long cancellationId, int maxAttempts) {
+        return cancellationRepository.reserveRecoveryCancelPost(
+                cancellationId,
+                maxAttempts,
+                LocalDateTime.now(clock)
+        ) == 1;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordPaymentServerCancellationResult(
             Long cancellationId,
             String transactionKey,
             long cancelAmount,
             LocalDateTime canceledAt
     ) {
+        LocalDateTime now = LocalDateTime.now(clock);
         int updated = cancellationRepository.storeRemoteResult(
                 cancellationId,
                 PaymentCancellationStatus.PENDING,
                 transactionKey,
                 cancelAmount,
-                canceledAt
+                canceledAt,
+                now,
+                now.plus(FIRST_RECONCILIATION_DELAY)
         );
 
         if (updated == 1) {
@@ -106,6 +134,20 @@ public class PaymentCancellationTransactionService {
                     "저장된 원격 취소 결과와 새 응답이 일치하지 않습니다."
             );
         }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void scheduleNext(
+            Long cancellationId,
+            PaymentCancellationFailureCode failureCode,
+            LocalDateTime nextAt
+    ) {
+        cancellationRepository.scheduleReconciliation(
+                cancellationId,
+                failureCode,
+                LocalDateTime.now(clock),
+                nextAt
+        );
     }
 
     private void claimGiftCancellation(Order requestedOrder) {
@@ -176,20 +218,20 @@ public class PaymentCancellationTransactionService {
             );
         }
 
-        cancellationRepository.markFailure(
+        LocalDateTime now = LocalDateTime.now(clock);
+        cancellationRepository.markUnconfirmed(
                 cancellationId,
                 PaymentCancellationStatus.PENDING,
                 failureCode,
-                LocalDateTime.now(clock)
+                now,
+                now.plus(FIRST_RECONCILIATION_DELAY)
         );
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markReconciliationRequired(Long cancellationId) {
-        cancellationRepository.markFailure(
+        cancellationRepository.requireReview(
                 cancellationId,
-                PaymentCancellationStatus.PENDING,
-                PaymentCancellationFailureCode.CANCELLATION_RECONCILIATION_REQUIRED,
                 LocalDateTime.now(clock)
         );
     }

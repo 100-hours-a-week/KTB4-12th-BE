@@ -32,4 +32,22 @@ public class PaymentReconciliationTransactionService {
 
         return updated == 1;
     }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean scheduleNext(
+            Long orderRecordId,
+            OrderFailureCode failureCode,
+            LocalDateTime nextAt
+    ) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        return orderRepository.scheduleUnknownReconciliation(
+                orderRecordId,
+                OrderStatus.PENDING,
+                PaymentApprovalResult.UNKNOWN,
+                OrderFailureCode.PAYMENT_RECONCILIATION_REQUIRED,
+                failureCode,
+                now,
+                nextAt
+        ) == 1;
+    }
 }

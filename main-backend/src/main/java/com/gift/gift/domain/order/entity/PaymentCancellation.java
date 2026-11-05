@@ -37,10 +37,16 @@ import com.gift.gift.global.common.BaseTimeEntity;
                         columnNames = "cancel_transaction_key"
                 )
         },
-        indexes = @Index(
-                name = "idx_payment_cancellations_order",
-                columnList = "order_record_id, created_at"
-        ),
+        indexes = {
+                @Index(
+                        name = "idx_payment_cancellations_order",
+                        columnList = "order_record_id, created_at"
+                ),
+                @Index(
+                        name = "idx_payment_cancellations_reconciliation_next_run",
+                        columnList = "cancellation_source, status, next_reconciliation_at, id"
+                )
+        },
         check = {
                 @CheckConstraint(
                         name = "chk_payment_cancellations_source",
@@ -111,6 +117,18 @@ public class PaymentCancellation extends BaseTimeEntity {
 
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
+
+    @Column(name = "reconciliation_started_at")
+    private LocalDateTime reconciliationStartedAt;
+
+    @Column(name = "next_reconciliation_at")
+    private LocalDateTime nextReconciliationAt;
+
+    @Column(name = "reconciliation_attempts", nullable = false)
+    private int reconciliationAttempts;
+
+    @Column(name = "recovery_cancel_post_attempts", nullable = false)
+    private int recoveryCancelPostAttempts;
 
     public PaymentCancellation(
             Long orderRecordId,

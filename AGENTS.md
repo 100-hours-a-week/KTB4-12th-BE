@@ -182,7 +182,9 @@ validateGift
 
 ---
 
-# 6. 클래스 네이밍
+# 6. 이름 짓기
+
+## 클래스 네이밍
 
 역할을 이름으로 명확하게 표현한다.
 
@@ -213,6 +215,40 @@ GiftData
 GiftInfo
 GiftObject
 ```
+
+## 변수 및 메서드 네이밍
+
+이름만 읽어도 대상 도메인, 실제 동작, 결과 또는 상태를 제3자가 이해할 수 있도록 작성한다. 짧게 만드는 것보다 의미를 분명히 하는 것을 우선하되, 호출 문맥에서 이미 명확한 정보를 불필요하게 반복하지 않는다.
+
+- 변수는 `data`, `value`, `info`, `result`, `response`처럼 의미가 넓은 이름만 단독으로 사용하지 않는다. 구체적인 도메인과 용도를 이름에 포함한다.
+- 메서드는 실제 부수 효과를 드러낸다. 외부 시스템 호출, DB 기록, 상태 변경을 서로 혼동하지 않도록 이름을 구분한다.
+- `process`, `handle`, `do`, `update`처럼 무엇을 처리하거나 변경하는지 알 수 없는 이름은 피한다.
+- `remote`, `local` 같은 상대적인 표현은 대상 시스템이 문맥에서 명확할 때만 사용한다. 필요하면 시스템 또는 도메인명을 이름에 포함한다.
+- 조건을 반환하는 메서드는 조건의 대상을 분명히 한다. `is`, `has`, `should`, `exists` 등 일반적인 형태를 사용하고, `can`은 실제 수행 권한이나 능력을 묻는 의미일 때 사용한다.
+- Repository 또는 Service 메서드의 동사는 프로젝트에서 널리 쓰이는 동작을 따른다. 예를 들어 조회는 `find`, 생성은 `create`, 저장은 `save` 또는 `record`, 점유는 `claim`, 완료 처리는 `complete`, 상태 변경은 `mark`처럼 표현한다.
+
+예:
+
+```java
+// Payment Server 응답을 Main Backend의 취소 원장에 기록한다.
+recordPaymentServerCancellationResult(...)
+
+// 외부 취소 요청을 보내는 동작을 표현한다.
+requestPaymentCancellation(...)
+
+// 모호한 이름은 피한다.
+recordRemoteCancellation(...)
+processCancellation(...)
+```
+
+변수도 같은 기준으로 구체화한다.
+
+```java
+PaymentCancelResponse paymentServerCancellationResponse;
+LocalDateTime nextReconciliationAt;
+```
+
+이름을 변경할 때는 관련 호출부, 테스트, DTO·직렬화 규약, 공개 API 등 이름에 의존하는 범위를 확인한다. 특히 JSON 필드명이나 API 계약에 노출된 이름은 내부 변수 이름 변경만으로 함께 바꾸지 않는다.
 
 ---
 

@@ -50,9 +50,7 @@ public class PaymentCancellationService {
 
         if (cancellation.getStatus()
                 == PaymentCancellationStatus.DECLINED) {
-            throw new OrderException(
-                    OrderErrorCode.CANCELLATION_DECLINED
-            );
+            throw new OrderException(OrderErrorCode.CANCELLATION_DECLINED);
         }
 
         if (cancellation.getStatus()
@@ -62,7 +60,6 @@ public class PaymentCancellationService {
             );
         }
 
-        // 사용자 취소만 한 실행에서 전송하고, 자동 취소는 기존 재시도를 유지한다.
         boolean sendRequest = source != CancellationSource.USER
                 || transactionService.claimUserRequest(cancellation.getId());
         PaymentCancelResponse response = sendRequest
@@ -94,6 +91,13 @@ public class PaymentCancellationService {
                 source
         );
 
+        transactionService.recordPaymentServerCancellationResult(
+                approval.cancellation().getId(),
+                approval.transactionKey(),
+                approval.cancelAmount(),
+                approval.canceledAt()
+        );
+
         try {
             return compensationService.compensate(approval);
         } catch (RuntimeException exception) {
@@ -116,24 +120,20 @@ public class PaymentCancellationService {
             );
         } catch (PaymentClientException exception) {
             if (isResultUnconfirmed(exception.failure()) || exception.outcomeUncertain()) {
-                return recoverCancellation(
-                        cancellation,
-                        order
-                );
+                return recoverCancellation(cancellation, order);
             }
 
             boolean cancellationDeclined = exception.failure()
                     == PaymentClientFailure.CANCELLATION_DECLINED
                     && cancellation.getCancellationSource()
                     != CancellationSource.LOCAL_PROCESSING_FAILURE;
-            boolean userRequestRejected = cancellation.getCancellationSource() == CancellationSource.USER
+            boolean userRequestRejected = cancellation.getCancellationSource()
+                    == CancellationSource.USER
                     && (exception.failure() == PaymentClientFailure.AUTHENTICATION_FAILED
                     || exception.failure() == PaymentClientFailure.INVALID_REQUEST);
 
             if (cancellationDeclined || userRequestRejected) {
-                transactionService.markDeclined(
-                        cancellation.getId()
-                );
+                transactionService.markDeclined(cancellation.getId());
             }
 
             throw convertClientFailure(exception);
@@ -152,10 +152,7 @@ public class PaymentCancellationService {
                     cancellation.getIdempotencyKey()
             );
         } catch (PaymentClientException exception) {
-            markResultUnconfirmed(
-                    cancellation,
-                    exception.failure()
-            );
+            markResultUnconfirmed(cancellation, exception.failure());
 
             throw new OrderException(
                     OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED,
@@ -166,8 +163,7 @@ public class PaymentCancellationService {
         if (!isValidResponse(order, response)) {
             transactionService.markResultUnconfirmed(
                     cancellation.getId(),
-                    PaymentCancellationFailureCode
-                            .CANCELLATION_RESULT_UNCONFIRMED
+                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
             );
 
             throw new OrderException(
@@ -248,19 +244,14 @@ public class PaymentCancellationService {
         );
     }
 
-    private boolean isResultUnconfirmed(
-            PaymentClientFailure failure
-    ) {
+    private boolean isResultUnconfirmed(PaymentClientFailure failure) {
         return failure
                 == PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
                 || failure
                 == PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE;
     }
 
-    private void validateResponse(
-            Order order,
-            PaymentCancelResponse response
-    ) {
+    private void validateResponse(Order order, PaymentCancelResponse response) {
         if (!isValidResponse(order, response)) {
             throw new OrderException(
                     OrderErrorCode.CANCELLATION_PROCESSING_FAILED
@@ -268,23 +259,11 @@ public class PaymentCancellationService {
         }
     }
 
-    private boolean isValidResponse(
-            Order order,
-            PaymentCancelResponse response
-    ) {
+    private boolean isValidResponse(Order order, PaymentCancelResponse response) {
         return response != null
-                && Objects.equals(
-                order.getOrderId(),
-                response.orderId()
-        )
-                && Objects.equals(
-                order.getPaymentKey(),
-                response.paymentKey()
-        )
-                && Objects.equals(
-                order.getAmount(),
-                response.cancelAmount()
-        )
+                && Objects.equals(order.getOrderId(), response.orderId())
+                && Objects.equals(order.getPaymentKey(), response.paymentKey())
+                && Objects.equals(order.getAmount(), response.cancelAmount())
                 && response.status() == PaymentServerStatus.CANCELED
                 && hasText(response.transactionKey())
                 && response.canceledAt() != null;

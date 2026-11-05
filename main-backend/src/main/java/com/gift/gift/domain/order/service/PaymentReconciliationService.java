@@ -26,6 +26,8 @@ import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
 @Service
 public class PaymentReconciliationService {
 
+    private static final Duration UNCLAIMED_ORDER_LEASE = Duration.ofSeconds(10);
+
     private final OrderRepository orderRepository;
     private final PaymentClient paymentClient;
     private final OrderApprovalTransactionService approvalService;
@@ -33,6 +35,7 @@ public class PaymentReconciliationService {
     private final PaymentLocalCompletionRetry localCompletionRetry;
     private final PaymentAutoCancellationService autoCancellationService;
     private final PaymentReconciliationTransactionService transactionService;
+    private final PaymentCancellationReconciliationService cancellationReconciliationService;
     private final Clock clock;
     private final int batchSize;
     private final Duration staleAge;
@@ -46,6 +49,7 @@ public class PaymentReconciliationService {
             PaymentLocalCompletionRetry localCompletionRetry,
             PaymentAutoCancellationService autoCancellationService,
             PaymentReconciliationTransactionService transactionService,
+            PaymentCancellationReconciliationService cancellationReconciliationService,
             Clock clock,
             @Value("${app.payment.reconciliation.batch-size:100}") int batchSize,
             @Value("${app.payment.reconciliation.stale-age:PT1M}") Duration staleAge,
@@ -58,6 +62,7 @@ public class PaymentReconciliationService {
         this.localCompletionRetry = localCompletionRetry;
         this.autoCancellationService = autoCancellationService;
         this.transactionService = transactionService;
+        this.cancellationReconciliationService = cancellationReconciliationService;
         this.clock = clock;
         this.batchSize = batchSize;
         this.staleAge = staleAge;
@@ -66,9 +71,27 @@ public class PaymentReconciliationService {
 
     public void reconcilePendingPayments() {
         LocalDateTime now = LocalDateTime.now(clock);
-        List<Order> candidates = orderRepository.findReconciliationCandidates(
+
+        List<Order> unknownOrders = orderRepository.findDueUnknownPayments(
+                now,
+                now.minus(UNCLAIMED_ORDER_LEASE),
+                PageRequest.of(0, batchSize)
+        );
+
+        for (Order order : unknownOrders) {
+            try {
+                reconcileUnknown(order, now);
+            } catch (RuntimeException exception) {
+                log.error(
+                        "결제 승인 결과 재조정에 실패했습니다. orderId={}",
+                        order.getOrderId(),
+                        exception
+                );
+            }
+        }
+
+        List<Order> approvedOrders = orderRepository.findStaleApprovedPayments(
                 OrderStatus.PENDING,
-                PaymentApprovalResult.UNKNOWN,
                 PaymentApprovalResult.APPROVED,
                 OrderFailureCode.PAYMENT_RECONCILIATION_REQUIRED,
                 OrderFailureCode.AUTO_CANCELLATION_RECONCILIATION_REQUIRED,
@@ -76,34 +99,52 @@ public class PaymentReconciliationService {
                 PageRequest.of(0, batchSize)
         );
 
-        for (Order order : candidates) {
+        for (Order order : approvedOrders) {
             try {
-                reconcile(order, now);
+                reconcileApproved(order, now);
             } catch (RuntimeException exception) {
                 log.error(
-                        "결제 재조정에 실패했습니다. orderId={}",
+                        "승인 후 로컬 처리를 재개하지 못했습니다. orderId={}",
                         order.getOrderId(),
                         exception
                 );
             }
         }
-    }
 
-    private void reconcile(Order order, LocalDateTime now) {
-        if (order.getApprovalResult() == PaymentApprovalResult.APPROVED) {
-            reconcileApproved(order, now);
-            return;
-        }
-
-        reconcileUnknown(order, now);
+        cancellationReconciliationService.reconcilePendingCancellations();
     }
 
     private void reconcileUnknown(Order order, LocalDateTime now) {
+        boolean expired = isExpired(order, now);
+
         try {
             PaymentResponse response = paymentClient.getByOrderId(order.getOrderId());
 
-            if (response != null && response.status() == PaymentServerStatus.COMPLETED) {
-                validateCompletedResponse(order, response);
+            if (response == null) {
+                scheduleOrRequireReview(order, now, expired,
+                        OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
+                return;
+            }
+
+            if (!matchesOrderIdentity(order, response)) {
+                transactionService.markRequired(order.getId());
+                log.error(
+                        "결제 상태 조회 응답의 주문 정보가 일치하지 않아 운영 확인 대상으로 전환했습니다. orderId={}",
+                        order.getOrderId()
+                );
+                return;
+            }
+
+            if (response.status() == PaymentServerStatus.COMPLETED) {
+                if (!isValidCompletedResponse(response)) {
+                    transactionService.markRequired(order.getId());
+                    log.error(
+                            "승인 완료 응답의 필수 값이 없어 운영 확인 대상으로 전환했습니다. orderId={}",
+                            order.getOrderId()
+                    );
+                    return;
+                }
+
                 approvalService.record(
                         order.getId(),
                         response.paymentKey(),
@@ -114,49 +155,77 @@ public class PaymentReconciliationService {
                 return;
             }
 
-            if (response != null && response.status() == PaymentServerStatus.DECLINED) {
+            if (response.status() == PaymentServerStatus.DECLINED) {
                 approvalService.decline(order.getId());
                 return;
             }
 
-            keepUnknownOrRequireReview(order, now, OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
+            scheduleOrRequireReview(order, now, expired,
+                    OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
         } catch (PaymentClientException exception) {
             OrderFailureCode failureCode =
                     exception.failure() == PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE
                             ? OrderFailureCode.PAYMENT_SERVER_UNAVAILABLE
                             : OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED;
 
-            keepUnknownOrRequireReview(order, now, failureCode);
+            scheduleOrRequireReview(order, now, expired, failureCode);
         } catch (RuntimeException exception) {
-            if (isExpired(order, now)) {
+            if (expired) {
                 transactionService.markRequired(order.getId());
                 log.error(
-                        "결제 조회 결과 검증 실패로 운영 확인 대상으로 전환했습니다. orderId={}",
+                        "만료 시점의 승인 상태 조회 또는 검증을 완료하지 못해 운영 확인 대상으로 전환했습니다. orderId={}",
                         order.getOrderId(),
                         exception
                 );
                 return;
             }
 
+            scheduleNext(order, now, OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
             throw exception;
         }
     }
 
-    private void keepUnknownOrRequireReview(
+    private void scheduleOrRequireReview(
             Order order,
             LocalDateTime now,
+            boolean expired,
             OrderFailureCode failureCode
     ) {
-        if (isExpired(order, now)) {
+        if (expired) {
             transactionService.markRequired(order.getId());
             return;
         }
 
-        approvalService.markUnknown(order.getId(), failureCode);
+        scheduleNext(order, now, failureCode);
+    }
+
+    private void scheduleNext(
+            Order order,
+            LocalDateTime now,
+            OrderFailureCode failureCode
+    ) {
+        transactionService.scheduleNext(
+                order.getId(),
+                failureCode,
+                now.plus(nextDelay(order.getReconciliationAttempts()))
+        );
+    }
+
+    private Duration nextDelay(int completedReconciliationAttempts) {
+        return switch (Math.min(completedReconciliationAttempts, 3)) {
+            case 0 -> Duration.ofSeconds(15);
+            case 1 -> Duration.ofSeconds(30);
+            default -> Duration.ofSeconds(60);
+        };
     }
 
     private boolean isExpired(Order order, LocalDateTime now) {
-        return !order.getCreatedAt().plus(timeout).isAfter(now);
+        LocalDateTime startedAt = order.getReconciliationStartedAt() != null
+                ? order.getReconciliationStartedAt()
+                : order.getCreatedAt();
+
+        return startedAt != null
+                && !startedAt.plus(timeout).isAfter(now);
     }
 
     private void reconcileApproved(Order order, LocalDateTime now) {
@@ -211,17 +280,16 @@ public class PaymentReconciliationService {
                 || failureType == LocalPaymentFailureType.UNKNOWN;
     }
 
-    private void validateCompletedResponse(Order order, PaymentResponse response) {
-        boolean valid = Objects.equals(order.getOrderId(), response.orderId())
-                && Objects.equals(order.getAmount(), response.amount())
-                && response.status() == PaymentServerStatus.COMPLETED
+    private boolean matchesOrderIdentity(Order order, PaymentResponse response) {
+        return Objects.equals(order.getOrderId(), response.orderId())
+                && Objects.equals(order.getAmount(), response.amount());
+    }
+
+    private boolean isValidCompletedResponse(PaymentResponse response) {
+        return response.status() == PaymentServerStatus.COMPLETED
                 && hasText(response.paymentKey())
                 && hasText(response.transactionKey())
                 && response.approvedAt() != null;
-
-        if (!valid) {
-            throw new IllegalStateException("Payment Server 조회 결과가 기존 주문과 일치하지 않습니다.");
-        }
     }
 
     private boolean hasText(String value) {
