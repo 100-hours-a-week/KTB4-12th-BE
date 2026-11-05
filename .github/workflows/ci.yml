@@ -88,7 +88,21 @@ jobs:
           docker info
 
       - name: Run unit tests
-        run: ./gradlew --no-daemon :main-backend:test :payment-server:test
+        shell: bash
+        run: |
+          # Maven Central의 429만 재시도하고 실제 테스트 실패는 즉시 전파한다.
+          for attempt in 1 2 3; do
+            if ./gradlew --no-daemon :main-backend:test :payment-server:test 2>&1 | tee "$RUNNER_TEMP/gradle-tests.log"; then
+              exit 0
+            fi
+            if ! grep -Fq 'Received status code 429 from server: Too Many Requests' "$RUNNER_TEMP/gradle-tests.log"; then
+              exit 1
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep "$((attempt * 20))"
+            fi
+          done
+          exit 1
 
       - name: Build executable JARs
         run: ./gradlew --no-daemon :main-backend:bootJar :payment-server:bootJar

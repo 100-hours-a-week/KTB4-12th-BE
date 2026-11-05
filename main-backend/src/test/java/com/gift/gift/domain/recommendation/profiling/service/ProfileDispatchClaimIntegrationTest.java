@@ -47,7 +47,9 @@ import static org.mockito.Mockito.*;
 @SpringBootTest(properties = {
         "app.scheduling.enabled=false",
         "app.ai-profile.scheduling-enabled=false",
-        "app.ai-profile.dispatch-claim-timeout=2m"
+        "app.ai-profile.dispatch-claim-timeout=2m",
+        "app.ai-profile.quiet-period=1h",
+        "app.ai-profile.maximum-window=6h"
 })
 class ProfileDispatchClaimIntegrationTest {
     // 다른 테스트가 남긴 최근 일반 후보와 시간을 분리한다.

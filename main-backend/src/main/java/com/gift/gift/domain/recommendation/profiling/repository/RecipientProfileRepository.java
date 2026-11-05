@@ -18,6 +18,9 @@ import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfileStat
 public interface RecipientProfileRepository
         extends JpaRepository<RecipientProfile, Long> {
 
+    @Query("select profile.recipient.id from RecipientProfile profile where profile.id = :profileId")
+    Optional<Long> findRecipientIdByProfileId(@Param("profileId") Long profileId);
+
     Optional<RecipientProfile> findByRecipient_Id(Long recipientId);
 
     boolean existsByRecipient_Id(Long recipientId);

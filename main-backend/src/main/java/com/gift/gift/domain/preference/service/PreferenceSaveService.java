@@ -53,7 +53,10 @@ public class PreferenceSaveService {
     @Transactional
     public GiftPreferenceResponse saveGiftPreference(Long userId, String preference) {
         User user = userQueryService.findActiveUserForUpdate(userId)
-                .orElseThrow(() -> new PreferenceException(ErrorCode.USER_NOT_FOUND));
+                .orElseThrow(() -> new PreferenceException(
+                        ErrorCode.USER_NOT_FOUND
+                ));
+        RecipientProfile profile = lockProfile(userId);
         String normalized = preference == null ? null : preference.strip();
         if (normalized != null && normalized.isEmpty()) {
             normalized = null;
@@ -76,7 +79,7 @@ public class PreferenceSaveService {
             changed = true;
         }
         if (changed) {
-            recordProfileChange(userId, LocalDateTime.now(clock), user);
+            profile.recordPreferenceChange(LocalDateTime.now(clock));
         }
         return GiftPreferenceResponse.from(normalized);
     }
@@ -92,6 +95,8 @@ public class PreferenceSaveService {
                 .orElseThrow(() -> new PreferenceException(
                         ErrorCode.USER_NOT_FOUND
                 ));
+
+        RecipientProfile profile = lockProfile(userId);
 
         List<Category> requestedCategories = categoryIds.isEmpty()
                 ? List.of()
@@ -153,7 +158,7 @@ public class PreferenceSaveService {
         }
 
         if (selectionChanged) {
-            recordProfileChange(userId, now, user);
+            profile.recordPreferenceChange(now);
         }
 
         return SaveDislikeCategoriesResponse.from(categoryIds);
@@ -185,19 +190,6 @@ public class PreferenceSaveService {
         ));
     }
 
-    private void recordProfileChange(
-            Long userId,
-            LocalDateTime changedAt,
-            User user
-    ) {
-        RecipientProfile profile = recipientProfileRepository
-                .findByRecipientIdForUpdate(userId)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("사용자의 기본 프로필이 존재하지 않습니다.")
-                );
-        profile.recordPreferenceChange(changedAt);
-    }
-
     private void validateCount(List<Long> categoryIds) {
         if (categoryIds.size() > PreferencePolicy.MAX_SELECTABLE_COUNT) {
             throw new PreferenceException(
@@ -221,5 +213,13 @@ public class PreferenceSaveService {
                     ErrorCode.DISLIKE_CATEGORY_NOT_AVAILABLE
             );
         }
+    }
+
+    private RecipientProfile lockProfile(Long userId) {
+        return recipientProfileRepository
+                .findByRecipientIdForUpdate(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "사용자의 기본 프로필이 존재하지 않습니다."
+                ));
     }
 }
