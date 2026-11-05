@@ -43,7 +43,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("integration")
-@SpringBootTest
+@SpringBootTest(properties = {
+        "app.scheduling.enabled=false",
+        "app.ai-profile.scheduling-enabled=false",
+        "app.ai-profile.quiet-period=1h",
+        "app.ai-profile.maximum-window=6h"
+})
 class ProfileDispatchServiceIntegrationTest {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");

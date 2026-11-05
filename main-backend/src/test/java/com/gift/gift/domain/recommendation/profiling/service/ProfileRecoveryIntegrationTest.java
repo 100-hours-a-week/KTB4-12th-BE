@@ -42,7 +42,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @SpringBootTest(properties = {"app.scheduling.enabled=false", "app.ai-profile.scheduling-enabled=false",
-        "app.ai-profile.recovery-batch-size=1"})
+        "app.ai-profile.recovery-batch-size=1",
+        "app.ai-profile.quiet-period=1h", "app.ai-profile.maximum-window=6h"})
 class ProfileRecoveryIntegrationTest {
     // 다른 통합 테스트가 커밋한 최근 PENDING 행과 후보 시간을 분리한다.
     private static final Instant NOW = Instant.parse("2001-01-01T03:00:00Z");

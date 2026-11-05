@@ -29,6 +29,14 @@
 
 검증 코드는 `ProfilingMessageSerializerTest`, `ProfilingJobTest`, `ProfilingJobPreparationIntegrationTest`에 둔다. MySQL에서 중복 제약·원자적 롤백·동시 준비·입력 변경 경쟁을 검증한다.
 
+## 테스트 환경과 CI 검증
+
+프로파일링 시간 경계 테스트는 `@SpringBootTest(properties=...)`에서 quiet-period=1h·maximum-window=6h를 명시한다. 개발 셸의 APP_AIPROFILE_QUIETPERIOD·APP_AIPROFILE_MAXIMUMWINDOW가 application.yaml보다 우선하므로, 개발용 10초·60초 설정이 테스트의 시간 가정을 바꾸지 않도록 한다.
+
+상품 검색 비활성화 테스트는 실제 관리 포트의 health를 조회한다. 모니터링 보안 테스트는 외부 ES health를 비활성화해 인증·포트 검증을 외부 ES 가용성과 분리한다. 운영 health 설정은 변경하지 않는다.
+
+GitHub Actions는 Gradle 의존성 다운로드가 Maven Central 429로 실패했을 때만 최대 3회(20초·40초 대기) 재시도한다. 컴파일·테스트 실패와 그 외 오류는 즉시 전파한다.
+
 ## 전송 흐름
 
 1. 스케줄러의 한 번 실행(틱) 시작에 AI `/health`를 한 번 확인한다.
