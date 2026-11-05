@@ -40,7 +40,11 @@ import com.gift.gift.global.common.BaseTimeEntity;
         },
         indexes = {
                 @Index(name = "idx_orders_payer_created", columnList = "payer_id, created_at, id"),
-                @Index(name = "idx_orders_status_updated", columnList = "status, updated_at")
+                @Index(name = "idx_orders_status_updated", columnList = "status, updated_at"),
+                @Index(
+                        name = "idx_orders_reconciliation_next_run",
+                        columnList = "status, approval_result, next_reconciliation_at, id"
+                )
         },
         check = {
                 @CheckConstraint(name = "chk_orders_quantity", constraint = "quantity BETWEEN 1 AND 10"),
@@ -134,6 +138,15 @@ public class Order extends BaseTimeEntity {
 
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
+
+    @Column(name = "reconciliation_started_at")
+    private LocalDateTime reconciliationStartedAt;
+
+    @Column(name = "next_reconciliation_at")
+    private LocalDateTime nextReconciliationAt;
+
+    @Column(name = "reconciliation_attempts", nullable = false)
+    private int reconciliationAttempts;
 
     public Order(
             String orderId,

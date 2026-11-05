@@ -30,6 +30,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("""
             update Order orders
             set orders.approvalResult = com.gift.gift.domain.order.entity.PaymentApprovalResult.UNKNOWN,
+                orders.reconciliationStartedAt = coalesce(orders.reconciliationStartedAt, :updatedAt),
+                orders.nextReconciliationAt = :nextReconciliationAt,
                 orders.updatedAt = :updatedAt
             where orders.id = :orderRecordId
               and orders.status = com.gift.gift.domain.order.entity.OrderStatus.PENDING
@@ -37,7 +39,69 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             """)
     int claimApproval(
             @Param("orderRecordId") Long orderRecordId,
-            @Param("updatedAt") LocalDateTime updatedAt
+            @Param("updatedAt") LocalDateTime updatedAt,
+            @Param("nextReconciliationAt") LocalDateTime nextReconciliationAt
+    );
+
+    default int claimApproval(Long orderRecordId, LocalDateTime updatedAt) {
+        return claimApproval(orderRecordId, updatedAt, updatedAt.plusSeconds(10));
+    }
+
+    @Query("""
+            select orders
+            from Order orders
+            where orders.status = com.gift.gift.domain.order.entity.OrderStatus.PENDING
+              and (
+                    (
+                        orders.approvalResult =
+                            com.gift.gift.domain.order.entity.PaymentApprovalResult.UNKNOWN
+                        and orders.nextReconciliationAt is not null
+                        and orders.nextReconciliationAt <= :now
+                    )
+                    or (
+                        orders.approvalResult is null
+                        and orders.createdAt <= :unclaimedBefore
+                    )
+              )
+              and (
+                    orders.failureCode is null
+                    or (
+                        orders.failureCode <>
+                            com.gift.gift.domain.order.entity.OrderFailureCode.PAYMENT_RECONCILIATION_REQUIRED
+                        and orders.failureCode <>
+                            com.gift.gift.domain.order.entity.OrderFailureCode.AUTO_CANCELLATION_RECONCILIATION_REQUIRED
+                    )
+              )
+            order by orders.nextReconciliationAt asc, orders.createdAt asc, orders.id asc
+            """)
+    List<Order> findDueUnknownPayments(
+            @Param("now") LocalDateTime now,
+            @Param("unclaimedBefore") LocalDateTime unclaimedBefore,
+            Pageable pageable
+    );
+
+    @Query("""
+            select orders
+            from Order orders
+            where orders.status = :pendingStatus
+              and orders.approvalResult = :approvedResult
+              and orders.updatedAt <= :staleBefore
+              and (
+                    orders.failureCode is null
+                    or (
+                        orders.failureCode <> :reconciliationRequired
+                        and orders.failureCode <> :autoCancellationRequired
+                    )
+              )
+            order by orders.updatedAt asc, orders.id asc
+            """)
+    List<Order> findStaleApprovedPayments(
+            @Param("pendingStatus") OrderStatus pendingStatus,
+            @Param("approvedResult") PaymentApprovalResult approvedResult,
+            @Param("reconciliationRequired") OrderFailureCode reconciliationRequired,
+            @Param("autoCancellationRequired") OrderFailureCode autoCancellationRequired,
+            @Param("staleBefore") LocalDateTime staleBefore,
+            Pageable pageable
     );
 
     @Query("""
@@ -80,6 +144,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                 orders.approvalResult = :approvalResult,
                 orders.approvedAt = :approvedAt,
                 orders.failureCode = null,
+                orders.nextReconciliationAt = null,
                 orders.updatedAt = :updatedAt
             where orders.id = :orderRecordId
               and orders.status = :pendingStatus
@@ -107,6 +172,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             update Order orders
             set orders.status = :completedStatus,
                 orders.failureCode = null,
+                orders.nextReconciliationAt = null,
                 orders.updatedAt = :completedAt
             where orders.id = :orderRecordId
               and orders.status = :pendingStatus
@@ -134,6 +200,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         set orders.status = :declinedStatus,
             orders.approvalResult = :declinedResult,
             orders.failureCode = :failureCode,
+            orders.nextReconciliationAt = null,
             orders.updatedAt = :declinedAt
         where orders.id = :orderRecordId
           and orders.status = :pendingStatus
@@ -160,6 +227,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             update Order orders
             set orders.approvalResult = :unknownResult,
                 orders.failureCode = :failureCode,
+                orders.reconciliationStartedAt = coalesce(orders.reconciliationStartedAt, :updatedAt),
+                orders.nextReconciliationAt = :nextReconciliationAt,
                 orders.updatedAt = :updatedAt
             where orders.id = :orderRecordId
               and orders.status = :pendingStatus
@@ -168,15 +237,31 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                     or orders.approvalResult = :unknownResult
               )
             """)
-    // Payment Server의 최종 승인 결과를 BE가 확정할 수 없을 때 사용
-    // Payment Server -> BE 로 결제 승인 완료 응답 전송 과정에서 타임아웃이나 연결 종료인 경우
     int markUnknown(
             @Param("orderRecordId") Long orderRecordId,
             @Param("pendingStatus") OrderStatus pendingStatus,
             @Param("unknownResult") PaymentApprovalResult unknownResult,
             @Param("failureCode") OrderFailureCode failureCode,
-            @Param("updatedAt") LocalDateTime updatedAt
+            @Param("updatedAt") LocalDateTime updatedAt,
+            @Param("nextReconciliationAt") LocalDateTime nextReconciliationAt
     );
+
+    default int markUnknown(
+            Long orderRecordId,
+            OrderStatus pendingStatus,
+            PaymentApprovalResult unknownResult,
+            OrderFailureCode failureCode,
+            LocalDateTime updatedAt
+    ) {
+        return markUnknown(
+                orderRecordId,
+                pendingStatus,
+                unknownResult,
+                failureCode,
+                updatedAt,
+                updatedAt.plusSeconds(5)
+        );
+    }
 
     @Modifying(
             flushAutomatically = true,
@@ -190,7 +275,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
               and orders.status = :pendingStatus
               and orders.approvalResult = :approvedResult
             """)
-    // Payment Server의 결제 승인을 BE가 확인했으나, BE에서 후속 처리 실패했을 때 사용
     int markLocalFailure(
             @Param("orderRecordId") Long orderRecordId,
             @Param("pendingStatus") OrderStatus pendingStatus,
@@ -204,6 +288,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             update Order orders
             set orders.approvalResult = :unknownResult,
                 orders.failureCode = :reconciliationRequired,
+                orders.nextReconciliationAt = null,
                 orders.updatedAt = :updatedAt
             where orders.id = :orderRecordId
               and orders.status = :pendingStatus
@@ -232,6 +317,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         update Order orders
         set orders.status = :canceledStatus,
             orders.failureCode = null,
+            orders.nextReconciliationAt = null,
             orders.canceledAt = :canceledAt,
             orders.updatedAt = :canceledAt
         where orders.id = :orderRecordId
@@ -249,6 +335,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             update Order orders
             set orders.status = :canceledStatus,
                 orders.failureCode = :failureCode,
+                orders.nextReconciliationAt = null,
                 orders.canceledAt = :canceledAt,
                 orders.updatedAt = :canceledAt
             where orders.id = :orderRecordId
@@ -300,6 +387,31 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("approvedResult") PaymentApprovalResult approvedResult,
             @Param("failureCode") OrderFailureCode failureCode,
             @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update Order orders
+            set orders.failureCode = :failureCode,
+                orders.nextReconciliationAt = :nextReconciliationAt,
+                orders.reconciliationAttempts = orders.reconciliationAttempts + 1,
+                orders.updatedAt = :updatedAt
+            where orders.id = :orderRecordId
+              and orders.status = :pendingStatus
+              and orders.approvalResult = :unknownResult
+              and (
+                    orders.failureCode is null
+                    or orders.failureCode <> :reconciliationRequired
+              )
+            """)
+    int scheduleUnknownReconciliation(
+            @Param("orderRecordId") Long orderRecordId,
+            @Param("pendingStatus") OrderStatus pendingStatus,
+            @Param("unknownResult") PaymentApprovalResult unknownResult,
+            @Param("reconciliationRequired") OrderFailureCode reconciliationRequired,
+            @Param("failureCode") OrderFailureCode failureCode,
+            @Param("updatedAt") LocalDateTime updatedAt,
+            @Param("nextReconciliationAt") LocalDateTime nextReconciliationAt
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
