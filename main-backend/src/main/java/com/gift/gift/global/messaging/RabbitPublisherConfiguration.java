@@ -1,0 +1,30 @@
+package com.gift.gift.global.messaging;
+
+import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+
+@org.springframework.boot.context.properties.EnableConfigurationProperties(RabbitRoutingProperties.class)
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnProperty(name = "app.outbox.enabled", havingValue = "true")
+public class RabbitPublisherConfiguration {
+    @Bean
+    public RabbitTemplate outboxRabbitTemplate(CachingConnectionFactory connectionFactory) {
+        connectionFactory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
+        connectionFactory.setPublisherReturns(true);
+        RabbitTemplate template = new RabbitTemplate(connectionFactory);
+        template.setMandatory(true);
+        return template;
+    }
+
+    @Bean(defaultCandidate = false)
+    public ThreadPoolTaskScheduler outboxTaskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(2);
+        scheduler.setThreadNamePrefix("outbox-");
+        return scheduler;
+    }
+}

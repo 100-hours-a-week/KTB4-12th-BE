@@ -67,6 +67,15 @@ storage:
 
 app:
   outbox:
+    enabled: ${OUTBOX_ENABLED:false}
+    rabbit:
+      exchange: ${OUTBOX_RABBIT_EXCHANGE:}
+      notification-routing-key: ${OUTBOX_NOTIFICATION_ROUTING_KEY:}
+      search-routing-key: ${OUTBOX_SEARCH_ROUTING_KEY:}
+    notification-batch-size: ${OUTBOX_NOTIFICATION_BATCH_SIZE:10}
+    search-batch-size: ${OUTBOX_SEARCH_BATCH_SIZE:10}
+    confirm-timeout-ms: ${OUTBOX_CONFIRM_TIMEOUT_MS:5000}
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:1000}
     lease-seconds: ${OUTBOX_LEASE_SECONDS:60}
     max-failures: ${OUTBOX_MAX_FAILURES:10}
     retry-base-seconds: ${OUTBOX_RETRY_BASE_SECONDS:2}
@@ -172,6 +181,8 @@ app:
 
 management:
   health:
+    rabbit:
+      enabled: ${app.outbox.enabled:false}
     elasticsearch:
       enabled: ${app.product-search.enabled:false}
   endpoints:
