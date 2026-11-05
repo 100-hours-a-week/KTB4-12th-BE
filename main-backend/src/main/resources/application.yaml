@@ -66,6 +66,11 @@ storage:
     bucket: ${PRODUCT_IMAGE_BUCKET}
 
 app:
+  outbox:
+    lease-seconds: ${OUTBOX_LEASE_SECONDS:60}
+    max-failures: ${OUTBOX_MAX_FAILURES:10}
+    retry-base-seconds: ${OUTBOX_RETRY_BASE_SECONDS:2}
+    retry-max-seconds: ${OUTBOX_RETRY_MAX_SECONDS:300}
   redis:
     auth:
       host: ${REDIS_AUTH_HOST:${REDIS_HOST:localhost}}
