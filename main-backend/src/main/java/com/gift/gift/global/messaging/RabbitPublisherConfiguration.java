@@ -2,6 +2,7 @@ package com.gift.gift.global.messaging;
 
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,9 +13,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 @ConditionalOnProperty(name = "app.outbox.enabled", havingValue = "true")
 public class RabbitPublisherConfiguration {
     @Bean
-    public RabbitTemplate outboxRabbitTemplate(CachingConnectionFactory connectionFactory) {
-        connectionFactory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
-        connectionFactory.setPublisherReturns(true);
+    public RabbitTemplate outboxRabbitTemplate(
+            @Qualifier("rabbitConnectionFactory") CachingConnectionFactory connectionFactory) {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMandatory(true);
         return template;

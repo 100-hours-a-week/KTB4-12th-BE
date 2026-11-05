@@ -24,6 +24,8 @@ class RabbitPublisherIntegrationTest {
             CachingConnectionFactory connection =
                     new CachingConnectionFactory(rabbit.getHost(), rabbit.getMappedPort(5672));
             try {
+                connection.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
+                connection.setPublisherReturns(true);
                 RabbitPublisherConfiguration topology = new RabbitPublisherConfiguration();
                 var template = topology.outboxRabbitTemplate(connection);
                 RabbitAdmin admin = new RabbitAdmin(connection);

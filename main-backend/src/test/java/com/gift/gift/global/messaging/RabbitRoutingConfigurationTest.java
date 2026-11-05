@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RabbitRoutingConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withUserConfiguration(RabbitPublisherConfiguration.class)
-            .withBean(CachingConnectionFactory.class, CachingConnectionFactory::new);
+            .withBean("rabbitConnectionFactory", CachingConnectionFactory.class, CachingConnectionFactory::new);
 
     @Test
     @DisplayName("비활성 시 라우팅 설정 없이 기동하고 활성 시 미확정 라우팅은 거부한다")

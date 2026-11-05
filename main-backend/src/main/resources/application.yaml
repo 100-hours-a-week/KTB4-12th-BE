@@ -1,4 +1,16 @@
 spring:
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:127.0.0.1}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:}
+    password: ${SPRING_RABBITMQ_PASSWORD:}
+    virtual-host: ${SPRING_RABBITMQ_VIRTUAL_HOST:profiling}
+    connection-timeout: 3s
+    requested-heartbeat: 20s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    dynamic: false
+
   application:
     name: gift
 
@@ -161,14 +173,6 @@ app:
     amqp:
       enabled: ${AI_PROFILE_AMQP_ENABLED:false}
 
-      host: ${RABBITMQ_HOST:127.0.0.1}
-      port: ${RABBITMQ_PORT:5672}
-      username: ${RABBITMQ_USERNAME:}
-      password: ${RABBITMQ_PASSWORD:}
-      virtual-host: ${RABBITMQ_VHOST:profiling}
-
-      connection-timeout-ms: 3000
-      heartbeat-seconds: 20
       confirm-timeout-seconds: 30
 
       initial-group-size: ${AI_PROFILE_QUORUM_INITIAL_GROUP_SIZE:1}
@@ -195,8 +199,9 @@ app:
 
 management:
   health:
+    # 활성화 OR 조건은 RabbitConnectionConfiguration에서 관리한다.
     rabbit:
-      enabled: ${app.outbox.enabled:false}
+      enabled: false
     elasticsearch:
       enabled: ${app.product-search.enabled:false}
   endpoints:
