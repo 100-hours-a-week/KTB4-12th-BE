@@ -51,7 +51,7 @@ storage:
 management:
   health:
     rabbit:
-      enabled: ${app.outbox.enabled:false}
+      enabled: false
     mail:
       enabled: false
     redis:

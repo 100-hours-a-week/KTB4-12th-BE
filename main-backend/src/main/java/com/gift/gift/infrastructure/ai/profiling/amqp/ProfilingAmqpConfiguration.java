@@ -38,37 +38,8 @@ public class ProfilingAmqpConfiguration {
     public static final String RESULT_ROUTING_KEY = RESULT_QUEUE;
 
     @Bean
-    public CachingConnectionFactory profilingConnectionFactory(
-            ProfilingAmqpProperties properties
-    ) {
-        CachingConnectionFactory factory =
-                new CachingConnectionFactory(
-                        properties.host(),
-                        properties.port()
-                );
-
-        factory.setUsername(properties.username());
-        factory.setPassword(properties.password());
-        factory.setVirtualHost(properties.virtualHost());
-
-        factory.setConnectionTimeout(properties.connectionTimeoutMs());
-        factory.setRequestedHeartBeat(properties.heartbeatSeconds());
-
-        factory.setPublisherConfirmType(
-                CachingConnectionFactory.ConfirmType.CORRELATED
-        );
-        factory.setPublisherReturns(true);
-
-        factory.setConnectionNameStrategy(
-                connectionFactory -> "profiling-be"
-        );
-
-        return factory;
-    }
-
-    @Bean
     public RabbitTemplate profilingRabbitTemplate(
-            @Qualifier("profilingConnectionFactory")
+            @Qualifier("rabbitConnectionFactory")
             CachingConnectionFactory connectionFactory
     ) {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
@@ -91,7 +62,7 @@ public class ProfilingAmqpConfiguration {
 
     @Bean
     public RabbitAdmin profilingRabbitAdmin(
-            @Qualifier("profilingConnectionFactory")
+            @Qualifier("rabbitConnectionFactory")
             CachingConnectionFactory connectionFactory
     ) {
         RabbitAdmin admin = new RabbitAdmin(connectionFactory);

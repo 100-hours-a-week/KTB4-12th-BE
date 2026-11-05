@@ -9,6 +9,10 @@ import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration;
+
+import com.gift.gift.global.messaging.RabbitConnectionConfiguration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,18 +20,24 @@ class ProfilingAmqpConfigurationTest {
 
     private final ApplicationContextRunner runner =
             new ApplicationContextRunner()
+                    .withConfiguration(AutoConfigurations.of(RabbitAutoConfiguration.class))
+                    .withPropertyValues("spring.rabbitmq.dynamic=false",
+                            "spring.rabbitmq.username=profiling", "spring.rabbitmq.password=test-password",
+                            "spring.rabbitmq.connection-timeout=3s", "spring.rabbitmq.requested-heartbeat=20s",
+                            "spring.rabbitmq.publisher-confirm-type=correlated", "spring.rabbitmq.publisher-returns=true")
                     .withUserConfiguration(
+                            RabbitConnectionConfiguration.class,
                             ProfilingAmqpConfiguration.class
                     );
 
     @Test
-    @DisplayName("프로파일링 AMQP가 비활성화되면 RabbitMQ 관련 빈을 생성하지 않는다")
+    @DisplayName("프로파일링 AMQP가 비활성화되면 도메인 빈과 연결을 생성하지 않는다")
     void disabledDoesNotCreateRabbitInfrastructure() {
         runner.run(context -> {
-            assertThat(context).doesNotHaveBean(RabbitTemplate.class);
+            assertThat(context).doesNotHaveBean("profilingRabbitTemplate");
             assertThat(context).doesNotHaveBean(RabbitAdmin.class);
-            assertThat(context)
-                    .doesNotHaveBean(CachingConnectionFactory.class);
+            assertThat(context).doesNotHaveBean("profilingConnectionFactory");
+            assertThat(context).doesNotHaveBean("rabbitHealthIndicator");
         });
     }
 
@@ -35,14 +45,12 @@ class ProfilingAmqpConfigurationTest {
     @DisplayName("프로파일링 AMQP가 활성화되면 Quorum 큐와 발행 전용 연결을 설정한다")
     void enabledConfiguresQuorumAndPublisherConnection() {
         runner.withPropertyValues(
-                "app.ai-profile.amqp.enabled=true",
-                "app.ai-profile.amqp.username=profiling",
-                "app.ai-profile.amqp.password=test-password"
+                "app.ai-profile.amqp.enabled=true"
         ).run(context -> {
             assertThat(context).hasNotFailed();
 
             CachingConnectionFactory factory = context.getBean(
-                    "profilingConnectionFactory",
+                    "rabbitConnectionFactory",
                     CachingConnectionFactory.class
             );
 
@@ -51,6 +59,15 @@ class ProfilingAmqpConfigurationTest {
 
             assertThat(factory.getRabbitConnectionFactory()
                     .getRequestedHeartbeat()).isEqualTo(20);
+
+            assertThat(factory.getChannelCacheSize()).isEqualTo(25);
+            assertThat(factory.getCloseTimeout()).isEqualTo(3000);
+            var client = factory.getRabbitConnectionFactory();
+            assertThat(client.getHandshakeTimeout()).isEqualTo(3000);
+            assertThat(client.getChannelRpcTimeout()).isEqualTo(3000);
+            assertThat(client.getShutdownTimeout()).isEqualTo(3000);
+            assertThat(client.getNioParams().getWriteQueueCapacity()).isEqualTo(64);
+            assertThat(client.getNioParams().getWriteEnqueuingTimeoutInMs()).isEqualTo(3000);
 
             RabbitTemplate template = context.getBean(
                     "profilingRabbitTemplate",
