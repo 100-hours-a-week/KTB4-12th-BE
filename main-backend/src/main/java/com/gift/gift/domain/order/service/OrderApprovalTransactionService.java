@@ -1,6 +1,7 @@
 package com.gift.gift.domain.order.service;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
@@ -20,13 +21,21 @@ import com.gift.gift.domain.order.repository.OrderRepository;
 @RequiredArgsConstructor
 public class OrderApprovalTransactionService {
 
+    private static final Duration SYNC_REQUEST_LEASE = Duration.ofSeconds(10);
+    private static final Duration FIRST_RECONCILIATION_DELAY = Duration.ofSeconds(5);
+
     private final OrderRepository orderRepository;
     private final OrderCouponService orderCouponService;
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean claim(Long orderRecordId) {
-        return orderRepository.claimApproval(orderRecordId, LocalDateTime.now(clock)) == 1;
+        LocalDateTime now = LocalDateTime.now(clock);
+        return orderRepository.claimApproval(
+                orderRecordId,
+                now,
+                now.plus(SYNC_REQUEST_LEASE)
+        ) == 1;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -100,12 +109,14 @@ public class OrderApprovalTransactionService {
             throw new IllegalArgumentException("승인 미확정 상태에 사용할 수 없는 실패 코드입니다.");
         }
 
+        LocalDateTime now = LocalDateTime.now(clock);
         orderRepository.markUnknown(
                 orderRecordId,
                 OrderStatus.PENDING,
                 PaymentApprovalResult.UNKNOWN,
                 failureCode,
-                LocalDateTime.now(clock)
+                now,
+                now.plus(FIRST_RECONCILIATION_DELAY)
         );
     }
 
