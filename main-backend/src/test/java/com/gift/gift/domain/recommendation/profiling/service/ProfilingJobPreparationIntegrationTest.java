@@ -1,5 +1,8 @@
 package com.gift.gift.domain.recommendation.profiling.service;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -12,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
@@ -30,9 +34,12 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 @SpringBootTest(properties = {
-        "app.scheduling.enabled=false", "app.ai-profile.scheduling-enabled=false"
+        "app.scheduling.enabled=false", "app.ai-profile.scheduling-enabled=false",
+        "app.ai-profile.quiet-period=1h", "app.ai-profile.maximum-window=6h"
 })
 class ProfilingJobPreparationIntegrationTest {
+    private static final Instant NOW = Instant.parse("2026-11-05T00:00:00Z");
+    @MockitoBean Clock clock;
     @Autowired ProfilingJobPreparationService service;
     @MockitoSpyBean RecipientProfileRepository profiles;
     @MockitoSpyBean ProfileRequestFactory factory;
@@ -50,13 +57,16 @@ class ProfilingJobPreparationIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        // CI 기본 시간대와 무관하게 서비스와 같은 시계를 사용한다.
+        when(clock.instant()).thenReturn(NOW);
+        when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
         tx = new TransactionTemplate(transactionManager);
         tx.executeWithoutResult(status -> {
             User user = users.saveAndFlush(new User("job-" + UUID.randomUUID() + "@example.com",
                     "$2a$10$" + "a".repeat(53), "작업테스트", LocalDate.of(1990, 1, 1)));
             userId = user.getId();
             RecipientProfile profile = new RecipientProfile(user);
-            profile.recordPreferenceChange(LocalDateTime.now().minusDays(1));
+            profile.recordPreferenceChange(LocalDateTime.now(clock).minusDays(1));
             profileId = profiles.saveAndFlush(profile).getId();
         });
     }
@@ -95,12 +105,12 @@ class ProfilingJobPreparationIntegrationTest {
     @DisplayName("준비 시점이 아니거나 HTTP 전송이 선점된 경우 입력 변경을 유지한다")
     void notDueOrHttpClaimedDoesNotConsumeChanges() {
         tx.executeWithoutResult(status -> profiles.findByIdForUpdate(profileId).orElseThrow()
-                .restartDebounce(LocalDateTime.now()));
+                .restartDebounce(LocalDateTime.now(clock)));
         assertThat(service.prepare(profileId)).isEmpty();
         tx.executeWithoutResult(status -> {
             var p = profiles.findByIdForUpdate(profileId).orElseThrow();
-            p.restartDebounce(LocalDateTime.now().minusDays(1));
-            p.claimDispatch(UUID.randomUUID().toString(), LocalDateTime.now(), p.getLastChangedAt());
+            p.restartDebounce(LocalDateTime.now(clock).minusDays(1));
+            p.claimDispatch(UUID.randomUUID().toString(), LocalDateTime.now(clock), p.getLastChangedAt());
         });
         assertThat(service.prepare(profileId)).isEmpty();
         assertThat(profiles.findById(profileId).orElseThrow().getSourceVersion()).isZero();
@@ -269,7 +279,7 @@ class ProfilingJobPreparationIntegrationTest {
                 User user = userQueries.findActiveUserForUpdate(userId).orElseThrow();
                 var p = profiles.findByIdForUpdate(profileId).orElseThrow();
                 preferences.saveAndFlush(new UserGiftPreference(user, "먼저 변경된 입력"));
-                p.recordPreferenceChange(LocalDateTime.now().minusHours(1));
+                p.recordPreferenceChange(LocalDateTime.now(clock).minusHours(1));
                 inputLocked.countDown();
                 try {
                     assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
@@ -300,7 +310,7 @@ class ProfilingJobPreparationIntegrationTest {
             User user = userQueries.findActiveUserForUpdate(userId).orElseThrow();
             var p = profiles.findByIdForUpdate(profileId).orElseThrow();
             preferences.save(new UserGiftPreference(user, text));
-            p.recordPreferenceChange(LocalDateTime.now().minusHours(1));
+            p.recordPreferenceChange(LocalDateTime.now(clock).minusHours(1));
         });
     }
 

@@ -31,6 +31,8 @@
 
 ## 테스트 환경과 CI 검증
 
+작업 준비 통합 테스트는 서비스에 주입한 고정 Clock(Asia/Seoul)으로 입력 시각도 생성한다. 서버 기본 시간대의 `LocalDateTime.now()`와 섞지 않으며, UTC JVM에서도 동일하게 검증한다.
+
 프로파일링 시간 경계 테스트는 `@SpringBootTest(properties=...)`에서 quiet-period=1h·maximum-window=6h를 명시한다. 개발 셸의 APP_AIPROFILE_QUIETPERIOD·APP_AIPROFILE_MAXIMUMWINDOW가 application.yaml보다 우선하므로, 개발용 10초·60초 설정이 테스트의 시간 가정을 바꾸지 않도록 한다.
 
 상품 검색 비활성화 테스트는 실제 관리 포트의 health를 조회한다. 모니터링 보안 테스트는 외부 ES health를 비활성화해 인증·포트 검증을 외부 ES 가용성과 분리한다. 운영 health 설정은 변경하지 않는다.
