@@ -26,6 +26,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByPayerIdAndIdempotencyKey(Long payerId, String idempotencyKey);
 
+    List<Order> findAllByPayerIdAndStatusOrderByCreatedAtDescIdDesc(Long payerId, OrderStatus status);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             update Order orders
