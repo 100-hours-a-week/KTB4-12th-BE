@@ -20,6 +20,7 @@ import com.gift.gift.domain.recommendation.profiling.dto.request.AiProfileReques
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.recommendation.profiling.support.AiProfilingProperties;
+import com.gift.gift.domain.recommendation.profiling.support.ProfileRequestFactory;
 import com.gift.gift.domain.review.repository.ProfileReviewRow;
 import com.gift.gift.domain.review.repository.ReviewRepository;
 import com.gift.gift.domain.user.entity.User;
@@ -57,7 +58,7 @@ class ProfileInputTest {
                 Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofHours(1), Duration.ofHours(6),
                 100, 50, Duration.ofMinutes(2));
         ProfileDispatchTransactionService service = new ProfileDispatchTransactionService(
-                profiles, dislikes, preferences, reviews, properties, clock
+                profiles, new ProfileRequestFactory(dislikes, preferences, reviews), properties, clock
         );
 
         AiProfileRequest request = service.prepareDispatch(1L).orElseThrow().request();

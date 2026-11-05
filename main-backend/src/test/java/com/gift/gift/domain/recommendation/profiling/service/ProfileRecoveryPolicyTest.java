@@ -28,6 +28,7 @@ import com.gift.gift.domain.recommendation.profiling.exception.AiProfilingClient
 import com.gift.gift.domain.recommendation.profiling.exception.AiProfilingFailureType;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.recommendation.profiling.support.AiProfilingProperties;
+import com.gift.gift.domain.recommendation.profiling.support.ProfileRequestFactory;
 import com.gift.gift.domain.recommendation.profiling.support.PreparedRecoveryDispatch;
 import com.gift.gift.domain.review.repository.ReviewRepository;
 import com.gift.gift.domain.user.entity.User;
@@ -364,9 +365,11 @@ class ProfileRecoveryPolicyTest {
 
         transactions = spy(new ProfileDispatchTransactionService(
                 repository,
-                dislikeRepository,
-                mock(UserGiftPreferenceRepository.class),
-                mock(ReviewRepository.class),
+                new ProfileRequestFactory(
+                        dislikeRepository,
+                        mock(UserGiftPreferenceRepository.class),
+                        mock(ReviewRepository.class)
+                ),
                 properties,
                 CLOCK
         ));

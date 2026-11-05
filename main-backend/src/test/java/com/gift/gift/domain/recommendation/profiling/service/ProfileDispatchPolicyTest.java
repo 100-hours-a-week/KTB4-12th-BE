@@ -32,6 +32,7 @@ import com.gift.gift.domain.recommendation.profiling.exception.AiProfilingClient
 import com.gift.gift.domain.recommendation.profiling.exception.AiProfilingFailureType;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
 import com.gift.gift.domain.recommendation.profiling.support.AiProfilingProperties;
+import com.gift.gift.domain.recommendation.profiling.support.ProfileRequestFactory;
 import com.gift.gift.domain.review.repository.ReviewRepository;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.infrastructure.ai.profiling.AiProfilingClient;
@@ -79,9 +80,11 @@ class ProfileDispatchPolicyTest {
 
         transactions = spy(new ProfileDispatchTransactionService(
                 repository,
-                mock(UserDislikeCategoryRepository.class),
-                mock(UserGiftPreferenceRepository.class),
-                mock(ReviewRepository.class),
+                new ProfileRequestFactory(
+                        mock(UserDislikeCategoryRepository.class),
+                        mock(UserGiftPreferenceRepository.class),
+                        mock(ReviewRepository.class)
+                ),
                 properties,
                 clock
         ));

@@ -41,7 +41,11 @@ public class ReviewService {
     private final Clock clock;
 
     @Transactional
-    public ReviewResponse createReview(Long giftId, Long userId, CreateReviewRequest request) {
+    public ReviewResponse createReview(
+            Long giftId,
+            Long userId,
+            CreateReviewRequest request
+    ) {
         try {
             GiftHistory giftHistory = giftHistoryRepository
                     .findByIdAndRecipient_IdAndStatusAndDeletedAtIsNull(
@@ -49,13 +53,19 @@ public class ReviewService {
                             userId,
                             GiftStatus.COMPLETED
                     )
-                    .orElseThrow(
-                            () -> new ReviewException(ReviewErrorCode.REVIEW_CREATE_GIFT_NOT_FOUND)
-                    );
+                    .orElseThrow(() -> new ReviewException(
+                            ReviewErrorCode.REVIEW_CREATE_GIFT_NOT_FOUND
+                    ));
 
             User recipient = userQueryService.findActiveUserForUpdate(userId)
                     .orElseThrow(() -> new ReviewException(
                             ReviewErrorCode.REVIEW_CREATE_GIFT_NOT_FOUND
+                    ));
+
+            RecipientProfile profile = recipientProfileRepository
+                    .findByRecipientIdForUpdate(userId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "사용자의 기본 프로필이 존재하지 않습니다."
                     ));
 
             Review review = new Review(
@@ -66,17 +76,17 @@ public class ReviewService {
             );
 
             Review savedReview = saveReview(review);
-            RecipientProfile profile = recipientProfileRepository
-                    .findByRecipientIdForUpdate(userId)
-                    .orElseThrow(() ->
-                            new IllegalStateException("사용자의 기본 프로필이 존재하지 않습니다."));
+
             profile.recordPreferenceChange(LocalDateTime.now(clock));
 
             return ReviewResponse.from(savedReview);
         } catch (ReviewException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            throw new ReviewException(ReviewErrorCode.REVIEW_CREATE_FAILED, exception);
+            throw new ReviewException(
+                    ReviewErrorCode.REVIEW_CREATE_FAILED,
+                    exception
+            );
         }
     }
 
@@ -108,6 +118,11 @@ public class ReviewService {
         try {
             validateGift(
                     giftId,
+                    userId,
+                    ReviewErrorCode.REVIEW_UPDATE_GIFT_NOT_FOUND
+            );
+
+            lockProfileInput(
                     userId,
                     ReviewErrorCode.REVIEW_UPDATE_GIFT_NOT_FOUND
             );
@@ -148,6 +163,11 @@ public class ReviewService {
                     ReviewErrorCode.REVIEW_DELETE_GIFT_NOT_FOUND
             );
 
+            lockProfileInput(
+                    userId,
+                    ReviewErrorCode.REVIEW_DELETE_GIFT_NOT_FOUND
+            );
+
             Review review = reviewRepository
                     .findActiveReviewForUpdate(giftId, userId)
                     .orElseThrow(() -> new ReviewException(
@@ -166,6 +186,20 @@ public class ReviewService {
                     exception
             );
         }
+    }
+
+    private void lockProfileInput(
+            Long userId,
+            ReviewErrorCode notFoundCode
+    ) {
+        userQueryService.findActiveUserForUpdate(userId)
+                .orElseThrow(() -> new ReviewException(notFoundCode));
+
+        recipientProfileRepository
+                .findByRecipientIdForUpdate(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "사용자의 기본 프로필이 존재하지 않습니다."
+                ));
     }
 
     private void validateReadableGift(Long giftId, Long userId) {

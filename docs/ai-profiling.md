@@ -16,6 +16,19 @@
 
 로컬 MySQL 8.4.11에서 사용자가 V47 성공, 신규 작업 0건, 프로파일 16건(COMPLETED 2·NONE 14), 추천 60건 유지 및 기존 요청·콜백 정상 동작을 확인했다. 운영 DB 적용과 제약조건 거부 사례의 별도 테스트는 미확인이다.
 
+## 작업 모델·디바운스 준비 — PR 2-1·2-2 (#524)
+
+- `ProfilingRequestMessage`는 공통 정보와 기존 `AiProfileRequest`를 감싼다. 최초 직렬화한 JSON을 `ProfilingJob`에 고정 저장하고, 재발행은 저장된 UTF-8 바이트를 재사용한다.
+- 최종 JSON 256 KiB 초과는 원문을 절단하지 않고 `BLOCKED / INPUT_TOO_LARGE`로 보관한다. 직렬화 자체가 실패하면 준비 트랜잭션을 롤백한다.
+- `ProfilingJobPreparationService`는 사용자 → 프로파일 → 이전 작업 순으로 잠근 뒤 디바운스 확인·버전 증가·작업 저장·변경 대기 정리·PENDING을 한 트랜잭션에서 처리한다.
+- 잠금 전에는 수신자 ID만 조회한다. 엔티티를 미리 읽어 JPA 1차 캐시에 과거 상태가 남지 않도록 한다. 입력 조회는 READ_COMMITTED에서 수행한다.
+- READY·CLAIMED·RETRY_WAIT의 미확인 발행이 있으면 새 변경을 보존하고 기다린다. BLOCKED 중 새 변경은 새 ID·버전으로 준비하고 기존 작업은 오류·본문을 보존한 SUPERSEDED로 기록한다. PUBLISHED는 신규 작업 생성을 막지 않는다.
+- 비선호·취향·리뷰 생성/수정/삭제는 사용자 → 프로파일 잠금 규칙에 참여한다. 리뷰 수정·삭제가 새 분석을 예약하지 않는 기존 트리거 정책은 유지한다.
+- 입력 조립은 `ProfileRequestFactory`로 공통화하며 기존 HTTP 발송·복구도 이를 사용한다. 기존 중간 버전 콜백 정책은 유지한다.
+- 신규 준비 서비스는 스케줄러에서 호출하지 않는다. 실제 작업 생성 활성화·MQ 발행은 PR 3-3에서 HTTP 경로와 함께 전환한다. 결과 Consumer·ACK·결과 상태 반영은 후속 범위다.
+
+검증 코드는 `ProfilingMessageSerializerTest`, `ProfilingJobTest`, `ProfilingJobPreparationIntegrationTest`에 둔다. MySQL에서 중복 제약·원자적 롤백·동시 준비·입력 변경 경쟁을 검증한다.
+
 ## 전송 흐름
 
 1. 스케줄러의 한 번 실행(틱) 시작에 AI `/health`를 한 번 확인한다.
