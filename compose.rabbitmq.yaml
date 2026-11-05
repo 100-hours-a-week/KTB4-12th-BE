@@ -1,0 +1,31 @@
+name: gift-rabbitmq
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.4.0-management
+    hostname: profiling-rabbitmq
+
+    environment:
+      RABBITMQ_NODENAME: rabbit@profiling-rabbitmq
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?Set RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-profiling}
+
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+    restart: unless-stopped
+
+volumes:
+  rabbitmq-data:

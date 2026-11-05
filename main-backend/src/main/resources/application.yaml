@@ -149,6 +149,20 @@ app:
     recovery-batch-size: ${AI_PROFILE_RECOVERY_BATCH_SIZE:50}
     dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
     dispatch-claim-timeout: ${AI_PROFILE_DISPATCH_CLAIM_TIMEOUT:2m}
+    amqp:
+      enabled: ${AI_PROFILE_AMQP_ENABLED:false}
+
+      host: ${RABBITMQ_HOST:127.0.0.1}
+      port: ${RABBITMQ_PORT:5672}
+      username: ${RABBITMQ_USERNAME:}
+      password: ${RABBITMQ_PASSWORD:}
+      virtual-host: ${RABBITMQ_VHOST:profiling}
+
+      connection-timeout-ms: 3000
+      heartbeat-seconds: 20
+      confirm-timeout-seconds: 30
+
+      initial-group-size: ${AI_PROFILE_QUORUM_INITIAL_GROUP_SIZE:1}
 
   payment:
     client:

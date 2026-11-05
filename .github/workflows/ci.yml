@@ -62,6 +62,7 @@ jobs:
       AI_PROFILE_BATCH_SIZE: 100
       AI_PROFILE_DISPATCH_INTERVAL: 1m
       AI_PROFILE_SCHEDULING_ENABLED: 'false'
+      AI_PROFILE_AMQP_ENABLED: 'false'
 
       SCHEDULING_ENABLED: 'true'
 
@@ -89,6 +90,19 @@ jobs:
 
       - name: Run unit tests
         run: ./gradlew --no-daemon :main-backend:test :payment-server:test
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            main-backend/build/reports/tests/test/
+            main-backend/build/test-results/test/*.xml
+            payment-server/build/reports/tests/test/
+            payment-server/build/test-results/test/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build executable JARs
         run: ./gradlew --no-daemon :main-backend:bootJar :payment-server:bootJar
