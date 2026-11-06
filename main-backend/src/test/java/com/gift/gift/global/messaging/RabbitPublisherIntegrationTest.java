@@ -32,17 +32,17 @@ class RabbitPublisherIntegrationTest {
                 admin.declareExchange(new DirectExchange("test.events", true, false));
                 var mapper = new ObjectMapper();
                 var publisher = new RabbitPublisher(template, mapper,
-                        new OutboxProperties(10, 10, 60, 5000, 10, 2, 300),
-                        new RabbitRoutingProperties("test.events", "test.notification", "test.search"));
-                var event = new MessageEnvelope("event-1", "notification.create.v1", 1, "dedup",
+                        new OutboxProperties(10, 60, 5000, 10, 2, 300),
+                        new RabbitRoutingProperties("test.events", "test.search"));
+                var event = new MessageEnvelope("event-1", "product.search.sync.v1", 1, "dedup",
                         "GIFT", "42", null, mapper.readTree("{}"), LocalDateTime.now(), null);
-                assertThat(publisher.publish(event, "unrouted", "test.notification").get(10, TimeUnit.SECONDS).errorType())
+                assertThat(publisher.publish(event, "unrouted", "test.search").get(10, TimeUnit.SECONDS).errorType())
                         .isEqualTo("Unroutable");
                 admin.declareQueue(new org.springframework.amqp.core.Queue("test.queue", true));
                 admin.declareBinding(new org.springframework.amqp.core.Binding("test.queue",
                         org.springframework.amqp.core.Binding.DestinationType.QUEUE,
-                        "test.events", "test.notification", null));
-                assertThat(publisher.publish(event, "routed", "test.notification").get(10, TimeUnit.SECONDS).confirmed()).isTrue();
+                        "test.events", "test.search", null));
+                assertThat(publisher.publish(event, "routed", "test.search").get(10, TimeUnit.SECONDS).confirmed()).isTrue();
                 var delivered = template.receive("test.queue", 5000);
                 assertThat(delivered).isNotNull();
                 assertThat(delivered.getMessageProperties().getMessageId()).isEqualTo("event-1");

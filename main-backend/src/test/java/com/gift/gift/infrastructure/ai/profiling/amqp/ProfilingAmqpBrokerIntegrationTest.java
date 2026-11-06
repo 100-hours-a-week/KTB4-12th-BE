@@ -56,7 +56,6 @@ class ProfilingAmqpBrokerIntegrationTest {
                             "spring.rabbitmq.dynamic=false", "spring.rabbitmq.publisher-confirm-type=correlated",
                             "spring.rabbitmq.publisher-returns=true", "app.outbox.enabled=true",
                             "app.outbox.rabbit.exchange=reports.test",
-                            "app.outbox.rabbit.notification-routing-key=notification.created",
                             "app.outbox.rabbit.search-routing-key=search.changed",
                             "app.ai-profile.amqp.host=wrong-host.invalid",
                             "app.ai-profile.amqp.virtual-host=wrong-vhost")

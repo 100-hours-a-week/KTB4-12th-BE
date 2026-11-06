@@ -19,11 +19,11 @@ class OutboxRelayTest {
     private final OutboxClaimRepository repository = mock(OutboxClaimRepository.class);
     private final RabbitPublisher publisher = mock(RabbitPublisher.class);
     private final OutboxRelay relay = new OutboxRelay(repository, publisher,
-            new OutboxProperties(10, 5, 60, 5000, 10, 2, 300),
-            new RabbitRoutingProperties("test.events", "test.notification", "test.search"));
+            new OutboxProperties(5, 60, 5000, 10, 2, 300),
+            new RabbitRoutingProperties("test.events", "test.search"));
 
     private Job job(long id) {
-        return new Job(id, "token", new MessageEnvelope("event-" + id, "notification.create.v1", 1,
+        return new Job(id, "token", new MessageEnvelope("event-" + id, "product.search.sync.v1", 1,
                 "key-" + id, "GIFT", "42", null, new ObjectMapper().readTree("{}"), LocalDateTime.now(), null));
     }
 
@@ -32,15 +32,15 @@ class OutboxRelayTest {
     void onlyCompletesConfirmedPublishes() {
         Job success = job(1);
         Job failure = job(2);
-        when(repository.claim("notification.create.v1", 10)).thenReturn(List.of(success, failure));
+        when(repository.claim("product.search.sync.v1", 5)).thenReturn(List.of(success, failure));
         var pending = new CompletableFuture<RabbitPublisher.Result>();
-        when(publisher.publish(success.envelope(), "token", "test.notification")).thenReturn(pending);
-        when(publisher.publish(failure.envelope(), "token", "test.notification")).thenAnswer(call -> {
+        when(publisher.publish(success.envelope(), "token", "test.search")).thenReturn(pending);
+        when(publisher.publish(failure.envelope(), "token", "test.search")).thenAnswer(call -> {
             verify(repository, never()).complete(success);
             pending.complete(new RabbitPublisher.Result(true, null));
             return CompletableFuture.completedFuture(new RabbitPublisher.Result(false, "ConfirmTimeout"));
         });
-        relay.relayNotifications();
+        relay.relaySearch();
         verify(repository).complete(success);
         verify(repository).fail(failure, "ConfirmTimeout");
         verify(repository, never()).complete(failure);

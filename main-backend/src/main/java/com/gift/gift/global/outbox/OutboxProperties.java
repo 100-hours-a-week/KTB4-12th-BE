@@ -10,7 +10,6 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("app.outbox")
 public record OutboxProperties(
-        @DefaultValue("10") @Min(1) @Max(1000) int notificationBatchSize,
         @DefaultValue("10") @Min(1) @Max(1000) int searchBatchSize,
         @DefaultValue("60") @Min(1) @Max(3600) int leaseSeconds,
         @DefaultValue("5000") @Min(1) @Max(60000) int confirmTimeoutMs,
