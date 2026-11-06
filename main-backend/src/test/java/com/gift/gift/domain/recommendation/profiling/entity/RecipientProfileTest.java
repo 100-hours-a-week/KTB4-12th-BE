@@ -30,13 +30,12 @@ class RecipientProfileTest {
     }
 
     @Test
-    @DisplayName("프로파일은 NONE과 버전 0 및 재시도 횟수 0으로 생성된다")
+    @DisplayName("프로파일은 NONE과 버전 0 으로 생성된다")
     void constructor_initializesDefaultState() {
         assertThat(profile.getProfileStatus())
                 .isEqualTo(RecipientProfileStatus.NONE);
         assertThat(profile.getSourceVersion()).isZero();
         assertThat(profile.getAnalyzedSourceVersion()).isZero();
-        assertThat(profile.getRetryCount()).isZero();
         assertThat(profile.getLastChangedAt()).isNull();
         assertThat(profile.getWindowStartedAt()).isNull();
         assertThat(profile.getPendingSince()).isNull();
@@ -74,28 +73,14 @@ class RecipientProfileTest {
     }
 
     @Test
-    @DisplayName("새 AI 요청은 sourceVersion을 증가시키고 재시작 횟수를 유지한다")
-    void createNextSourceVersion_incrementsVersionAndKeepsRetry() {
+    @DisplayName("새 AI 요청은 sourceVersion을 증가시킨다")
+    void createNextSourceVersion_incrementsVersion() {
         profile.createNextSourceVersion();
-        profile.increaseRetryCount();
 
         long nextVersion = profile.createNextSourceVersion();
 
         assertThat(nextVersion).isEqualTo(2);
         assertThat(profile.getSourceVersion()).isEqualTo(2);
-        assertThat(profile.getRetryCount()).isEqualTo(1);
-    }
-
-    @Test
-    @DisplayName("재시도는 sourceVersion을 증가시키지 않는다")
-    void retry_doesNotIncreaseSourceVersion() {
-        profile.createNextSourceVersion();
-
-        profile.increaseRetryCount();
-        profile.increaseRetryCount();
-
-        assertThat(profile.getSourceVersion()).isEqualTo(1);
-        assertThat(profile.getRetryCount()).isEqualTo(2);
     }
 
     @Test
@@ -121,7 +106,6 @@ class RecipientProfileTest {
         profile.markPending(
                 LocalDateTime.of(2026, 9, 24, 11, 30)
         );
-        profile.increaseRetryCount();
 
         profile.markCompleted(1);
 
@@ -130,7 +114,6 @@ class RecipientProfileTest {
         assertThat(profile.getAnalyzedSourceVersion())
                 .isEqualTo(1);
         assertThat(profile.getPendingSince()).isNull();
-        assertThat(profile.getRetryCount()).isZero();
     }
 
     @Test
@@ -148,18 +131,6 @@ class RecipientProfileTest {
         assertThat(profile.getSourceVersion()).isEqualTo(1);
         assertThat(profile.getAnalyzedSourceVersion()).isZero();
         assertThat(profile.getPendingSince()).isNull();
-    }
-
-    @Test
-    @DisplayName("재시도 횟수는 최대 2회까지만 증가한다")
-    void increaseRetryCount_rejectsMoreThanTwoRetries() {
-        assertThat(profile.increaseRetryCount()).isEqualTo(1);
-        assertThat(profile.increaseRetryCount()).isEqualTo(2);
-
-        assertThatIllegalStateException()
-                .isThrownBy(profile::increaseRetryCount);
-
-        assertThat(profile.getRetryCount()).isEqualTo(2);
     }
 
     @Test

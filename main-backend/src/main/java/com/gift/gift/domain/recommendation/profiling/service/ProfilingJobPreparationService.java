@@ -35,7 +35,6 @@ public class ProfilingJobPreparationService {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Optional<String> prepare(Long profileId) {
-        // 잠금 전 엔티티를 읽으면 1차 캐시에 남은 과거 상태를 재사용할 수 있다.
         Long recipientId = profileRepository
                 .findRecipientIdByProfileId(profileId)
                 .orElse(null);
@@ -44,7 +43,7 @@ public class ProfilingJobPreparationService {
             return Optional.empty();
         }
 
-        // 입력 변경과 동일한 순서로 잠금을 획득한다.
+        // 입력 변경 경로와 동일하게 사용자 → 프로필 순서로 잠근다.
         if (userQueryService.findActiveUserForUpdate(recipientId).isEmpty()) {
             return Optional.empty();
         }
@@ -54,11 +53,6 @@ public class ProfilingJobPreparationService {
                 .orElse(null);
 
         if (profile == null) {
-            return Optional.empty();
-        }
-
-        // HTTP 방식에서 전환하기 전에는 이 경로를 호출하지 않는다.
-        if (profile.getDispatchClaimToken() != null) {
             return Optional.empty();
         }
 
@@ -108,7 +102,6 @@ public class ProfilingJobPreparationService {
         jobRepository.saveAndFlush(job);
 
         profile.clearPendingChange();
-        profile.resetRetryCount();
         profile.markPending(now);
 
         return Optional.of(job.getRequestId());

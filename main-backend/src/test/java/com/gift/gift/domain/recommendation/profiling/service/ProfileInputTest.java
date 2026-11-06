@@ -1,8 +1,6 @@
 package com.gift.gift.domain.recommendation.profiling.service;
 
-import java.net.URI;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,7 +17,6 @@ import com.gift.gift.domain.preference.repository.UserGiftPreferenceRepository;
 import com.gift.gift.domain.recommendation.profiling.dto.request.AiProfileRequest;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
-import com.gift.gift.domain.recommendation.profiling.support.AiProfilingProperties;
 import com.gift.gift.domain.recommendation.profiling.support.ProfileRequestFactory;
 import com.gift.gift.domain.review.repository.ProfileReviewRow;
 import com.gift.gift.domain.review.repository.ReviewRepository;
@@ -41,12 +38,9 @@ class ProfileInputTest {
         ReflectionTestUtils.setField(profile, "id", 1L);
         profile.recordPreferenceChange(now.minusHours(2));
 
-        RecipientProfileRepository profiles = mock(RecipientProfileRepository.class);
         UserDislikeCategoryRepository dislikes = mock(UserDislikeCategoryRepository.class);
         UserGiftPreferenceRepository preferences = mock(UserGiftPreferenceRepository.class);
         ReviewRepository reviews = mock(ReviewRepository.class);
-        when(profiles.findByIdForUpdate(1L)).thenReturn(Optional.of(profile));
-        when(profiles.findDispatchClaimNow()).thenReturn(now);
         when(preferences.findByUser_IdAndDeletedAtIsNull(10L))
                 .thenReturn(Optional.of(new UserGiftPreference(user, "차를 좋아해요.")));
         when(reviews.findLatestProfileReviews(10L, PageRequest.of(0, 10))).thenReturn(List.of(
@@ -54,14 +48,8 @@ class ProfileInputTest {
                 new ProfileReviewRow(100L, 1, "오래된 리뷰"),
                 new ProfileReviewRow(200L, 2, " \t")
         ));
-        AiProfilingProperties properties = new AiProfilingProperties(URI.create("http://ai.example.test"), "test-token",
-                Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofHours(1), Duration.ofHours(6),
-                100, 50, Duration.ofMinutes(2));
-        ProfileDispatchTransactionService service = new ProfileDispatchTransactionService(
-                profiles, new ProfileRequestFactory(dislikes, preferences, reviews), properties, clock
-        );
-
-        AiProfileRequest request = service.prepareDispatch(1L).orElseThrow().request();
+        ProfileRequestFactory factory = new ProfileRequestFactory(dislikes, preferences, reviews);
+        AiProfileRequest request = factory.create(profile, 1);
 
         assertThat(request.giftPreference()).isEqualTo("차를 좋아해요.");
         assertThat(request.reviews()).extracting(review -> review.productId()).containsExactly(100L, 200L);

@@ -5,7 +5,6 @@ import java.time.Duration;
 import java.util.Objects;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.bind.DefaultValue;
 
 @ConfigurationProperties(prefix = "app.ai-profile")
 public record AiProfilingProperties(
@@ -15,9 +14,7 @@ public record AiProfilingProperties(
         Duration readTimeout,
         Duration quietPeriod,
         Duration maximumWindow,
-        int batchSize,
-        @DefaultValue("50") int recoveryBatchSize,
-        @DefaultValue("2m") Duration dispatchClaimTimeout
+        int batchSize
 ) {
 
     public AiProfilingProperties {
@@ -44,11 +41,6 @@ public record AiProfilingProperties(
         Objects.requireNonNull(
                 maximumWindow,
                 "최대 대기 시간은 필수입니다."
-        );
-
-        Objects.requireNonNull(
-                dispatchClaimTimeout,
-                "선점 유효 기간은 필수입니다."
         );
 
         if (serviceToken.isBlank()) {
@@ -81,29 +73,8 @@ public record AiProfilingProperties(
             );
         }
 
-        if (batchSize < 1) {
-            throw new IllegalArgumentException(
-                    "일반 Batch 크기는 1 이상이어야 합니다."
-            );
-        }
-
-        if (recoveryBatchSize < 0) {
-            throw new IllegalArgumentException(
-                    "복구 Batch 크기는 0 이상이어야 합니다."
-            );
-        }
-
-        if ((long) batchSize + recoveryBatchSize > 200) {
-            throw new IllegalArgumentException(
-                    "일반 Batch와 복구 Batch의 합계는 200 이하여야 합니다."
-            );
-        }
-
-        if (dispatchClaimTimeout.isZero()
-                || dispatchClaimTimeout.isNegative()){
-            throw new IllegalArgumentException(
-                    "선점 유효 기간은 0보다 커야 합니다."
-            );
+        if (batchSize < 1 || batchSize > 100) {
+            throw new IllegalArgumentException("프로파일링 Batch 크기는 1~100이어야 합니다.");
         }
     }
 

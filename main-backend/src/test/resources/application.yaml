@@ -3,6 +3,13 @@
 # (src/test/resources의 application.yaml은 메인 파일을 파일 단위로 대체하므로
 #  datasource 등 나머지 설정도 모두 여기에 있어야 한다.)
 spring:
+  rabbitmq:
+    dynamic: false
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    connection-timeout: 3s
+    requested-heartbeat: 20s
+
   application:
     name: gift
 
@@ -115,7 +122,6 @@ app:
     quiet-period: 1h
     maximum-window: 6h
     batch-size: 100
-    recovery-batch-size: 50
     dispatch-interval: 1h
 
   payment:

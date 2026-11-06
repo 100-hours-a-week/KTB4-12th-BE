@@ -176,8 +176,6 @@ class ProfileCallbackTransactionIntegrationTest {
             profile.createNextSourceVersion();
             profile.markPending(PENDING_AT);
             profile.recordPreferenceChange(PENDING_AT);
-            profile.restartDebounce(PENDING_AT);
-            profile.increaseRetryCount();
         });
 
         beforeCallback = snapshot();
@@ -186,7 +184,6 @@ class ProfileCallbackTransactionIntegrationTest {
                 .isEqualTo(RecipientProfileStatus.PENDING);
         assertThat(beforeCallback.sourceVersion()).isEqualTo(2);
         assertThat(beforeCallback.analyzedSourceVersion()).isEqualTo(1);
-        assertThat(beforeCallback.retryCount()).isEqualTo(1);
         assertThat(beforeCallback.recommendations()).hasSize(2);
     }
 
@@ -257,8 +254,7 @@ class ProfileCallbackTransactionIntegrationTest {
         assertThat(after.sourceVersion()).isEqualTo(2);
         assertThat(after.analyzedSourceVersion()).isEqualTo(2);
         assertThat(after.pendingSince()).isNull();
-        // 변경 대기가 남아 있으므로 늦은 완료 콜백도 재시작 횟수를 보존한다.
-        assertThat(after.retryCount()).isEqualTo(1);
+        // 늦은 완료 콜백도 새 입력의 변경 대기를 보존한다.
 
         assertThat(after.recommendations())
                 .extracting(RecommendationRow::productId)
@@ -365,7 +361,6 @@ class ProfileCallbackTransactionIntegrationTest {
         assertThat(after.recommendations()).extracting(RecommendationRow::rankOrder)
                 .containsExactly(1);
         assertThat(after.lastChangedAt()).isEqualTo(beforeCallback.lastChangedAt());
-        assertThat(after.retryCount()).isEqualTo(beforeCallback.retryCount());
     }
 
     @Test
@@ -384,7 +379,6 @@ class ProfileCallbackTransactionIntegrationTest {
         assertThat(after.profileStatus()).isEqualTo(latest.profileStatus());
         assertThat(after.pendingSince()).isEqualTo(latest.pendingSince());
         assertThat(after.lastChangedAt()).isEqualTo(latest.lastChangedAt());
-        assertThat(after.retryCount()).isEqualTo(latest.retryCount());
     }
 
     @Test
@@ -622,7 +616,6 @@ class ProfileCallbackTransactionIntegrationTest {
                     profile.getSourceVersion(),
                     profile.getAnalyzedSourceVersion(),
                     profile.getPendingSince(),
-                    profile.getRetryCount(),
                     profile.getLastChangedAt(),
                     profile.getWindowStartedAt(),
                     rows
@@ -643,7 +636,6 @@ class ProfileCallbackTransactionIntegrationTest {
             long sourceVersion,
             long analyzedSourceVersion,
             LocalDateTime pendingSince,
-            int retryCount,
             LocalDateTime lastChangedAt,
             LocalDateTime windowStartedAt,
             List<RecommendationRow> recommendations
