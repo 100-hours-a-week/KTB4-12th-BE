@@ -78,6 +78,11 @@ storage:
     bucket: ${PRODUCT_IMAGE_BUCKET}
 
 app:
+  rabbitmq:
+    management:
+      url: ${RABBITMQ_MANAGEMENT_URL:}
+      username: ${RABBITMQ_MANAGEMENT_USERNAME:}
+      password: ${RABBITMQ_MANAGEMENT_PASSWORD:}
   outbox:
     enabled: ${OUTBOX_ENABLED:false}
     rabbit:

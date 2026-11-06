@@ -44,6 +44,8 @@ class RabbitConnectionConfigurationTest {
             assertThat(context).hasNotFailed();
             assertThat(context).hasSingleBean(CachingConnectionFactory.class);
             assertThat(context).doesNotHaveBean("profilingConnectionFactory");
+            assertThat(context).doesNotHaveBean(RabbitManagementProperties.class)
+                    .doesNotHaveBean("rabbitManagementRestClient");
             CachingConnectionFactory factory = context.getBean("rabbitConnectionFactory", CachingConnectionFactory.class);
             assertThat(factory.getHost()).isEqualTo("shared-host.invalid");
             assertThat(factory.getPort()).isEqualTo(5678);
