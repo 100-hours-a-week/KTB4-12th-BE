@@ -27,7 +27,8 @@ class ProfilingAmqpConfigurationTest {
                             "spring.rabbitmq.publisher-confirm-type=correlated", "spring.rabbitmq.publisher-returns=true")
                     .withUserConfiguration(
                             RabbitConnectionConfiguration.class,
-                            ProfilingAmqpConfiguration.class
+                            ProfilingAmqpConfiguration.class,
+                            ProfilingPublisherState.class
                     );
 
     @Test

@@ -40,8 +40,12 @@ public class ProfilingAmqpConfiguration {
     @Bean
     public RabbitTemplate profilingRabbitTemplate(
             @Qualifier("rabbitConnectionFactory")
-            CachingConnectionFactory connectionFactory
+            CachingConnectionFactory connectionFactory,
+            ProfilingPublisherState publisherState
     ) {
+        connectionFactory.getPublisherConnectionFactory()
+                .addConnectionListener(publisherState);
+
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
 
         template.setUsePublisherConnection(true);

@@ -13,6 +13,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import com.gift.gift.infrastructure.ai.profiling.amqp.ProfilingAmqpConfiguration;
+import com.gift.gift.infrastructure.ai.profiling.amqp.ProfilingPublisherState;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,7 +22,7 @@ class RabbitConnectionConfigurationTest {
             .withConfiguration(AutoConfigurations.of(RabbitAutoConfiguration.class,
                     RabbitHealthContributorAutoConfiguration.class))
             .withUserConfiguration(RabbitConnectionConfiguration.class, RabbitPublisherConfiguration.class,
-                    ProfilingAmqpConfiguration.class)
+                    ProfilingAmqpConfiguration.class, ProfilingPublisherState.class)
             .withPropertyValues(
                     "spring.rabbitmq.host=shared-host.invalid", "spring.rabbitmq.port=5678",
                     "spring.rabbitmq.username=shared-user", "spring.rabbitmq.password=test-password",
