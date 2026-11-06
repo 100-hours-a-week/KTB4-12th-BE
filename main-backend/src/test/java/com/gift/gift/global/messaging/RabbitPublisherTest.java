@@ -21,11 +21,11 @@ class RabbitPublisherTest {
     private final RabbitTemplate template = mock(RabbitTemplate.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private final RabbitPublisher publisher = new RabbitPublisher(template, mapper,
-            new OutboxProperties(10, 10, 60, 30, 10, 2, 300),
-            new RabbitRoutingProperties("test.events", "test.notification", "test.search"));
+            new OutboxProperties(10, 60, 30, 10, 2, 300),
+            new RabbitRoutingProperties("test.events", "test.search"));
 
     private MessageEnvelope envelope() {
-        return new MessageEnvelope("stable-id", "notification.create.v1", 1, "key", "GIFT", "42",
+        return new MessageEnvelope("stable-id", "product.search.sync.v1", 1, "key", "GIFT", "42",
                 null, mapper.readTree("{}"), LocalDateTime.now(), null);
     }
 
@@ -38,7 +38,7 @@ class RabbitPublisherTest {
             data.getFuture().complete(new CorrelationData.Confirm(true, null));
             return null;
         }).when(template).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
-        assertThat(publisher.publish(envelope(), "token", "test.notification").join())
+        assertThat(publisher.publish(envelope(), "token", "test.search").join())
                 .isEqualTo(new RabbitPublisher.Result(false, "Unroutable"));
     }
 
@@ -50,9 +50,9 @@ class RabbitPublisherTest {
             data.getFuture().complete(new CorrelationData.Confirm(false, "nack"));
             return null;
         }).when(template).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
-        assertThat(publisher.publish(envelope(), "first", "test.notification").join().errorType()).isEqualTo("BrokerNack");
+        assertThat(publisher.publish(envelope(), "first", "test.search").join().errorType()).isEqualTo("BrokerNack");
         reset(template);
-        assertThat(publisher.publish(envelope(), "second", "test.notification").get(2, TimeUnit.SECONDS).errorType())
+        assertThat(publisher.publish(envelope(), "second", "test.search").get(2, TimeUnit.SECONDS).errorType())
                 .isEqualTo("ConfirmTimeout");
     }
 
@@ -63,7 +63,7 @@ class RabbitPublisherTest {
             CorrelationData data = call.getArgument(3);
             Message message = call.getArgument(2);
             assertThat((String) call.getArgument(0)).isEqualTo("test.events");
-            assertThat((String) call.getArgument(1)).isEqualTo("test.notification");
+            assertThat((String) call.getArgument(1)).isEqualTo("test.search");
             assertThat(message.getMessageProperties().getMessageId()).isEqualTo("stable-id");
             assertThat(message.getMessageProperties().getDeliveryMode())
                     .isEqualTo(org.springframework.amqp.core.MessageDeliveryMode.PERSISTENT);
@@ -71,6 +71,6 @@ class RabbitPublisherTest {
             data.getFuture().complete(new CorrelationData.Confirm(true, null));
             return null;
         }).when(template).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
-        assertThat(publisher.publish(envelope(), "token", "test.notification").join().confirmed()).isTrue();
+        assertThat(publisher.publish(envelope(), "token", "test.search").join().confirmed()).isTrue();
     }
 }

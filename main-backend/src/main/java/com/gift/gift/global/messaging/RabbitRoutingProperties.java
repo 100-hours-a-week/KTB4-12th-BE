@@ -8,7 +8,6 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("app.outbox.rabbit")
 public record RabbitRoutingProperties(
         @NotBlank String exchange,
-        @NotBlank String notificationRoutingKey,
         @NotBlank String searchRoutingKey
 ) {
 }

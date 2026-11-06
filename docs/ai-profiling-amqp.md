@@ -56,7 +56,7 @@ CI는 같은 테스트 작업에서 RabbitMQ 컨테이너를 실행한다. Docke
 - Boot의 자동 연결 생성을 사용하므로 `spring.rabbitmq.addresses`·TLS 설정을 별도의 수동 복사 없이 유지한다. `RabbitConnectionConfiguration`은 클라이언트 I/O 제한과 Spring 연결 종료·채널 확보 대기만 보완한다.
 - Handshake·Channel RPC·Shutdown·채널 확보·연결 종료 대기는 각 3초, NIO 쓰기 큐는 64프레임·삽입 대기 3초다. 공유 채널 캐시는 Boot 기본 25개이며 `spring.rabbitmq.cache.channel.size`로 조정할 수 있다. 프로파일링 워커는 인스턴스당 1개로 순차 발행한다. 운영 적정 용량은 별도 부하 측정 대상이다.
 - `RabbitPublisherConfiguration`·`RabbitRoutingProperties`는 원격 develop `6093c9b`의 공통 Publisher 설정을 반영하고, 연결 주입에 `@Qualifier("rabbitConnectionFactory")`를 지정했다. 이 변경에서 공통 Relay·업무 Consumer를 새로 구현하지 않는다.
-- `OUTBOX_ENABLED=true`인 경우 기존 공통 Outbox의 Exchange·알림/검색 Routing Key를 설정해야 한다. 관련 값은 `.env.example`을 따른다. 프로파일링의 Direct Exchange·Quorum 큐와 작업 테이블·재시도 정책은 유지한다.
+- `OUTBOX_ENABLED=true`인 경우 공통 Outbox의 Exchange·검색 Routing Key를 설정해야 한다. 알림은 DB Worker 경로이므로 알림 MQ Routing Key는 사용하지 않는다. 관련 값은 `.env.example`과 [Outbox 실행 계약](outbox-dispatch.md)을 따른다. 프로파일링의 Direct Exchange·Quorum 큐와 작업 테이블·재시도 정책은 유지한다.
 - `spring.rabbitmq.dynamic=false`로 기본 Admin 자동 선언을 끄고, 프로파일링 Admin은 자신에게 지정된 리소스만 선언한다. 다른 도메인도 별도 Admin/인프라에서 해당 리소스를 선언해야 한다.
 - Rabbit health는 `OUTBOX_ENABLED OR AI_PROFILE_AMQP_ENABLED`일 때만 공통 연결을 확인한다. 기본 health 자동 구성은 비활성화하고 동일한 표준 `RabbitHealthIndicator`를 조건부 등록한다.
 
