@@ -24,11 +24,10 @@ class RabbitRoutingConfigurationTest {
     }
 
     @Test
-    @DisplayName("라우팅을 설정해도 Exchange와 큐를 자동 선언하지 않는다")
+    @DisplayName("알림 라우팅 없이 검색 발행을 설정하고 토폴로지를 자동 선언하지 않는다")
     void configuresPublisherWithoutDeclaringTopology() {
         contextRunner.withPropertyValues("app.outbox.enabled=true",
                         "app.outbox.rabbit.exchange=team.exchange",
-                        "app.outbox.rabbit.notification-routing-key=team.notification",
                         "app.outbox.rabbit.search-routing-key=team.search")
                 .run(context -> {
                     assertThat(context).hasNotFailed().hasBean("outboxRabbitTemplate");

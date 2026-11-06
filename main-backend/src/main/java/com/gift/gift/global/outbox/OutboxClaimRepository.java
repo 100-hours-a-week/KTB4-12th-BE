@@ -22,6 +22,9 @@ public class OutboxClaimRepository {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public List<Job> claim(String eventType, int limit) {
+        if ("notification.create.v1".equals(eventType)) {
+            throw new IllegalArgumentException("알림 이벤트는 DB Worker에서 처리해야 합니다.");
+        }
         if (limit < 1 || limit > 1000) {
             throw new IllegalArgumentException("선점 크기는 1~1000이어야 합니다.");
         }
@@ -62,6 +65,7 @@ public class OutboxClaimRepository {
                     claim_token = NULL, lease_until = NULL, last_error_type = NULL,
                     updated_at = CURRENT_TIMESTAMP(6)
                 WHERE id = ? AND status = 'PUBLISHING' AND claim_token = ?
+                    AND event_type <> 'notification.create.v1'
                     AND lease_until > CURRENT_TIMESTAMP(6)
                 """, job.id(), job.claimToken()) == 1;
     }
@@ -80,6 +84,7 @@ public class OutboxClaimRepository {
                             failure_count = failure_count + 1, last_error_type = ?,
                             claim_token = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP(6)
                         WHERE id = ? AND status = 'PUBLISHING' AND claim_token = ?
+                            AND event_type <> 'notification.create.v1'
                             AND ((? AND lease_until <= CURRENT_TIMESTAMP(6))
                                 OR (NOT ? AND lease_until > CURRENT_TIMESTAMP(6)))
                         """, settings.maxFailures(), settings.retryMaxSeconds(), settings.retryBaseSeconds(),

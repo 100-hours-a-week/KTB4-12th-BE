@@ -31,7 +31,6 @@ class RabbitConnectionConfigurationTest {
                     "spring.rabbitmq.publisher-confirm-type=correlated", "spring.rabbitmq.publisher-returns=true",
                     "management.health.rabbit.enabled=false",
                     "app.outbox.rabbit.exchange=reports.test",
-                    "app.outbox.rabbit.notification-routing-key=notification.created",
                     "app.outbox.rabbit.search-routing-key=search.changed",
                     "app.ai-profile.amqp.host=profiling-host.invalid",
                     "app.ai-profile.amqp.port=5679", "app.ai-profile.amqp.virtual-host=profiling");
@@ -74,7 +73,7 @@ class RabbitConnectionConfigurationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"exchange", "notification-routing-key", "search-routing-key"})
+    @ValueSource(strings = {"exchange", "search-routing-key"})
     @DisplayName("두 기능을 함께 켤 때 공통 Outbox 라우팅 설정이 비어 있으면 기동 시 거부한다")
     void bothEnabled_requireOutboxRouting(String missingProperty) {
         runner.withPropertyValues("app.outbox.enabled=true", "app.ai-profile.amqp.enabled=true",

@@ -27,12 +27,6 @@ public class OutboxRelay {
 
     @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:1000}", scheduler = "outboxTaskScheduler")
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public void relayNotifications() {
-        relay("notification.create.v1", settings.notificationBatchSize(), routing.notificationRoutingKey());
-    }
-
-    @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:1000}", scheduler = "outboxTaskScheduler")
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void relaySearch() {
         relay("product.search.sync.v1", settings.searchBatchSize(), routing.searchRoutingKey());
     }
