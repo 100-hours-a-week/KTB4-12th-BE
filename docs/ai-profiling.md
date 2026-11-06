@@ -1,5 +1,8 @@
 # AI 프로파일링 일반 전송·실패 처리 — PR 5-1
 
+> 현재 발행 경로는 [PR 3-3 MQ 스케줄러·V50 전환 안내](ai-profiling-amqp.md#pr-3-3--mq-스케줄러-전환)를 따른다. 아래 HTTP 전송·복구·retry_count 설명은 과거 PR의 이력이다. HTTP 콜백 저장은 유지한다.
+
+
 RabbitMQ 연결·큐 선언과 로컬 실행은 [AMQP 기반 설정](ai-profiling-amqp.md)을 참고한다.
 
 코드 위치와 역할은 [추천 기능 패키지 구조](recommendation-package-structure.md)를 참고한다.

@@ -2,26 +2,29 @@ package com.gift.gift.domain.recommendation.profiling.support;
 
 import java.net.URI;
 import java.time.Duration;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import static org.assertj.core.api.Assertions.*;
 
 class AiProfilingPropertiesTest {
     @ParameterizedTest
-    @CsvSource({"100, 0", "100, 50", "150, 50", "1, 199", "200, 0"})
-    void acceptsBatchSizesWithinQueueLimit(int normal, int recovery) {
-        assertThat(properties(normal, recovery).recoveryBatchSize()).isEqualTo(recovery);
+    @ValueSource(ints = {1, 50, 100})
+    @DisplayName("MQ 배치 크기는 1~100을 허용한다")
+    void acceptsBatchSizesWithinLimit(int size) {
+        assertThat(properties(size).batchSize()).isEqualTo(size);
     }
 
     @ParameterizedTest
-    @CsvSource({"0, 50", "100, -1", "151, 50", "200, 1", "2147483647, 2147483647"})
-    void rejectsInvalidBatchSizesIncludingOverflow(int normal, int recovery) {
-        assertThatThrownBy(() -> properties(normal, recovery)).isInstanceOf(IllegalArgumentException.class);
+    @ValueSource(ints = {-1, 0, 101, Integer.MAX_VALUE})
+    @DisplayName("MQ 배치 크기 범위를 벗어나면 기동 설정을 거부한다")
+    void rejectsInvalidBatchSizes(int size) {
+        assertThatThrownBy(() -> properties(size)).isInstanceOf(IllegalArgumentException.class);
     }
 
-    private AiProfilingProperties properties(int normal, int recovery) {
+    private AiProfilingProperties properties(int size) {
         return new AiProfilingProperties(URI.create("http://ai.test"), "test-token",
                 Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofHours(1),
-                Duration.ofHours(6), normal, recovery, Duration.ofMinutes(2));
+                Duration.ofHours(6), size);
     }
 }

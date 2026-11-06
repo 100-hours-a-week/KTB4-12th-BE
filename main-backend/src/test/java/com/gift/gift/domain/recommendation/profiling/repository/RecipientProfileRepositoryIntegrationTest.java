@@ -108,22 +108,6 @@ class RecipientProfileRepositoryIntegrationTest {
     }
 
     @Test
-    @DisplayName("재시도 횟수 3을 DB CHECK 제약조건이 거부한다")
-    void database_rejectsRetryCountGreaterThanTwo() {
-        RecipientProfile profile = persistProfile();
-
-        assertThatThrownBy(() -> jdbcTemplate.update(
-                """
-                UPDATE recipient_profiles
-                SET retry_count = 3
-                WHERE id = ?
-                """,
-                profile.getId()
-        )).isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("Check constraint");
-    }
-
-    @Test
     @DisplayName("존재하지 않는 사용자의 프로파일을 FK가 거부한다")
     void database_rejectsNonexistentRecipient() {
         assertThatThrownBy(() -> jdbcTemplate.update(
@@ -133,10 +117,9 @@ class RecipientProfileRepositoryIntegrationTest {
                     profile_status,
                     source_version,
                     analyzed_source_version,
-                    retry_count,
                     created_at,
                     updated_at
-                ) VALUES (?, 'NONE', 0, 0, 0, NOW(6), NOW(6))
+                ) VALUES (?, 'NONE', 0, 0, NOW(6), NOW(6))
                 """,
                 Long.MAX_VALUE
         )).isInstanceOf(DataIntegrityViolationException.class);
@@ -164,15 +147,14 @@ class RecipientProfileRepositoryIntegrationTest {
 
         profileRepository.flush();
 
-        List<RecipientProfile> candidates =
-                profileRepository.findDispatchCandidates(
+        List<Long> candidates =
+                profileRepository.findJobPreparationCandidateIds(
                         now.minusHours(1),
                         now.minusHours(6),
                         PageRequest.of(0, 100)
                 );
 
         assertThat(candidates)
-                .extracting(RecipientProfile::getId)
                 .containsExactlyInAnyOrder(
                         quietPeriodDue.getId(),
                         maxWindowDue.getId(),
@@ -181,99 +163,47 @@ class RecipientProfileRepositoryIntegrationTest {
                 .doesNotContain(notDue.getId());
     }
 
-    @Test
-    @DisplayName("기준 시각보다 오래 PENDING인 프로파일만 타임아웃 후보로 조회한다")
-    void findPendingTimeoutCandidates_returnsExpiredPendingProfiles() {
-        LocalDateTime now = LocalDateTime.of(2026, 9, 24, 18, 0);
-
-        RecipientProfile expired = persistPendingProfile(
-                now.minusMinutes(11)
-        );
-        RecipientProfile active = persistPendingProfile(
-                now.minusMinutes(5)
-        );
-        RecipientProfile none = persistProfile();
-
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(
+            com.gift.gift.domain.recommendation.profiling.entity.ProfilingPublishStatus.class)
+    @DisplayName("현재 작업의 미확정 발행만 새 작업 후보에서 제외하고 PUBLISHED·BLOCKED는 허용한다")
+    void filtersOnlyUnconfirmedCurrentPublication(
+            com.gift.gift.domain.recommendation.profiling.entity.ProfilingPublishStatus publishStatus) {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 6, 12, 0);
+        RecipientProfile profile = persistPendingProfile(now.minusHours(2));
+        profile.recordPreferenceChange(now.minusHours(1));
         profileRepository.flush();
-
-        List<RecipientProfile> candidates =
-                profileRepository.findPendingTimeoutCandidates(
-                        RecipientProfileStatus.PENDING,
-                        now.minusMinutes(10),
-                        PageRequest.of(0, 100)
-                );
-
-        assertThat(candidates)
-                .extracting(RecipientProfile::getId)
-                .containsExactly(expired.getId())
-                .doesNotContain(active.getId(), none.getId());
+        jdbcTemplate.update("""
+                INSERT INTO profiling_jobs (request_id, profile_id, source_version, request_body,
+                    publish_status, result_status, created_at, updated_at)
+                VALUES (?, ?, 1, '{}', ?, 'WAITING', NOW(6), NOW(6))
+                """, UUID.randomUUID().toString(), profile.getId(), publishStatus.name());
+        List<Long> candidates = profileRepository.findJobPreparationCandidateIds(
+                now.minusMinutes(1), now.minusMinutes(5), PageRequest.of(0, 100));
+        boolean blockedByPublication = java.util.Set.of("READY", "CLAIMED", "RETRY_WAIT")
+                .contains(publishStatus.name());
+        assertThat(candidates.contains(profile.getId())).isEqualTo(!blockedByPublication);
     }
 
     @Test
-    @DisplayName("복구 후보는 변경 없는 오래된 PENDING만 대기 시각과 ID 순서로 제한 조회한다")
-    void findRecoveryCandidateIds_filtersOrdersAndLimits() {
-        LocalDateTime now = LocalDateTime.of(2026, 10, 7, 12, 0);
-
-        RecipientProfile oldest = persistPendingProfile(
-                now.minusHours(8)
-        );
-
-        RecipientProfile tiedFirst = persistPendingProfile(
-                now.minusHours(7)
-        );
-
-        RecipientProfile tiedSecond = persistPendingProfile(
-                now.minusHours(7)
-        );
-
-        RecipientProfile boundary = persistPendingProfile(
-                now.minusHours(6)
-        );
-
-        RecipientProfile recent = persistPendingProfile(
-                now.minusHours(6).plusSeconds(1)
-        );
-
-        RecipientProfile changed = persistPendingProfile(
-                now.minusHours(9)
-        );
-        changed.recordPreferenceChange(now.minusHours(2));
-
-        RecipientProfile completed = persistPendingProfile(
-                now.minusHours(9)
-        );
-        completed.markCompleted(1);
-
-        persistProfile();
-
+    @DisplayName("미확정 작업은 페이지 한도를 차지하지 않아 다음 프로필 준비가 굶지 않는다")
+    void excludesUnconfirmedJobsBeforeApplyingPageLimit() {
+        // 공유 DB의 다른 후보는 이 테스트 트랜잭션에서만 제외하고 종료 시 롤백한다.
+        jdbcTemplate.update("UPDATE recipient_profiles SET last_changed_at = NULL, window_started_at = NULL");
+        LocalDateTime now = LocalDateTime.of(2026, 11, 6, 12, 0);
+        RecipientProfile waiting = persistPendingProfile(now.minusHours(3));
+        waiting.recordPreferenceChange(now.minusHours(2));
+        RecipientProfile eligible = persistProfile();
+        eligible.recordPreferenceChange(now.minusHours(1));
         profileRepository.flush();
-
-        List<Long> candidates = profileRepository.findRecoveryCandidateIds(
-                RecipientProfileStatus.PENDING,
-                now.minusHours(6),
-                profileRepository.findDispatchClaimNow().minusMinutes(2),
-                PageRequest.of(0, 100)
-        );
-
-        assertThat(candidates).containsExactly(
-                oldest.getId(),
-                tiedFirst.getId(),
-                tiedSecond.getId(),
-                boundary.getId()
-        );
-
-        assertThat(candidates).doesNotContain(
-                recent.getId(),
-                changed.getId(),
-                completed.getId()
-        );
-
-        assertThat(profileRepository.findRecoveryCandidateIds(
-                RecipientProfileStatus.PENDING,
-                now.minusHours(6),
-                profileRepository.findDispatchClaimNow().minusMinutes(2),
-                PageRequest.of(0, 1)
-        )).containsExactly(oldest.getId());
+        jdbcTemplate.update("""
+                INSERT INTO profiling_jobs (request_id, profile_id, source_version, request_body,
+                    publish_status, result_status, created_at, updated_at)
+                VALUES (?, ?, 1, '{}', 'READY', 'WAITING', NOW(6), NOW(6))
+                """, UUID.randomUUID().toString(), waiting.getId());
+        assertThat(profileRepository.findJobPreparationCandidateIds(
+                now.minusMinutes(1), now.minusMinutes(5), PageRequest.of(0, 1)))
+                .containsExactly(eligible.getId());
     }
 
     private RecipientProfile persistPendingProfile(

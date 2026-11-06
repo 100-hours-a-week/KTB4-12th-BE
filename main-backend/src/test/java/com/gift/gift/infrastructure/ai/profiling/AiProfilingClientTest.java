@@ -207,9 +207,7 @@ class AiProfilingClientTest {
                 Duration.ofMillis(200),
                 Duration.ofHours(1),
                 Duration.ofHours(6),
-                10,
-                0,
-                Duration.ofMinutes(2)
+                10
         );
     }
 

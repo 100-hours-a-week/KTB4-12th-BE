@@ -5,7 +5,6 @@ import java.time.LocalDateTime;
 import java.util.Objects;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
@@ -39,10 +38,6 @@ import com.gift.gift.global.common.BaseTimeEntity;
                 @Index(
                         name = "idx_recipient_profiles_window_started",
                         columnList = "profile_status, window_started_at, id"
-                ),
-                @Index(
-                        name = "idx_recipient_profiles_pending_timeout",
-                        columnList = "profile_status, pending_since, id"
                 )
         },
         check = {
@@ -68,34 +63,11 @@ import com.gift.gift.global.common.BaseTimeEntity;
                 @CheckConstraint(
                         name = "chk_recipient_profiles_version_order",
                         constraint = "analyzed_source_version <= source_version"
-                ),
-                @CheckConstraint(
-                        name = "chk_recipient_profiles_retry_count",
-                        constraint = "retry_count BETWEEN 0 AND 2"
-                ),
-
-                @CheckConstraint(
-                        name = "chk_recipient_profiles_dispatch_claim",
-                        constraint = """
-                (
-                    dispatch_claim_token IS NULL
-                    AND dispatch_claimed_at IS NULL
-                    AND dispatch_claim_last_changed_at IS NULL
-                )
-                OR
-                (
-                    dispatch_claim_token IS NOT NULL
-                    AND dispatch_claimed_at IS NOT NULL
-                )
-                """
                 )
         }
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RecipientProfile extends BaseTimeEntity {
-
-    // DB 저장 상한. 일반 요청의 디바운스 재시작은 1회만 허용한다.
-    public static final int MAX_RETRY_COUNT = 2;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -145,34 +117,11 @@ public class RecipientProfile extends BaseTimeEntity {
     @Column(name = "pending_since")
     private LocalDateTime pendingSince;
 
-    @Column(name = "dispatch_claim_token", length = 36)
-    private String dispatchClaimToken;
-
-    @Column(name = "dispatch_claimed_at")
-    private LocalDateTime dispatchClaimedAt;
-
-    @Column(name = "dispatch_claim_last_changed_at")
-    private LocalDateTime dispatchClaimLastChangedAt;
-
-    @Min(0)
-    @Max(MAX_RETRY_COUNT)
-    @Column(
-            name = "retry_count",
-            nullable = false,
-            columnDefinition = "TINYINT UNSIGNED"
-    )
-    @ColumnDefault("0")
-    private int retryCount;
-
     public RecipientProfile(User recipient) {
         this.recipient = Objects.requireNonNull(
                 recipient,
                 "수신자는 null일 수 없습니다."
         );
-        this.profileStatus = RecipientProfileStatus.NONE;
-        this.sourceVersion = 0;
-        this.analyzedSourceVersion = 0;
-        this.retryCount = 0;
     }
 
     public void recordPreferenceChange(LocalDateTime changedAt) {
@@ -193,27 +142,11 @@ public class RecipientProfile extends BaseTimeEntity {
         }
 
         lastChangedAt = changedAt;
-
-        // 사용자 신규 변경에는 새로운 재시작 기회를 부여한다.
-        resetRetryCount();
     }
 
     public long createNextSourceVersion() {
-        // PENDING 중에도 새 변경의 번호를 생성할 수 있다.
-        // 번호 생성 자체는 디바운스 재시작 횟수를 초기화하지 않는다.
         sourceVersion = Math.addExact(sourceVersion, 1);
         return sourceVersion;
-    }
-
-    public void restartDebounce(LocalDateTime now) {
-        Objects.requireNonNull(
-                now,
-                "재시작 시각은 null일 수 없습니다."
-        );
-
-        // quiet-period와 maximum-window를 모두 다시 시작한다.
-        lastChangedAt = now;
-        windowStartedAt = now;
     }
 
     public void clearPendingChange() {
@@ -244,47 +177,24 @@ public class RecipientProfile extends BaseTimeEntity {
 
         analyzedSourceVersion = completedSourceVersion;
 
-        // 중간 번호의 결과는 최신 요청의 대기 정보를 변경하지 않는다.
+        // 중간 버전의 결과는 최신 요청의 대기 상태를 바꾸지 않는다.
         if (completedSourceVersion < sourceVersion) {
             return;
         }
 
         profileStatus = RecipientProfileStatus.COMPLETED;
         pendingSince = null;
-
-        // 늦은 콜백이 신규 변경이나 실패 재시작의 횟수를 지우지 않는다.
-        if (lastChangedAt == null && windowStartedAt == null) {
-            resetRetryCount();
-        }
     }
 
     public void markFailed() {
-        requirePendingStatus();
-        profileStatus = RecipientProfileStatus.FAILED;
-        pendingSince = null;
-    }
-
-    public int increaseRetryCount() {
-        if (retryCount >= MAX_RETRY_COUNT) {
-            throw new IllegalStateException(
-                    "프로파일 재시도 횟수의 저장 상한을 초과했습니다."
-            );
-        }
-
-        retryCount++;
-        return retryCount;
-    }
-
-    public void resetRetryCount() {
-        retryCount = 0;
-    }
-
-    private void requirePendingStatus() {
         if (profileStatus != RecipientProfileStatus.PENDING) {
             throw new IllegalStateException(
-                    "PENDING 상태의 프로파일만 완료 또는 실패 처리할 수 있습니다."
+                    "PENDING 상태의 프로파일만 실패 처리할 수 있습니다."
             );
         }
+
+        profileStatus = RecipientProfileStatus.FAILED;
+        pendingSince = null;
     }
 
     public boolean isDispatchDue(
@@ -306,49 +216,8 @@ public class RecipientProfile extends BaseTimeEntity {
             return false;
         }
 
-        LocalDateTime quietPeriodCutoff = now.minus(quietPeriod);
-        LocalDateTime maximumWindowCutoff = now.minus(maximumWindow);
-
-        return !lastChangedAt.isAfter(quietPeriodCutoff)
-                || !windowStartedAt.isAfter(maximumWindowCutoff);
-    }
-
-    public void applyAcceptedResponse(
-            long acceptedSourceVersion,
-            LocalDateTime snapshottedLastChangedAt,
-            LocalDateTime acceptedAt
-    ) {
-        Objects.requireNonNull(
-                snapshottedLastChangedAt,
-                "요청 당시 변경 시각은 null일 수 없습니다."
-        );
-        Objects.requireNonNull(
-                acceptedAt,
-                "AI 요청 접수 시각은 null일 수 없습니다."
-        );
-
-        // 더 최신 번호가 이미 준비됐다면 옛 202를 반영하지 않는다.
-        if (acceptedSourceVersion < sourceVersion) {
-            return;
-        }
-
-        if (acceptedSourceVersion > sourceVersion) {
-            throw new IllegalStateException(
-                    "접수된 요청 버전이 현재 프로파일 버전과 일치하지 않습니다."
-            );
-        }
-
-        // 빠른 콜백이 완료한 상태를 PENDING으로 되돌리지 않는다.
-        if (analyzedSourceVersion < acceptedSourceVersion) {
-            profileStatus = RecipientProfileStatus.PENDING;
-            pendingSince = acceptedAt;
-        }
-
-        // 해당 변경의 접수 성공인 경우에만 대기와 횟수를 정리한다.
-        if (Objects.equals(lastChangedAt, snapshottedLastChangedAt)) {
-            clearPendingChange();
-            resetRetryCount();
-        }
+        return !lastChangedAt.isAfter(now.minus(quietPeriod))
+                || !windowStartedAt.isAfter(now.minus(maximumWindow));
     }
 
     public boolean shouldApplyCallback(long callbackSourceVersion) {
@@ -365,7 +234,6 @@ public class RecipientProfile extends BaseTimeEntity {
             );
         }
 
-        // 초기 번호 0은 실제 발송 또는 저장 완료를 의미하지 않는다.
         if (callbackSourceVersion == 0) {
             throw new RecommendationException(
                     RecommendationErrorCode.SOURCE_VERSION_NOT_DISPATCHED
@@ -373,71 +241,5 @@ public class RecipientProfile extends BaseTimeEntity {
         }
 
         return callbackSourceVersion != analyzedSourceVersion;
-    }
-
-    public boolean hasActiveDispatchClaim(
-            LocalDateTime now,
-            Duration timeout
-    ) {
-        Objects.requireNonNull(now, "현재 시각은 필수입니다.");
-        Objects.requireNonNull(timeout, "선점 유효 기간은 필수입니다.");
-
-        if (timeout.isZero() || timeout.isNegative()) {
-            throw new IllegalArgumentException(
-                    "선점 유효 기간은 0보다 커야 합니다."
-            );
-        }
-
-        if (dispatchClaimToken == null) {
-            return false;
-        }
-
-        Objects.requireNonNull(
-                dispatchClaimedAt,
-                "선점 토큰이 있으면 선점 시각도 있어야 합니다."
-        );
-
-        return now.isBefore(dispatchClaimedAt.plus(timeout));
-    }
-
-    public boolean matchesDispatchClaim(String token) {
-        return token != null && token.equals(dispatchClaimToken);
-    }
-
-    public void claimDispatch(
-            String token,
-            LocalDateTime claimedAt,
-            LocalDateTime lastChangedSnapshot
-    ) {
-        Objects.requireNonNull(token, "선점 토큰은 필수입니다.");
-        Objects.requireNonNull(claimedAt, "선점 시각은 필수입니다.");
-
-        if (token.isBlank() || token.length() > 36) {
-            throw new IllegalArgumentException(
-                    "선점 토큰은 공백이 아닌 36자 이하의 값이어야 합니다."
-            );
-        }
-
-        if (dispatchClaimToken != null) {
-            throw new IllegalStateException(
-                    "기존 선점을 정리한 뒤 새 선점을 저장해야 합니다."
-            );
-        }
-
-        dispatchClaimToken = token;
-        dispatchClaimedAt = claimedAt;
-        dispatchClaimLastChangedAt = lastChangedSnapshot;
-    }
-
-    public boolean releaseDispatchClaim(String token) {
-        if (!matchesDispatchClaim(token)) {
-            return false;
-        }
-
-        dispatchClaimToken = null;
-        dispatchClaimedAt = null;
-        dispatchClaimLastChangedAt = null;
-
-        return true;
     }
 }

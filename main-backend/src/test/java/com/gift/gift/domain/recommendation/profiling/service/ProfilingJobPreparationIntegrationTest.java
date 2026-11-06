@@ -102,18 +102,18 @@ class ProfilingJobPreparationIntegrationTest {
     }
 
     @Test
-    @DisplayName("준비 시점이 아니거나 HTTP 전송이 선점된 경우 입력 변경을 유지한다")
-    void notDueOrHttpClaimedDoesNotConsumeChanges() {
-        tx.executeWithoutResult(status -> profiles.findByIdForUpdate(profileId).orElseThrow()
-                .restartDebounce(LocalDateTime.now(clock)));
-        assertThat(service.prepare(profileId)).isEmpty();
+    @DisplayName("디바운스 전에는 버전과 변경 대기를 소비하지 않는다")
+    void notDueDoesNotConsumeChanges() {
         tx.executeWithoutResult(status -> {
-            var p = profiles.findByIdForUpdate(profileId).orElseThrow();
-            p.restartDebounce(LocalDateTime.now(clock).minusDays(1));
-            p.claimDispatch(UUID.randomUUID().toString(), LocalDateTime.now(clock), p.getLastChangedAt());
+            var profile = profiles.findByIdForUpdate(profileId).orElseThrow();
+            profile.clearPendingChange();
+            profile.recordPreferenceChange(LocalDateTime.now(clock));
         });
         assertThat(service.prepare(profileId)).isEmpty();
-        assertThat(profiles.findById(profileId).orElseThrow().getSourceVersion()).isZero();
+        var profile = profiles.findById(profileId).orElseThrow();
+        assertThat(profile.getSourceVersion()).isZero();
+        assertThat(profile.getLastChangedAt()).isEqualTo(LocalDateTime.now(clock));
+        assertThat(jobCount()).isZero();
     }
 
     @Test
