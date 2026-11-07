@@ -10,7 +10,7 @@ public enum BugReportErrorCode {
     ),
     PAYLOAD_TOO_LARGE(
             ErrorCode.INVALID_REQUEST,
-            "payload_json 크기를 확인해 주세요."
+            "JSON 요청은 UTF-8 기준 10KB 이하여야 합니다."
     ),
     PAYLOAD_INVALID_FORMAT(
             ErrorCode.INVALID_REQUEST,
@@ -39,7 +39,8 @@ public enum BugReportErrorCode {
     GOOGLE_SHEETS_NOT_CONFIGURED(
             ErrorCode.BUG_REPORT_INTEGRATION_NOT_CONFIGURED
     ),
-    DELIVERY_FAILED(ErrorCode.BUG_REPORT_DELIVERY_FAILED);
+    DELIVERY_FAILED(ErrorCode.BUG_REPORT_DELIVERY_FAILED),
+    ACCEPTANCE_FAILED(ErrorCode.SERVICE_UNAVAILABLE, "버그 제보를 접수하지 못했습니다. 같은 reportId로 재시도해 주세요.");
 
     private final ErrorCode errorCode;
     private final String message;

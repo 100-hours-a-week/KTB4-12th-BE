@@ -1,0 +1,38 @@
+{
+  "info": {
+    "name": "Bug Report JSON Acceptance",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "JSON 접수 / 같은 reportId 재접수",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"DB 접수 완료\", () => pm.response.to.have.status(202));",
+              "pm.test(\"같은 reportId\", () => pm.expect(pm.response.json().data.reportId).to.eql(pm.environment.get(\"reportId\")));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reportId\": \"{{reportId}}\",\n  \"description\": \"로컬 JSON 접수 테스트\",\n  \"category\": \"버그\",\n  \"pageUrl\": \"http://localhost:5173\",\n  \"route\": \"/\",\n  \"viewport\": \"1280x720\",\n  \"userAgent\": \"Postman\",\n  \"reportedAt\": \"2026-11-07T06:00:00Z\"\n}"
+        },
+        "url": "{{baseUrl}}/bug-report",
+        "description": "외부 발송 완료가 아닌 DB 접수 확인. 재시도 시 reportId 유지. 새 제보는 환경의 reportId를 새 UUID로 변경."
+      }
+    }
+  ]
+}
