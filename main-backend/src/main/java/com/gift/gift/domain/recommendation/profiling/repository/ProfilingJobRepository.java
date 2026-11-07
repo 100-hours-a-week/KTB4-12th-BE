@@ -1,9 +1,12 @@
 package com.gift.gift.domain.recommendation.profiling.repository;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -25,4 +28,41 @@ public interface ProfilingJobRepository
             @Param("profileId") Long profileId,
             @Param("sourceVersion") long sourceVersion
     );
+
+    @Query("""
+            select job.requestId as requestId,
+                   job.profile.id as profileId,
+                   job.sourceVersion as sourceVersion,
+                   job.profile.sourceVersion as currentSourceVersion,
+                   job.profile.analyzedSourceVersion as analyzedSourceVersion,
+                   job.attemptCount as attemptCount,
+                   job.lastErrorCode as lastErrorCode,
+                   job.updatedAt as updatedAt
+            from ProfilingJob job
+            where job.publishStatus =
+                com.gift.gift.domain.recommendation.profiling.entity.ProfilingPublishStatus.BLOCKED
+              and job.resultStatus =
+                com.gift.gift.domain.recommendation.profiling.entity.ProfilingResultStatus.WAITING
+            order by job.createdAt asc, job.requestId asc
+            """)
+    List<BlockedJobView> findBlockedJobs(Pageable pageable);
+
+    interface BlockedJobView {
+
+        String getRequestId();
+
+        Long getProfileId();
+
+        long getSourceVersion();
+
+        long getCurrentSourceVersion();
+
+        long getAnalyzedSourceVersion();
+
+        int getAttemptCount();
+
+        String getLastErrorCode();
+
+        LocalDateTime getUpdatedAt();
+    }
 }

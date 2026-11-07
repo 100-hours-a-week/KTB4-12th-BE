@@ -200,4 +200,43 @@ public class ProfilingJob extends BaseTimeEntity {
         finishedAt = now;
         nextAttemptAt = null;
     }
+
+    public void requireManualRecovery() {
+        if (publishStatus != ProfilingPublishStatus.BLOCKED
+                || resultStatus != ProfilingResultStatus.WAITING) {
+            throw new IllegalStateException(
+                    "BLOCKED이면서 WAITING인 작업만 복구할 수 있습니다."
+            );
+        }
+
+        if (claimToken != null || claimedAt != null) {
+            throw new IllegalStateException(
+                    "선점 정보가 남아 있는 작업은 복구할 수 없습니다."
+            );
+        }
+
+        if (publishedAt != null || finishedAt != null) {
+            throw new IllegalStateException(
+                    "발행 확인 또는 종료 기록이 있는 작업은 복구할 수 없습니다."
+            );
+        }
+    }
+
+    public void resumeBlockedPublication() {
+        requireManualRecovery();
+
+        if (requestBodyBytes().length
+                > ProfilingMessageSerializer.MAX_MESSAGE_BYTES) {
+            throw new IllegalStateException(
+                    "크기 제한을 초과한 본문은 동일 입력으로 재개할 수 없습니다."
+            );
+        }
+
+        publishStatus = ProfilingPublishStatus.READY;
+        attemptCount = 0;
+        firstFailedAt = null;
+        nextAttemptAt = null;
+        lastErrorCode = null;
+        lastErrorMessage = null;
+    }
 }

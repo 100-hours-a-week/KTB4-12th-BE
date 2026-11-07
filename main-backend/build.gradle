@@ -78,3 +78,16 @@ sentry {
     projectName = 'ktb4-12th-be'
     authToken = sentryAuthToken
 }
+
+tasks.register('profilingRecovery', JavaExec) {
+    group = 'operations'
+    description = '프로파일링 BLOCKED 조회 및 수동 재개'
+
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.gift.gift.domain.recommendation.profiling.support.ProfilingRecoveryCommand'
+
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
