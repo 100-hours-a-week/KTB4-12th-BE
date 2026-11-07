@@ -1,0 +1,4 @@
+*
+!Dockerfile
+!rabbitmq.conf
+!report-definitions.json

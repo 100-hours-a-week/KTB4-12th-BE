@@ -57,6 +57,20 @@ class RabbitPublisherTest {
     }
 
     @Test
+    @DisplayName("리포트 전용 Exchange 발행의 확인 채널이 끊기면 결과 불명으로 재시도한다")
+    void reportExchangeKeepsUnknownConfirmAsFailure() {
+        doAnswer(call -> {
+            assertThat((String) call.getArgument(0)).isEqualTo("report.events");
+            assertThat((String) call.getArgument(1)).isEqualTo("Report.created");
+            CorrelationData data = call.getArgument(3);
+            data.getFuture().completeExceptionally(new java.io.IOException("confirm channel closed"));
+            return null;
+        }).when(template).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
+        assertThat(publisher.publish(envelope(), "report", "report.events", "Report.created").join())
+                .isEqualTo(new RabbitPublisher.Result(false, "ConfirmUnknown"));
+    }
+
+    @Test
     @DisplayName("동일 eventId 재발행에도 시도별 correlation을 구분한다")
     void correlatesEachAttemptAndKeepsPersistentMessageId() {
         doAnswer(call -> {

@@ -1,0 +1,26 @@
+{
+  "vhosts": [
+    {
+      "name": "gift"
+    }
+  ],
+  "users": [
+    {
+      "name": "gift-backend",
+      "password_hash": "REPLACE_WITH_GENERATED_PASSWORD_HASH",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": [
+        "administrator"
+      ]
+    }
+  ],
+  "permissions": [
+    {
+      "user": "gift-backend",
+      "vhost": "gift",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ]
+}

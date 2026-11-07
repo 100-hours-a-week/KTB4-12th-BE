@@ -28,13 +28,14 @@ public class OutboxRelay {
     @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:1000}", scheduler = "outboxTaskScheduler")
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void relaySearch() {
-        relay("product.search.sync.v1", settings.searchBatchSize(), routing.searchRoutingKey());
+        relay("product.search.sync.v1", settings.searchBatchSize(), routing.exchange(), routing.searchRoutingKey());
     }
 
-    private void relay(String eventType, int limit, String routingKey) {
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void relay(String eventType, int limit, String exchange, String routingKey) {
         List<Job> jobs = repository.claim(eventType, limit);
         List<CompletableFuture<RabbitPublisher.Result>> attempts = jobs.stream()
-                .map(job -> publisher.publish(job.envelope(), job.claimToken(), routingKey)).toList();
+                .map(job -> publisher.publish(job.envelope(), job.claimToken(), exchange, routingKey)).toList();
         for (int i = 0; i < jobs.size(); i++) {
             Job job = jobs.get(i);
             try {

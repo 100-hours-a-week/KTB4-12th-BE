@@ -4,17 +4,18 @@
 
 ## 로컬 실행
 
-`.env.example`의 RabbitMQ 항목을 로컬 `.env`에 설정한다. Compose는 `.env`를 읽지만 BE에는 별도로 실행 환경변수를 전달해야 한다.
+먼저 [공통 RabbitMQ 이미지 가이드](../infrastructure/rabbitmq/README.md)에 따라 계정·권한 Secret 파일을 준비하고
+`RABBITMQ_ACCESS_DEFINITIONS_FILE`을 지정한다. `.env.example`의 RabbitMQ 항목을 로컬 `.env`에 설정한다. Compose는 `.env`를 읽지만 BE에는 별도로 실행 환경변수를 전달해야 한다.
 
 ```bash
-docker compose -f compose.rabbitmq.yaml up -d --wait
+docker compose -f compose.rabbitmq.yaml up -d --build --wait
 ```
 
-기본 vhost `profiling` 기준으로 요청 큐 보호 정책을 적용한다. vhost를 변경했다면 `-p`도 변경한다.
+공용 vhost `gift` 기준으로 요청 큐 보호 정책을 적용한다.
 
 ```bash
 docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl set_policy \
-  -p profiling --apply-to queues profiling-request-protection '^profiling[.]request$' \
+  -p gift --apply-to queues profiling-request-protection '^profiling[.]request$' \
   '{"max-length":10000,"max-length-bytes":268435456,"overflow":"reject-publish"}'
 ```
 
@@ -31,9 +32,9 @@ BE 실행 환경에 `AI_PROFILE_AMQP_ENABLED=true`와 접속 정보를 전달하
 - 기본 멤버 1은 로컬용이며 AZ 장애 대응이나 복제 가용성을 보장하지 않는다
 
 ```bash
-docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_queues -p profiling name type durable arguments
-docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_bindings -p profiling source_name destination_name routing_key
-docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_policies -p profiling
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_queues -p gift name type durable arguments
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_bindings -p gift source_name destination_name routing_key
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_policies -p gift
 ```
 
 기존 Classic 큐와 이름·인자가 충돌해도 자동 삭제하지 않는다. 운영 TLS·권한·3 AZ 배치와 멤버 장애 검증은 별도 배포 범위다.
@@ -51,8 +52,8 @@ CI는 같은 테스트 작업에서 RabbitMQ 컨테이너를 실행한다. Docke
 ## 공통 연결 통합
 
 - BE 접속 설정은 `spring.rabbitmq` / `SPRING_RABBITMQ_*` 한 곳에서 관리한다. 이전 `app.ai-profile.amqp.host/port/username/password/virtual-host`는 제거했다.
-- Compose는 `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST`를 사용한다. BE의 대응 값과 같은 접속 대상을 지정한다. BE가 컨테이너 안에서 실행되면 host는 해당 네트워크 주소를 사용한다.
-- 기존 계정·vhost `profiling`을 그대로 공유하는 예시이며, 기존 볼륨·큐·메시지를 삭제하지 않는다. 기존 볼륨의 계정·vhost는 환경변수만 바꿔 갱신되지 않는다.
+- Compose는 커스텀 RabbitMQ 이미지와 `RABBITMQ_ACCESS_DEFINITIONS_FILE` Secret을 사용한다. 공용 vhost는 `gift`다. BE의 계정·비밀번호를 Secret에 맞추고, 컨테이너 내부에서는 해당 네트워크 주소를 사용한다.
+- 기존 `profiling` vhost의 큐·메시지는 `gift`로 자동 이동하지 않는다. 기존 작업 drain 또는 이관 후 producer/consumer를 함께 전환한다. 기존 노드 이름·볼륨은 유지하며 큐·메시지를 삭제하지 않는다.
 - Boot의 자동 연결 생성을 사용하므로 `spring.rabbitmq.addresses`·TLS 설정을 별도의 수동 복사 없이 유지한다. `RabbitConnectionConfiguration`은 클라이언트 I/O 제한과 Spring 연결 종료·채널 확보 대기만 보완한다.
 - Handshake·Channel RPC·Shutdown·채널 확보·연결 종료 대기는 각 3초, NIO 쓰기 큐는 64프레임·삽입 대기 3초다. 공유 채널 캐시는 Boot 기본 25개이며 `spring.rabbitmq.cache.channel.size`로 조정할 수 있다. 프로파일링 워커는 인스턴스당 1개로 순차 발행한다. 운영 적정 용량은 별도 부하 측정 대상이다.
 - `RabbitPublisherConfiguration`·`RabbitRoutingProperties`는 원격 develop `6093c9b`의 공통 Publisher 설정을 반영하고, 연결 주입에 `@Qualifier("rabbitConnectionFactory")`를 지정했다. 이 변경에서 공통 Relay·업무 Consumer를 새로 구현하지 않는다.
