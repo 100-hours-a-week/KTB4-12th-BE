@@ -4,7 +4,7 @@ spring:
     port: ${SPRING_RABBITMQ_PORT:5672}
     username: ${SPRING_RABBITMQ_USERNAME:}
     password: ${SPRING_RABBITMQ_PASSWORD:}
-    virtual-host: ${SPRING_RABBITMQ_VIRTUAL_HOST:profiling}
+    virtual-host: ${SPRING_RABBITMQ_VIRTUAL_HOST:gift}
     connection-timeout: 3s
     requested-heartbeat: 20s
     publisher-confirm-type: correlated
@@ -83,6 +83,10 @@ app:
       url: ${RABBITMQ_MANAGEMENT_URL:}
       username: ${RABBITMQ_MANAGEMENT_USERNAME:}
       password: ${RABBITMQ_MANAGEMENT_PASSWORD:}
+  report:
+    mq:
+      enabled: ${REPORT_MQ_ENABLED:false}
+      batch-size: ${REPORT_MQ_BATCH_SIZE:10}
   outbox:
     enabled: ${OUTBOX_ENABLED:false}
     rabbit:
