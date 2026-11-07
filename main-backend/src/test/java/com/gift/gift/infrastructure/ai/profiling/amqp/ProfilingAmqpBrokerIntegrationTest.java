@@ -1,6 +1,7 @@
 package com.gift.gift.infrastructure.ai.profiling.amqp;
 
 import java.nio.charset.StandardCharsets;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.Optional;
@@ -146,7 +147,7 @@ class ProfilingAmqpBrokerIntegrationTest {
                         when(repository.claimOne()).thenReturn(Optional.of(claim));
                         var publisher = new ProfilingJobPublisher(template,
                                 context.getBean(ProfilingAmqpProperties.class), repository,
-                                context.getBean(ProfilingPublisherState.class));
+                                context.getBean(ProfilingPublisherState.class), new SimpleMeterRegistry());
                         try {
                             publisher.publishOne();
                             verify(repository).markPublished(claim);

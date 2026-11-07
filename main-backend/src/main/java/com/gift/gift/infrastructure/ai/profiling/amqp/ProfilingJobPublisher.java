@@ -7,6 +7,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
 import jakarta.annotation.PreDestroy;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import lombok.extern.slf4j.Slf4j;
 
 import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.ShutdownSignalException;
@@ -24,6 +28,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import com.gift.gift.domain.recommendation.profiling.repository.ProfilingPublishStore;
 import com.gift.gift.domain.recommendation.profiling.repository.ProfilingPublishStore.Claim;
 
+@Slf4j
 @Service
 @ConditionalOnProperty(
         prefix = "app.ai-profile.amqp",
@@ -41,6 +46,7 @@ public class ProfilingJobPublisher {
     private final ProfilingAmqpProperties properties;
     private final ProfilingPublishStore store;
     private final ProfilingPublisherState state;
+    private final MeterRegistry registry;
 
     private final ReentrantLock invocationLock = new ReentrantLock();
     private final AtomicBoolean workerBusy = new AtomicBoolean();
@@ -67,7 +73,8 @@ public class ProfilingJobPublisher {
             RabbitTemplate template,
             ProfilingAmqpProperties properties,
             ProfilingPublishStore store,
-            ProfilingPublisherState state
+            ProfilingPublisherState state,
+            MeterRegistry registry
     ) {
         if (properties.confirmTimeoutSeconds()
                 >= ATTEMPT_TIMEOUT_SECONDS) {
@@ -80,6 +87,14 @@ public class ProfilingJobPublisher {
         this.properties = properties;
         this.store = store;
         this.state = state;
+        this.registry = registry;
+        for (String code : Set.of("NOT_SENT", "ACK_NO_RETURN", "UNROUTABLE_MESSAGE", "PUBLISH_NACK",
+                "CONFIRM_TIMEOUT", "ATTEMPT_TIMEOUT", "PUBLISH_INTERRUPTED", "INPUT_TOO_LARGE",
+                "BROKER_AUTHENTICATION_FAILED", "BROKER_CONFIGURATION_ERROR", "BROKER_COMMUNICATION_FAILED")) {
+            registry.counter("profiling.publish.outcomes", "code", code);
+        }
+        registry.counter("profiling.publish.stale.updates");
+        registry.counter("profiling.publish.db.record.errors");
     }
 
     public enum TickResult {
@@ -177,20 +192,30 @@ public class ProfilingJobPublisher {
                 outcome = classify(exception);
             }
 
-            // 데이터베이스 오류를 통신 실패로 처리하여 숨기지 않는다.
+            String outcomeCode = outcome.notSent() ? "NOT_SENT"
+                    : outcome.success() ? "ACK_NO_RETURN" : outcome.code();
+            registry.counter("profiling.publish.outcomes", "code", outcomeCode).increment();
+
             if (outcome.notSent()) {
                 store.releaseUnsent(claim);
                 return TickResult.STOP;
             }
-
-            if (outcome.success()) {
-                store.markPublished(claim);
-            } else {
-                store.markFailed(
-                        claim,
-                        outcome.permanent(),
-                        outcome.code()
-                );
+            if (!outcome.success()) {
+                log.warn("프로파일링 발행 실패: requestId={}, code={}", claim.requestId(), outcome.code());
+            }
+            // 브로커의 ACK와 DB 기록 성공은 별개다.
+            try {
+                boolean recorded = outcome.success() ? store.markPublished(claim)
+                        : store.markFailed(claim, outcome.permanent(), outcome.code());
+                if (!recorded) {
+                    registry.counter("profiling.publish.stale.updates").increment();
+                    log.warn("프로파일링 발행 결과 DB 반영 제외: requestId={}", claim.requestId());
+                }
+            } catch (RuntimeException exception) {
+                registry.counter("profiling.publish.db.record.errors").increment();
+                log.error("프로파일링 발행 결과 DB 기록 실패: requestId={}, errorType={}",
+                        claim.requestId(), exception.getClass().getSimpleName());
+                throw exception;
             }
 
             return state.unavailable() || workerBusy.get()
@@ -208,6 +233,10 @@ public class ProfilingJobPublisher {
     private Outcome send(Claim claim) {
         byte[] body = claim.body()
                 .getBytes(StandardCharsets.UTF_8);
+
+        DistributionSummary.builder("profiling.publish.body.bytes")
+                .serviceLevelObjectives(1024, 4096, 16384, 65536, 131072, 262144)
+                .register(registry).record(body.length);
 
         if (body.length > MAX_BODY_BYTES) {
             return Outcome.blocked("INPUT_TOO_LARGE");
@@ -227,11 +256,18 @@ public class ProfilingJobPublisher {
                     correlation
             );
 
-            CorrelationData.Confirm confirm =
-                    correlation.getFuture().get(
-                            properties.confirmTimeoutSeconds(),
-                            TimeUnit.SECONDS
-                    );
+            CorrelationData.Confirm confirm;
+            Timer.Sample confirmWait = Timer.start(registry);
+            try {
+                confirm = correlation.getFuture().get(
+                        properties.confirmTimeoutSeconds(), TimeUnit.SECONDS);
+            } finally {
+                confirmWait.stop(Timer.builder("profiling.publish.confirm.wait")
+                        .publishPercentileHistogram()
+                        .minimumExpectedValue(java.time.Duration.ofMillis(1))
+                        .maximumExpectedValue(java.time.Duration.ofSeconds(30))
+                        .register(registry));
+            }
 
             if (correlation.getReturned() != null) {
                 return Outcome.blocked("UNROUTABLE_MESSAGE");

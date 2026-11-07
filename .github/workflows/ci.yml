@@ -106,6 +106,14 @@ jobs:
           done
           exit 1
 
+      - name: Validate profiling monitoring configuration and alert rules
+        shell: bash
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s monitoring -p 'test_*.py'
+          docker run --rm --entrypoint promtool \
+            -v "$PWD/monitoring:/rules:ro" prom/prometheus:v3.15.0 \
+            test rules /rules/profiling-alerts.test.yml
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -114,6 +122,7 @@ jobs:
           path: |
             main-backend/build/reports/tests/test/
             main-backend/build/test-results/test/*.xml
+            main-backend/build/reports/profiling-observability.txt
             payment-server/build/reports/tests/test/
             payment-server/build/test-results/test/*.xml
           if-no-files-found: ignore

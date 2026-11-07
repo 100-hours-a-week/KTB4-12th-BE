@@ -19,6 +19,9 @@ Python·curl·별도 시작 스크립트는 사용하지 않는다. 기본 이�
 TTL/DLX/overflow는 policy이며 처리 큐의 크기 상한은 아직 설정하지 않았다.
 프로파일링의 Direct/Quorum 선언은 기존 전용 RabbitAdmin이 담당한다.
 
+이미지는 `rabbitmq_prometheus`도 활성화한다. 메트릭 포트 15692는 로컬 Compose에서 loopback으로만 공개한다.
+수집·로컬 경보는 [프로파일링 관측 문서](../../docs/ai-profiling-observability.md)를 따른다.
+
 ## 최초 실행
 
 1. 예시를 저장소 밖의 비공개 위치로 복사하고, `password_hash`를 실제 RabbitMQ salted SHA-256 해시로

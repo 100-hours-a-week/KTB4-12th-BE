@@ -1,0 +1,68 @@
+# Initial thresholds; validate against observed workload before production use.
+groups:
+  - name: profiling-publish
+    rules:
+      - alert: ProfilingPublishBlocked
+        expr: max(profiling_publish_jobs{publish_status="BLOCKED"}) > 0
+        for: 1m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling jobs require manual recovery"
+      - alert: ProfilingPublishBacklog
+        expr: max(profiling_publish_oldest_age_seconds) > 300
+        for: 2m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Unpublished profiling job is older than five minutes"
+      - alert: ProfilingMetricsStale
+        expr: profiling_publish_db_sample_ok == 0 or profiling_publish_db_sample_age_seconds > 180
+        for: 2m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling DB metrics are unavailable or stale"
+      - alert: ProfilingMetricsMissing
+        expr: absent(profiling_publish_db_sample_ok)
+        for: 2m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling metrics are missing; check feature flags and scraping"
+      - alert: ProfilingPublishFailure
+        expr: sum(increase(profiling_publish_outcomes_total{code!~"ACK_NO_RETURN|NOT_SENT"}[5m])) > 0
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling publish failed; inspect error-code metrics and logs"
+      - alert: ProfilingPublishDbRecordFailure
+        expr: sum(increase(profiling_publish_db_record_errors_total[5m])) > 0
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Broker outcome could not be recorded in the DB"
+      - alert: ProfilingBrokerBlocked
+        expr: profiling_publish_connection_blocked == 1
+        for: 1m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling publisher connection is blocked"
+      - alert: ProfilingRabbitReadyBacklog
+        expr: max(rabbitmq_detailed_queue_messages_ready{queue="profiling.request"}) > 550
+        for: 2m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling request Ready backlog exceeds initial threshold"
+      - alert: ProfilingRabbitMemoryPressure
+        expr: rabbitmq_process_resident_memory_bytes / rabbitmq_resident_memory_limit_bytes > 0.9
+        for: 1m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "RabbitMQ memory approaches its configured high watermark"
+      - alert: ProfilingRabbitDiskPressure
+        expr: rabbitmq_disk_space_available_bytes < rabbitmq_disk_space_available_limit_bytes
+        for: 1m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "RabbitMQ disk space is below its configured low watermark"
+      - alert: ProfilingMonitoringTargetDown
+        expr: up{job=~"spring|rabbitmq|rabbitmq-queues"} == 0
+        for: 1m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling monitoring target cannot be scraped"

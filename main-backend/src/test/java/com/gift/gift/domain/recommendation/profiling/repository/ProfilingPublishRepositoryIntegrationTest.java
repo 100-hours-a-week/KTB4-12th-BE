@@ -200,6 +200,19 @@ class ProfilingPublishRepositoryIntegrationTest {
         }
     }
 
+    @Test
+    void backlog_excludesPublishedAndTerminalJobs() {
+        String blocked = insertJob(2);
+        String published = insertJob(3);
+        String terminal = insertJob(4);
+        jdbc.update("UPDATE profiling_jobs SET publish_status = 'BLOCKED' WHERE request_id = ?", blocked);
+        jdbc.update("UPDATE profiling_jobs SET publish_status = 'PUBLISHED' WHERE request_id = ?", published);
+        jdbc.update("UPDATE profiling_jobs SET result_status = 'COMPLETED' WHERE request_id = ?", terminal);
+        assertThat(repository.findPublishBacklog()).extracting(ProfilingPublishStore.PublishBacklog::publishStatus)
+                .containsExactlyInAnyOrder("READY", "BLOCKED");
+        assertThat(repository.findPublishBacklog()).allSatisfy(row -> assertThat(row.count()).isEqualTo(1));
+    }
+
     private String insertJob(long version) {
         String id = UUID.randomUUID().toString();
         jdbc.update("""
