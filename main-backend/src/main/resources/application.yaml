@@ -167,6 +167,7 @@ app:
       max-connections: ${AI_CHAT_SSE_MAX_CONNECTIONS}
 
   ai-profile:
+    cleanup-enabled: ${AI_PROFILE_CLEANUP_ENABLED:false}
     scheduling-enabled: ${AI_PROFILE_SCHEDULING_ENABLED:false}
     base-url: ${AI_PROFILE_BASE_URL}
     service-token: ${PROFILING_SERVICE_TOKEN}
