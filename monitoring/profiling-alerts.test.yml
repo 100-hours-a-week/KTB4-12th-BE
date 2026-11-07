@@ -1,0 +1,31 @@
+rule_files: [profiling-alerts.yml]
+evaluation_interval: 30s
+tests:
+  - interval: 30s
+    input_series:
+      - series: 'profiling_publish_jobs{instance="be-1",publish_status="BLOCKED"}'
+        values: '1 1 1 0 0'
+      - series: 'profiling_publish_jobs{instance="be-2",publish_status="BLOCKED"}'
+        values: '1 1 1 0 0'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: ProfilingPublishBlocked
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: ProfilingPublishBlocked
+        exp_alerts:
+          - exp_labels: {severity: warning, component: profiling}
+            exp_annotations: {summary: "Profiling jobs require manual recovery"}
+      - eval_time: 2m
+        alertname: ProfilingPublishBlocked
+        exp_alerts: []
+  - interval: 30s
+    input_series:
+      - series: 'profiling_publish_oldest_age_seconds{instance="be-1"}'
+        values: '200x6'
+      - series: 'profiling_publish_oldest_age_seconds{instance="be-2"}'
+        values: '200x6'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ProfilingPublishBacklog
+        exp_alerts: []

@@ -10,7 +10,19 @@ services:
     volumes:
       - ./monitoring/runtime.tmp/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/runtime.tmp/monitoring-password:/etc/prometheus/monitoring-password:ro
+      - ./monitoring/profiling-alerts.yml:/etc/prometheus/profiling-alerts.yml:ro
       - prometheus-data:/prometheus
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks: [monitoring]
+    restart: unless-stopped
+
+  alertmanager:
+    profiles: [profiling]
+    image: prom/alertmanager:v0.34.2
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--cluster.listen-address="]
+    volumes:
+      - ./monitoring/runtime.tmp/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     extra_hosts:
       - host.docker.internal:host-gateway
     networks: [monitoring]

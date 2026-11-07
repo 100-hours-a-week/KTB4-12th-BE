@@ -1,6 +1,7 @@
 package com.gift.gift.infrastructure.ai.profiling.amqp;
 
 import java.nio.charset.StandardCharsets;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -35,11 +36,12 @@ class ProfilingJobPublisherTest {
     private final ProfilingPublisherState state = new ProfilingPublisherState();
     private final Claim claim = new Claim("request-1", 2, "{\"text\":\"한글\"}",
             "attempt-token", "READY", null);
+    private final SimpleMeterRegistry metrics = new SimpleMeterRegistry();
     private ProfilingJobPublisher publisher;
 
     @BeforeEach
     void setUp() {
-        publisher = new ProfilingJobPublisher(template, properties(1), repository, state);
+        publisher = new ProfilingJobPublisher(template, properties(1), repository, state, metrics);
         when(repository.claimOne()).thenReturn(Optional.of(claim));
     }
 
@@ -66,6 +68,10 @@ class ProfilingJobPublisherTest {
 
         assertThat(publisher.publishOne()).isEqualTo(ProfilingJobPublisher.TickResult.PROGRESSED);
         verify(repository).markPublished(claim);
+        assertThat(metrics.get("profiling.publish.outcomes").tag("code", "ACK_NO_RETURN").counter().count()).isEqualTo(1);
+        assertThat(metrics.get("profiling.publish.confirm.wait").timer().count()).isEqualTo(1);
+        assertThat(metrics.get("profiling.publish.body.bytes").summary().totalAmount())
+                .isEqualTo(claim.body().getBytes(StandardCharsets.UTF_8).length);
         verify(repository, never()).markFailed(any(), anyBoolean(), anyString());
     }
 
@@ -75,6 +81,8 @@ class ProfilingJobPublisherTest {
         respond(true, true);
         publisher.publishOne();
         verify(repository).markFailed(claim, true, "UNROUTABLE_MESSAGE");
+        assertThat(metrics.get("profiling.publish.outcomes").tag("code", "UNROUTABLE_MESSAGE").counter().count()).isEqualTo(1);
+        assertThat(metrics.get("profiling.publish.outcomes").tag("code", "ACK_NO_RETURN").counter().count()).isZero();
         verify(repository, never()).markPublished(any());
     }
 
@@ -129,6 +137,8 @@ class ProfilingJobPublisherTest {
         var failure = new DataAccessResourceFailureException("database unavailable");
         when(repository.markPublished(claim)).thenThrow(failure);
         assertThatThrownBy(publisher::publishOne).isSameAs(failure);
+        assertThat(metrics.get("profiling.publish.outcomes").tag("code", "ACK_NO_RETURN").counter().count()).isEqualTo(1);
+        assertThat(metrics.get("profiling.publish.db.record.errors").counter().count()).isEqualTo(1);
         verify(repository, never()).markFailed(any(), anyBoolean(), anyString());
     }
 
@@ -261,6 +271,17 @@ class ProfilingJobPublisherTest {
             startWorker.countDown();
             caller.join(3000);
         }
+    }
+
+    @Test
+    void staleClaim_isObservedSeparatelyFromBrokerAcceptance() {
+        respond(true, false);
+        when(repository.markPublished(claim)).thenReturn(false);
+        publisher.publishOne();
+        assertThat(metrics.get("profiling.publish.stale.updates").counter().count()).isEqualTo(1);
+        assertThat(metrics.getMeters()).allSatisfy(meter ->
+                assertThat(meter.getId().getTags()).noneSatisfy(tag ->
+                        assertThat(tag.getValue()).isIn(claim.requestId(), claim.body(), claim.token())));
     }
 
     private void respond(boolean ack, boolean returned) {

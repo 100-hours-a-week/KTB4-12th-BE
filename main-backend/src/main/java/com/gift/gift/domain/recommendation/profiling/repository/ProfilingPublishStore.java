@@ -21,6 +21,22 @@ public class ProfilingPublishStore {
 
     private final JdbcTemplate jdbc;
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true, timeout = 5)
+    public List<PublishBacklog> findPublishBacklog() {
+        return jdbc.query("""
+                SELECT publish_status, COUNT(*) AS job_count, MIN(created_at) AS oldest_created_at
+                FROM profiling_jobs
+                WHERE result_status = 'WAITING'
+                  AND publish_status IN ('READY', 'RETRY_WAIT', 'CLAIMED', 'BLOCKED')
+                GROUP BY publish_status
+                """, (rs, index) -> new PublishBacklog(
+                rs.getString("publish_status"), rs.getLong("job_count"),
+                rs.getObject("oldest_created_at", LocalDateTime.class)));
+    }
+
+    public record PublishBacklog(String publishStatus, long count, LocalDateTime oldestCreatedAt) {
+    }
+
     private static final RowMapper<Row> ROW_MAPPER = (rs, index) ->
             new Row(
                     rs.getString("request_id"),

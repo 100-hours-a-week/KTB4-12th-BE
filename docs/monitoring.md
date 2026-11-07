@@ -1,5 +1,8 @@
 # 선잘알 로컬 성능 모니터링
 
+프로파일링 발행 지표·RabbitMQ 수집·로컬 경보는 [PR4-3 운영·검증 문서](ai-profiling-observability.md)를 따른다.
+기본 구성은 유지하며 `PROFILING_MONITORING_ENABLED=true`와 Compose `profiling` 프로필을 명시했을 때 추가한다.
+
 ## 구성과 적용 범위
 
 Spring Boot 4.1.1 / Java 25 / Micrometer 1.17.1 / HikariCP 7.0.2 / Hibernate 7.4.5.Final.

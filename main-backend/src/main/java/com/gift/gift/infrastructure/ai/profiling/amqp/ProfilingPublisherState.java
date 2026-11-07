@@ -1,6 +1,8 @@
 package com.gift.gift.infrastructure.ai.profiling.amqp;
 
 import java.io.IOException;
+
+import lombok.extern.slf4j.Slf4j;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -11,6 +13,7 @@ import org.springframework.amqp.rabbit.connection.ConnectionListener;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 @ConditionalOnProperty(
         prefix = "app.ai-profile.amqp",
@@ -32,6 +35,7 @@ public class ProfilingPublisherState implements ConnectionListener {
 
         current = delegate;
         blocked.set(false);
+        log.info("프로파일링 RabbitMQ 발행 연결 생성");
 
         delegate.addBlockedListener(new BlockedListener() {
             @Override
@@ -49,6 +53,7 @@ public class ProfilingPublisherState implements ConnectionListener {
     @Override
     public synchronized void onClose(Connection connection) {
         if (current == connection.getDelegate()) {
+            log.warn("프로파일링 RabbitMQ 발행 연결 종료");
             current = null;
             blocked.set(false);
             epoch.incrementAndGet();
@@ -63,8 +68,19 @@ public class ProfilingPublisherState implements ConnectionListener {
             return;
         }
 
-        blocked.set(value);
+        boolean previous = blocked.getAndSet(value);
+        if (previous != value) {
+            if (value) {
+                log.warn("프로파일링 RabbitMQ 발행 연결 차단");
+            } else {
+                log.info("프로파일링 RabbitMQ 발행 연결 차단 해제");
+            }
+        }
         epoch.incrementAndGet();
+    }
+
+    public boolean isBlocked() {
+        return blocked.get();
     }
 
     public boolean unavailable() {
