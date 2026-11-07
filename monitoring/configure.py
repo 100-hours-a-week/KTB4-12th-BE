@@ -70,7 +70,7 @@ def configure():
             {"job_name": "rabbitmq-queues", "metrics_path": "/metrics/detailed",
              "params": {"family": ["queue_coarse_metrics", "queue_consumer_count"],
                         "vhost": [os.environ.get("SPRING_RABBITMQ_VIRTUAL_HOST",
-                                                 os.environ.get("RABBITMQ_VHOST", "profiling"))],
+                                                 os.environ.get("RABBITMQ_VHOST", "gift"))],
                         "queue": ["^profiling[.](request|result)$"]},
              "static_configs": [{"targets": [rabbit]}]},
         ])

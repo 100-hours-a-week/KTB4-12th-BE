@@ -48,8 +48,9 @@ LOCAL_ALERT_WEBHOOK_URL=http://host.docker.internal:19093/alerts
 
 위 주소는 Docker Desktop에서 호스트 JVM·loopback 포트 연결 예시다.
 앱·RabbitMQ가 같은 Docker 네트워크에 있으면 실제 네트워크 별칭과 내부 포트를 지정한다.
-RabbitMQ Compose는 management/prometheus 플러그인 파일을 마운트한다. 기존 데이터 볼륨은 유지하며,
-포트·마운트 반영에는 컨테이너 재생성이 필요하므로 로컬 진행 작업을 확인한 뒤 실행한다. 볼륨 삭제는 필요 없다.
+공통 RabbitMQ 이미지는 빌드 시 prometheus 플러그인을 활성화한다. 기존 계정 Secret·정의 import·데이터 볼륨은 유지한다.
+이미지 재빌드·포트 반영에는 컨테이너 재생성이 필요하므로 로컬 진행 작업을 확인한 뒤 실행한다. 볼륨 삭제는 필요 없다.
+최신 공통 이미지의 기본 vhost는 gift다. 실제 AMQP vhost와 SPRING_RABBITMQ_VIRTUAL_HOST를 일치시켜 상세 수집한다.
 15692는 호스트 loopback으로만 공개한다. 운영은 내부망·인증/TLS 정책을 별도로 정한다.
 
 ```bash
