@@ -2,14 +2,16 @@ name: gift-rabbitmq
 
 services:
   rabbitmq:
-    image: rabbitmq:4.4.0-management
+    build: ./infrastructure/rabbitmq
+    image: gift-rabbitmq:4.4.0
     hostname: profiling-rabbitmq
 
     environment:
       RABBITMQ_NODENAME: rabbit@profiling-rabbitmq
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?Set RABBITMQ_USERNAME}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
-      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-profiling}
+
+    secrets:
+      - source: rabbitmq-access
+        target: /etc/rabbitmq/definitions/10-access.json
 
     ports:
       - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
@@ -30,3 +32,7 @@ services:
 
 volumes:
   rabbitmq-data:
+
+secrets:
+  rabbitmq-access:
+    file: ${RABBITMQ_ACCESS_DEFINITIONS_FILE:?Set RABBITMQ_ACCESS_DEFINITIONS_FILE to the access definitions secret}

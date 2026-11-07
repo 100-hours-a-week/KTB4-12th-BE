@@ -26,6 +26,11 @@ public class RabbitPublisher {
     private final RabbitRoutingProperties routing;
 
     public CompletableFuture<Result> publish(MessageEnvelope envelope, String claimToken, String routingKey) {
+        return publish(envelope, claimToken, routing.exchange(), routingKey);
+    }
+
+    public CompletableFuture<Result> publish(MessageEnvelope envelope, String claimToken,
+                                             String exchange, String routingKey) {
         CorrelationData correlation = new CorrelationData(envelope.eventId() + ":" + claimToken);
         try {
             MessageProperties properties = new MessageProperties();
@@ -34,7 +39,7 @@ public class RabbitPublisher {
             properties.setMessageId(envelope.eventId());
             properties.setType(envelope.eventType());
             properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
-            outboxRabbitTemplate.send(routing.exchange(), routingKey,
+            outboxRabbitTemplate.send(exchange, routingKey,
                     new Message(mapper.writeValueAsBytes(envelope), properties), correlation);
         } catch (RuntimeException exception) {
             return CompletableFuture.completedFuture(new Result(false, "PublishException"));

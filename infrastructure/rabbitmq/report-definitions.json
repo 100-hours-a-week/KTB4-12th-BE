@@ -1,0 +1,167 @@
+{
+  "exchanges": [
+    {
+      "name": "report.events",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {},
+      "vhost": "gift"
+    },
+    {
+      "name": "report.retry",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {},
+      "vhost": "gift"
+    },
+    {
+      "name": "report.dlx",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {},
+      "vhost": "gift"
+    }
+  ],
+  "queues": [
+    {
+      "name": "Report.discord",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic"
+      },
+      "vhost": "gift"
+    },
+    {
+      "name": "Report.sheets",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic"
+      },
+      "vhost": "gift"
+    },
+    {
+      "name": "Report.retry",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic"
+      },
+      "vhost": "gift"
+    },
+    {
+      "name": "Report.dlq",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic"
+      },
+      "vhost": "gift"
+    }
+  ],
+  "bindings": [
+    {
+      "source": "report.events",
+      "destination": "Report.discord",
+      "destination_type": "queue",
+      "routing_key": "Report.created",
+      "arguments": {},
+      "vhost": "gift"
+    },
+    {
+      "source": "report.events",
+      "destination": "Report.discord",
+      "destination_type": "queue",
+      "routing_key": "Report.discord.process",
+      "arguments": {},
+      "vhost": "gift"
+    },
+    {
+      "source": "report.events",
+      "destination": "Report.sheets",
+      "destination_type": "queue",
+      "routing_key": "Report.created",
+      "arguments": {},
+      "vhost": "gift"
+    },
+    {
+      "source": "report.events",
+      "destination": "Report.sheets",
+      "destination_type": "queue",
+      "routing_key": "Report.sheets.process",
+      "arguments": {},
+      "vhost": "gift"
+    },
+    {
+      "source": "report.retry",
+      "destination": "Report.retry",
+      "destination_type": "queue",
+      "routing_key": "Report.discord.process",
+      "arguments": {},
+      "vhost": "gift"
+    },
+    {
+      "source": "report.retry",
+      "destination": "Report.retry",
+      "destination_type": "queue",
+      "routing_key": "Report.sheets.process",
+      "arguments": {},
+      "vhost": "gift"
+    },
+    {
+      "source": "report.dlx",
+      "destination": "Report.dlq",
+      "destination_type": "queue",
+      "routing_key": "Report.#",
+      "arguments": {},
+      "vhost": "gift"
+    }
+  ],
+  "policies": [
+    {
+      "name": "report-processing",
+      "pattern": "^Report[.](discord|sheets)$",
+      "apply-to": "queues",
+      "priority": 10,
+      "definition": {
+        "overflow": "reject-publish"
+      },
+      "vhost": "gift"
+    },
+    {
+      "name": "report-retry",
+      "pattern": "^Report[.]retry$",
+      "apply-to": "queues",
+      "priority": 10,
+      "definition": {
+        "overflow": "reject-publish",
+        "message-ttl": 30000,
+        "dead-letter-exchange": "report.events"
+      },
+      "vhost": "gift"
+    },
+    {
+      "name": "report-dlq",
+      "pattern": "^Report[.]dlq$",
+      "apply-to": "queues",
+      "priority": 10,
+      "definition": {
+        "overflow": "reject-publish",
+        "message-ttl": 604800000
+      },
+      "vhost": "gift"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "gift"
+    }
+  ]
+}

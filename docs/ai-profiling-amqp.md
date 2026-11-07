@@ -1,20 +1,21 @@
-# 프로파일링 RabbitMQ 기반 설정 — PR 3-1
+# 프로파일링 RabbitMQ 발행·수동 복구
 
-관련 이슈: #525 / 상위 #522. 자동 작업 생성·발행과 결과 Listener는 아직 연결하지 않는다.
+관련 이슈: #525·#526 / 상위 #522. PR 3-3의 작업 준비·발행 루프와 PR 4-1의 수동 재개를 설명한다. 결과 Consumer는 후속 범위다.
 
 ## 로컬 실행
 
-`.env.example`의 RabbitMQ 항목을 로컬 `.env`에 설정한다. Compose는 `.env`를 읽지만 BE에는 별도로 실행 환경변수를 전달해야 한다.
+먼저 [공통 RabbitMQ 이미지 가이드](../infrastructure/rabbitmq/README.md)에 따라 계정·권한 Secret 파일을 준비하고
+`RABBITMQ_ACCESS_DEFINITIONS_FILE`을 지정한다. `.env.example`의 RabbitMQ 항목을 로컬 `.env`에 설정한다. Compose는 `.env`를 읽지만 BE에는 별도로 실행 환경변수를 전달해야 한다.
 
 ```bash
-docker compose -f compose.rabbitmq.yaml up -d --wait
+docker compose -f compose.rabbitmq.yaml up -d --build --wait
 ```
 
-기본 vhost `profiling` 기준으로 요청 큐 보호 정책을 적용한다. vhost를 변경했다면 `-p`도 변경한다.
+공용 vhost `gift` 기준으로 요청 큐 보호 정책을 적용한다.
 
 ```bash
 docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl set_policy \
-  -p profiling --apply-to queues profiling-request-protection '^profiling[.]request$' \
+  -p gift --apply-to queues profiling-request-protection '^profiling[.]request$' \
   '{"max-length":10000,"max-length-bytes":268435456,"overflow":"reject-publish"}'
 ```
 
@@ -31,9 +32,9 @@ BE 실행 환경에 `AI_PROFILE_AMQP_ENABLED=true`와 접속 정보를 전달하
 - 기본 멤버 1은 로컬용이며 AZ 장애 대응이나 복제 가용성을 보장하지 않는다
 
 ```bash
-docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_queues -p profiling name type durable arguments
-docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_bindings -p profiling source_name destination_name routing_key
-docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_policies -p profiling
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_queues -p gift name type durable arguments
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_bindings -p gift source_name destination_name routing_key
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_policies -p gift
 ```
 
 기존 Classic 큐와 이름·인자가 충돌해도 자동 삭제하지 않는다. 운영 TLS·권한·3 AZ 배치와 멤버 장애 검증은 별도 배포 범위다.
@@ -51,8 +52,8 @@ CI는 같은 테스트 작업에서 RabbitMQ 컨테이너를 실행한다. Docke
 ## 공통 연결 통합
 
 - BE 접속 설정은 `spring.rabbitmq` / `SPRING_RABBITMQ_*` 한 곳에서 관리한다. 이전 `app.ai-profile.amqp.host/port/username/password/virtual-host`는 제거했다.
-- Compose는 `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST`를 사용한다. BE의 대응 값과 같은 접속 대상을 지정한다. BE가 컨테이너 안에서 실행되면 host는 해당 네트워크 주소를 사용한다.
-- 기존 계정·vhost `profiling`을 그대로 공유하는 예시이며, 기존 볼륨·큐·메시지를 삭제하지 않는다. 기존 볼륨의 계정·vhost는 환경변수만 바꿔 갱신되지 않는다.
+- Compose는 커스텀 RabbitMQ 이미지와 `RABBITMQ_ACCESS_DEFINITIONS_FILE` Secret을 사용한다. 공용 vhost는 `gift`다. BE의 계정·비밀번호를 Secret에 맞추고, 컨테이너 내부에서는 해당 네트워크 주소를 사용한다.
+- 기존 `profiling` vhost의 큐·메시지는 `gift`로 자동 이동하지 않는다. 기존 작업 drain 또는 이관 후 producer/consumer를 함께 전환한다. 기존 노드 이름·볼륨은 유지하며 큐·메시지를 삭제하지 않는다.
 - Boot의 자동 연결 생성을 사용하므로 `spring.rabbitmq.addresses`·TLS 설정을 별도의 수동 복사 없이 유지한다. `RabbitConnectionConfiguration`은 클라이언트 I/O 제한과 Spring 연결 종료·채널 확보 대기만 보완한다.
 - Handshake·Channel RPC·Shutdown·채널 확보·연결 종료 대기는 각 3초, NIO 쓰기 큐는 64프레임·삽입 대기 3초다. 공유 채널 캐시는 Boot 기본 25개이며 `spring.rabbitmq.cache.channel.size`로 조정할 수 있다. 프로파일링 워커는 인스턴스당 1개로 순차 발행한다. 운영 적정 용량은 별도 부하 측정 대상이다.
 - `RabbitPublisherConfiguration`·`RabbitRoutingProperties`는 원격 develop `6093c9b`의 공통 Publisher 설정을 반영하고, 연결 주입에 `@Qualifier("rabbitConnectionFactory")`를 지정했다. 이 변경에서 공통 Relay·업무 Consumer를 새로 구현하지 않는다.
@@ -126,3 +127,57 @@ WHERE p.dispatch_claim_token IS NOT NULL
 ```
 
 테스트는 격리된 MySQL 8.4와 RabbitMQ 4.4에서 디바운스·커밋 후 발행·저장 JSON 동일성·기존 작업 재시도·만료 선점 회수·BLOCKED/PUBLISHED 재발행 차단을 확인한다. 마이그레이션 테스트는 기존 HTTP 진행 작업 거부와 프로필·추천·작업 보존을 확인한다.
+
+
+## PR 4-1 — BLOCKED 조회·수동 재개
+
+기존 `recipient_profiles`·`profiling_jobs`를 사용한다. 새 테이블·컬럼·마이그레이션은 추가하지 않는다.
+
+| 명령 | DB 변경 |
+| --- | --- |
+| LIST | BLOCKED + WAITING 메타데이터를 페이지당 100건 조회 |
+| RESUME_SAME | requestId·버전·본문을 유지하고 시도·시간 예산과 마지막 오류를 초기화하여 READY로 전환 |
+| REPLACE_LATEST | 이전 작업은 SUPERSEDED, 최신 입력은 새 requestId·버전·스냅샷으로 READY 작업 생성 |
+
+- 사용자 → 프로필 → 작업 순서로 잠근다. 현재 프로필 버전·분석 버전·requestId·조회 당시 updatedAt을 검증한다.
+- BLOCKED + WAITING, 선점 없음, 발행 확인·종료 기록 없음인 작업만 허용한다. 같은 본문이 256 KiB를 초과하면 동일 입력 재개를 거부한다.
+- 동일 입력 재개는 새 입력 변경 대기를 유지한다. 최신 입력 대체는 운영자의 명시적 요청으로 디바운스를 기다리지 않고 준비하며, 새 작업 저장 실패·입력 크기 초과 시 전체 롤백한다.
+- 스크립트는 DB 상태까지만 변경한다. READY 작업 발행은 기존 스케줄러가 맡는다.
+- DB 커밋 후 `PROFILING_RECOVERY_COMMITTED` 로그에 작업자·사유·이전 횟수·오류 코드·변경 전후 요청 ID와 버전을 남긴다. 본문·오류 메시지·비밀값은 출력하지 않는다. 실패·롤백에는 성공 감사 로그를 남기지 않는다.
+- 감사 로그는 DB와 원자적인 영속 저장이 아니다. 로그 수집·보관은 운영 환경에서 관리하며, 작업자 값은 입력값이므로 실행 권한은 서버·DB 접근 권한으로 통제한다.
+
+### 실행
+
+기존 BE 실행에 필요한 환경변수를 전달한 쉘에서 실행한다. 스크립트는 `.env`를 자동으로 읽지 않는다. 기존 보안 설정의 웹 환경을 사용해 127.0.0.1 임시 포트로 기동한 뒤 종료한다. 해당 일회성 프로세스의 스케줄링·AMQP·Outbox·Flyway는 명령 코드에서 비활성화하고 Hibernate는 validate만 수행한다.
+
+```bash
+PROFILING_RECOVERY_ACTION=LIST PROFILING_RECOVERY_PAGE=0 \
+  bash scripts/profiling/profiling-recovery.sh
+```
+
+조회한 profileId·requestId·version·updatedAt을 아래 값에 정확히 전달한다. updatedAt에는 시간대 변환을 하지 않는다.
+
+```bash
+export PROFILING_RECOVERY_ACTION=RESUME_SAME
+export PROFILING_RECOVERY_PROFILE_ID='<조회한 profileId>'
+export PROFILING_RECOVERY_REQUEST_ID='<조회한 requestId>'
+export PROFILING_RECOVERY_SOURCE_VERSION='<조회한 version>'
+export PROFILING_RECOVERY_UPDATED_AT='<조회한 updatedAt>'
+export PROFILING_RECOVERY_OPERATOR='theo'
+export PROFILING_RECOVERY_REASON='broker configuration restored'
+bash scripts/profiling/profiling-recovery.sh
+```
+
+최신 입력 대체는 대상을 다시 조회한 뒤 `PROFILING_RECOVERY_ACTION=REPLACE_LATEST`와 사유를 설정한다. 성공은 종료 코드 0·RECOVERY_OK, 실패는 0이 아닌 종료 코드·RECOVERY_FAILED로 확인한다.
+
+### 검증
+
+```bash
+./gradlew :main-backend:test --tests '*ProfilingRecovery*Test' --tests '*ProfilingJobTest'
+```
+
+- `ProfilingRecoveryScriptIntegrationTest`: 실제 bash 스크립트와 Gradle 실행 작업을 별도 프로세스로 호출한다. 격리된 MySQL 8.4·Redis 7.4를 사용하고 사용자 환경변수·.env는 상속하지 않는다. 브로커가 없는 주소로 조회·동일 입력 재개·중복 거부·최신 입력 대체를 실행하여 DB 상태와 종료 코드·감사 로그·본문 비노출을 확인한다.
+- `ProfilingRecoveryServiceIntegrationTest`: 실제 MySQL·RabbitMQ 4.4에서 기존 발행 루프 연결, 동일 본문·새 입력 보존, 버전 대체, 상태/선점/수정 시각/이미 반영된 결과 거부, 동시 재개 1회 성공, 저장 실패·크기 초과 롤백·감사 로그 경계를 검증한다.
+- 개발·운영 DB를 대상으로 수동 복구 명령을 실행한 결과는 아니다.
+
+PR 4-2의 종료 작업 정리는 별도 구현이며 이 PR에서 작업을 임의로 COMPLETED·FAILED로 종료하지 않는다.

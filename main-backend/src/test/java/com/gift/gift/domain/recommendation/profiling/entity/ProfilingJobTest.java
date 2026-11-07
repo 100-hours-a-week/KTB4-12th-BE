@@ -69,4 +69,82 @@ class ProfilingJobTest {
         assertThat(published.getResultStatus()).isEqualTo(ProfilingResultStatus.WAITING);
         assertThat(published.getFinishedAt()).isNull();
     }
+
+    @Test
+    @DisplayName("동일 입력 재개는 요청 식별자와 본문을 유지하고 발행 예산을 초기화한다")
+    void resumesBlockedJobWithoutChangingSnapshot() {
+        ProfilingJob job = ProfilingJob.create(
+                profile(),
+                message(1, 1, "원본 입력"),
+                serializer
+        );
+
+        String requestId = job.getRequestId();
+        String body = job.getRequestBody();
+
+        ReflectionTestUtils.setField(
+                job, "publishStatus", ProfilingPublishStatus.BLOCKED
+        );
+        ReflectionTestUtils.setField(job, "attemptCount", 3);
+        ReflectionTestUtils.setField(
+                job, "firstFailedAt", LocalDateTime.now()
+        );
+        ReflectionTestUtils.setField(
+                job, "lastErrorCode", "PUBLISH_BUDGET_EXHAUSTED"
+        );
+
+        job.resumeBlockedPublication();
+
+        assertThat(job.getRequestId()).isEqualTo(requestId);
+        assertThat(job.getSourceVersion()).isEqualTo(1);
+        assertThat(job.getRequestBody()).isEqualTo(body);
+        assertThat(job.getPublishStatus())
+                .isEqualTo(ProfilingPublishStatus.READY);
+        assertThat(job.getResultStatus())
+                .isEqualTo(ProfilingResultStatus.WAITING);
+        assertThat(job.getAttemptCount()).isZero();
+        assertThat(job.getFirstFailedAt()).isNull();
+        assertThat(job.getNextAttemptAt()).isNull();
+        assertThat(job.getLastErrorCode()).isNull();
+    }
+
+    @Test
+    @DisplayName("선점 정보가 남아 있는 차단 작업은 재개하지 않는다")
+    void rejectsBlockedJobWithClaim() {
+        var job = ProfilingJob.create(
+                profile(), message(1, 1, null), serializer
+        );
+
+        ReflectionTestUtils.setField(
+                job, "publishStatus", ProfilingPublishStatus.BLOCKED
+        );
+        ReflectionTestUtils.setField(
+                job, "claimToken", UUID.randomUUID().toString()
+        );
+        ReflectionTestUtils.setField(
+                job, "claimedAt", LocalDateTime.now()
+        );
+
+        assertThatThrownBy(job::resumeBlockedPublication)
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(job.getPublishStatus())
+                .isEqualTo(ProfilingPublishStatus.BLOCKED);
+    }
+
+    @Test
+    @DisplayName("크기 초과 본문은 동일 입력으로 재개하지 않는다")
+    void rejectsResumingOversizedSnapshot() {
+        var job = ProfilingJob.create(
+                profile(),
+                message(1, 1, "한".repeat(90_000)),
+                serializer
+        );
+
+        assertThatThrownBy(job::resumeBlockedPublication)
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(job.getPublishStatus())
+                .isEqualTo(ProfilingPublishStatus.BLOCKED);
+    }
 }

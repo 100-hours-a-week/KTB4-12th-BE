@@ -34,8 +34,8 @@ class OutboxRelayTest {
         Job failure = job(2);
         when(repository.claim("product.search.sync.v1", 5)).thenReturn(List.of(success, failure));
         var pending = new CompletableFuture<RabbitPublisher.Result>();
-        when(publisher.publish(success.envelope(), "token", "test.search")).thenReturn(pending);
-        when(publisher.publish(failure.envelope(), "token", "test.search")).thenAnswer(call -> {
+        when(publisher.publish(success.envelope(), "token", "test.events", "test.search")).thenReturn(pending);
+        when(publisher.publish(failure.envelope(), "token", "test.events", "test.search")).thenAnswer(call -> {
             verify(repository, never()).complete(success);
             pending.complete(new RabbitPublisher.Result(true, null));
             return CompletableFuture.completedFuture(new RabbitPublisher.Result(false, "ConfirmTimeout"));
@@ -52,9 +52,9 @@ class OutboxRelayTest {
         Job first = job(1);
         Job second = job(2);
         when(repository.claim("product.search.sync.v1", 5)).thenReturn(List.of(first, second));
-        when(publisher.publish(first.envelope(), "token", "test.search"))
+        when(publisher.publish(first.envelope(), "token", "test.events", "test.search"))
                 .thenReturn(CompletableFuture.completedFuture(new RabbitPublisher.Result(true, null)));
-        when(publisher.publish(second.envelope(), "token", "test.search"))
+        when(publisher.publish(second.envelope(), "token", "test.events", "test.search"))
                 .thenReturn(CompletableFuture.completedFuture(new RabbitPublisher.Result(true, null)));
         when(repository.complete(first)).thenThrow(new IllegalStateException("DB unavailable"));
         relay.relaySearch();
