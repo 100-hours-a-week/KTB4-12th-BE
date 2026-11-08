@@ -3,8 +3,6 @@ package com.gift.gift.domain.order.messaging;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.List;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -83,8 +81,8 @@ class PaymentOutboxEventWriterTest {
         assertThat(event.aggregateId()).isEqualTo("101");
         assertThat(event.occurredAt()).isEqualTo(PAYMENT_COMPLETED_AT);
         assertThat(event.payload().get("orderRecordId").asLong()).isEqualTo(101L);
-        assertThat(List.of(event.payload().fieldNames()))
-                .containsExactly("orderRecordId");
+        assertThat(event.payload().size()).isEqualTo(1);
+        assertThat(event.payload().has("orderRecordId")).isTrue();
     }
 
     @Test
@@ -116,7 +114,7 @@ class PaymentOutboxEventWriterTest {
         assertThat(event.aggregateId()).isEqualTo("202");
         assertThat(event.occurredAt()).isEqualTo(LOCAL_CANCELLED_AT);
         assertThat(event.payload().get("cancellationId").asLong()).isEqualTo(202L);
-        assertThat(List.of(event.payload().fieldNames()))
-                .containsExactly("cancellationId");
+        assertThat(event.payload().size()).isEqualTo(1);
+        assertThat(event.payload().has("cancellationId")).isTrue();
     }
 }
