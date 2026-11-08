@@ -5,6 +5,10 @@
 RabbitMQ 4.4.0-management 기반 이미지가 시작할 때 `gift` vhost와 리포트 토폴로지를 가져온다.
 Python·curl·별도 시작 스크립트는 사용하지 않는다. 기본 이미지의 entrypoint와 CMD를 그대로 사용한다.
 
+프로파일링·리포트 등 여러 도메인이 함께 사용하는 공통 브로커다. 개인별 Dockerfile은 만들지 않는다.
+기본 hostname은 `gift-rabbitmq`, nodename은 `rabbit@gift-rabbitmq`이며 `RABBITMQ_HOSTNAME`으로 함께 변경한다.
+호스트에서 실행하는 앱은 `127.0.0.1`과 공개 포트를, 같은 Docker 네트워크의 앱은 서비스 이름 `rabbitmq`와 포트 `5672`를 사용한다.
+
 ## 파일 역할
 
 - `Dockerfile`: 비밀정보가 없는 설정과 리포트 정의만 이미지에 복사한다.
@@ -52,8 +56,10 @@ BE의 AMQP/Management 계정 설정은 브로커에 사용자를 생성하지 �
 
 - 기존 `profiling` vhost의 큐·메시지를 `gift`로 자동 이동하지 않는다. 처리 중 작업을 drain하거나
   별도 이관 계획을 적용한 뒤 producer/consumer의 vhost를 함께 전환한다. 기존 vhost·볼륨은 삭제하지 않는다.
-- 기존 `profiling-rabbitmq` 호스트 이름·노드 이름과 데이터 볼륨 이름은 유지한다.
-  이 이름을 바꾸면 기존 데이터 경로 인식에 영향을 줄 수 있다.
+- 기존 볼륨을 재사용하는 환경은 **재기동 전에** `.env` 또는 실행 쉘에 `RABBITMQ_HOSTNAME=profiling-rabbitmq`를 지정한다.
+  기존 hostname·nodename을 유지해야 하며, 새 기본값으로 재기동하면 기존 데이터 경로를 인식하지 못할 수 있다.
+  Compose 프로젝트 이름과 데이터 볼륨 이름은 유지한다. 이름 정리를 위해 볼륨을 삭제하거나 `down -v`를 실행하지 않는다.
+  신규 설치는 별도 지정 없이 공통 기본 이름을 사용한다. 기존 메시지를 새 노드로 자동 이관하지 않는다.
 - 정의 변경은 이미지 재빌드·컨테이너 재생성 후 적용한다. Secret 계정 변경도 재기동 시 import된다.
   같은 이름의 사용자·policy를 재정의하면 기존 값에 영향을 줄 수 있으므로 Secret 내용을 검토한다.
 - import는 누락된 기존 리소스를 자동 삭제하지 않는다. 큐 타입 같은 불변 속성 충돌도 자동 마이그레이션하지 않는다.
