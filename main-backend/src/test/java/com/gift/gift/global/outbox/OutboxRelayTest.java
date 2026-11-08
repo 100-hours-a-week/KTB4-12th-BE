@@ -4,10 +4,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.global.messaging.MessageEnvelope;
@@ -27,11 +25,6 @@ class OutboxRelayTest {
             new OutboxProperties(5, 60, 5000, 10, 2, 300),
             new RabbitRoutingProperties("test.events", "test.search")
     );
-
-    @BeforeEach
-    void setUp() {
-        ReflectionTestUtils.setField(relay, "searchOutboxEnabled", true);
-    }
 
     private Job job(long id) {
         return new Job(

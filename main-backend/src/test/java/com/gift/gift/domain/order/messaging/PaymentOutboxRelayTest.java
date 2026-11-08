@@ -23,13 +23,13 @@ class PaymentOutboxRelayTest {
         verify(outboxRelay).relay(
                 "payment.order.completed.v1",
                 5,
-                "gift.events",
+                "payment.events",
                 "payment.order.completed"
         );
         verify(outboxRelay).relay(
                 "payment.order.canceled.v1",
                 5,
-                "gift.events",
+                "payment.events",
                 "payment.order.canceled"
         );
     }
