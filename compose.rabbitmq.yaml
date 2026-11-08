@@ -4,10 +4,10 @@ services:
   rabbitmq:
     build: ./infrastructure/rabbitmq
     image: gift-rabbitmq:4.4.0
-    hostname: profiling-rabbitmq
+    hostname: ${RABBITMQ_HOSTNAME:-gift-rabbitmq}
 
     environment:
-      RABBITMQ_NODENAME: rabbit@profiling-rabbitmq
+      RABBITMQ_NODENAME: rabbit@${RABBITMQ_HOSTNAME:-gift-rabbitmq}
 
     secrets:
       - source: rabbitmq-access
