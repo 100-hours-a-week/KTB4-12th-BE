@@ -3,6 +3,7 @@ package com.gift.gift.domain.bugreport.messaging;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.concurrent.TimeUnit;
 
 import com.rabbitmq.client.Channel;
@@ -15,28 +16,31 @@ import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.global.messaging.MessageEnvelope;
 import com.gift.gift.global.messaging.RabbitPublisher;
-import com.gift.gift.infrastructure.discord.DiscordWebhookClient;
 
 import static com.gift.gift.domain.bugreport.messaging.ReportMqProperties.*;
 
-public class ReportDiscordConsumer implements ChannelAwareMessageListener {
+public class ReportConsumer implements ChannelAwareMessageListener {
     public static final String RETRY_COUNT = "delivery.retryCount";
     public static final String NEXT_ATTEMPT_AT = "delivery.nextAttemptAt";
     private final ObjectMapper mapper;
-    private final DiscordWebhookClient discord;
-    private final String webhookUrl;
-    private final ReportDiscordCooldown cooldown;
+    private final String channelName;
+    private final String routingKey;
+    private final String queue;
+    private final Function<JsonNode, ReportDeliveryResult> delivery;
+    private final ReportCooldown cooldown;
     private final RabbitPublisher publisher;
     private final MeterRegistry meters;
     private final Runnable recover;
     private final Runnable recovered;
 
-    public ReportDiscordConsumer(ObjectMapper mapper, DiscordWebhookClient discord, String webhookUrl,
-                                 ReportDiscordCooldown cooldown, RabbitPublisher publisher, MeterRegistry meters,
-                                 Runnable recover, Runnable recovered) {
+    public ReportConsumer(ObjectMapper mapper, String channelName, String routingKey, String queue,
+                          Function<JsonNode, ReportDeliveryResult> delivery, ReportCooldown cooldown,
+                          RabbitPublisher publisher, MeterRegistry meters, Runnable recover, Runnable recovered) {
         this.mapper = mapper;
-        this.discord = discord;
-        this.webhookUrl = webhookUrl;
+        this.channelName = channelName;
+        this.routingKey = routingKey;
+        this.queue = queue;
+        this.delivery = delivery;
         this.cooldown = cooldown;
         this.publisher = publisher;
         this.meters = meters;
@@ -56,19 +60,19 @@ public class ReportDiscordConsumer implements ChannelAwareMessageListener {
             // Stop first: manual-ACK deliveries remain unacknowledged and are returned when the channel closes.
             recover.run();
         } finally {
-            meters.timer("report.discord.processing").record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
+            meters.timer("report." + channelName + ".processing").record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
         }
     }
 
     private void deliverOrTransfer(Message original) throws Exception {
         int retryCount;
         long nextAttemptAt;
-        String payload;
+        JsonNode payload;
         try {
             retryCount = Math.toIntExact(headerLong(original, RETRY_COUNT));
             nextAttemptAt = headerLong(original, NEXT_ATTEMPT_AT);
             if (retryCount > 3) throw new IllegalArgumentException("Invalid retry count");
-            payload = discordPayload(original);
+            payload = reportPayload(original);
         } catch (RuntimeException exception) {
             transfer(original, DLX, 0, 0, "InvalidEnvelope");
             return;
@@ -83,14 +87,15 @@ public class ReportDiscordConsumer implements ChannelAwareMessageListener {
             return;
         }
         count("attempt");
-        DiscordWebhookClient.DeliveryResult result;
+        ReportDeliveryResult result;
         try {
-            result = discord.send(webhookUrl, payload);
+            result = delivery.apply(payload);
         } catch (RuntimeException exception) {
-            result = new DiscordWebhookClient.DeliveryResult(false, false, 0, false, "Unclassified");
+            result = new ReportDeliveryResult(false, false, 0, false, "Unclassified");
         }
         if (result.success()) {
             count("success");
+            if ("AlreadyRecorded".equals(result.errorCode())) count("already_recorded");
             return;
         }
         long due = 0;
@@ -118,14 +123,14 @@ public class ReportDiscordConsumer implements ChannelAwareMessageListener {
         properties.setType(original.getMessageProperties().getType());
         properties.setContentType(original.getMessageProperties().getContentType());
         properties.setContentEncoding(original.getMessageProperties().getContentEncoding());
-        properties.setHeader("delivery.channel", "discord");
-        properties.setHeader("delivery.originalQueue", DISCORD_QUEUE);
+        properties.setHeader("delivery.channel", channelName);
+        properties.setHeader("delivery.originalQueue", queue);
         properties.setHeader(RETRY_COUNT, retryCount);
         properties.setHeader(NEXT_ATTEMPT_AT, due);
         properties.setHeader("delivery.errorCode", errorCode);
         properties.setHeader("delivery.failedAt", Instant.now().toEpochMilli());
         RabbitPublisher.Result published = publisher.publish(new Message(original.getBody(), properties),
-            UUID.randomUUID().toString(), exchange, DISCORD).get(6, TimeUnit.SECONDS);
+            UUID.randomUUID().toString(), exchange, routingKey).get(6, TimeUnit.SECONDS);
         if (!published.confirmed()) throw new IOException("Report transfer unconfirmed");
         String outcome = DLX.equals(exchange) ? "dlq" : switch (errorCode) {
             case "RedisUnavailable" -> "redis_wait";
@@ -143,7 +148,7 @@ public class ReportDiscordConsumer implements ChannelAwareMessageListener {
         return ((Number) header).longValue();
     }
 
-    private String discordPayload(Message message) {
+    private JsonNode reportPayload(Message message) {
         if (message.getBody().length > 32768) throw new IllegalArgumentException("Oversized envelope");
         MessageEnvelope envelope = mapper.readValue(message.getBody(), MessageEnvelope.class);
         if (envelope.schemaVersion() != 1 || !EVENT_TYPE.equals(envelope.eventType())
@@ -158,7 +163,7 @@ public class ReportDiscordConsumer implements ChannelAwareMessageListener {
             || !id.equals(envelope.aggregateId()) || !id.equals(envelope.deduplicationKey())) {
             throw new IllegalArgumentException("Invalid report ID");
         }
-        String description = requiredText(report, "description");
+        requiredText(report, "description");
         Instant.parse(requiredText(report, "reportedAt"));
         for (String field : new String[]{"category", "pageUrl", "route", "viewport", "userAgent", "email"}) {
             if (!report.path(field).isString()) throw new IllegalArgumentException("Invalid report field");
@@ -166,21 +171,7 @@ public class ReportDiscordConsumer implements ChannelAwareMessageListener {
         if (!report.path("userId").isNull() && !report.path("userId").isIntegralNumber()) {
             throw new IllegalArgumentException("Invalid user ID");
         }
-        var payload = mapper.createObjectNode();
-        payload.putObject("allowed_mentions").putArray("parse");
-        var embed = payload.putArray("embeds").addObject();
-        embed.put("title", "서비스 제보 · " + truncate(report.path("category").asText(), 100));
-        embed.put("description", truncate(description, 4096));
-        var fields = embed.putArray("fields");
-        fields.addObject().put("name", "reportId").put("value", id);
-        for (String field : new String[]{"pageUrl", "route", "viewport", "userAgent", "reportedAt"}) {
-            String value = report.path(field).asText("");
-            if (!value.isBlank()) fields.addObject().put("name", field).put("value", truncate(value, 240));
-        }
-        String reporter = report.path("userId").isNull() ? "익명"
-            : "사용자 ID: " + report.path("userId").asText() + "\n이메일: " + report.path("email").asText();
-        fields.addObject().put("name", "제보자").put("value", truncate(reporter, 400));
-        return mapper.writeValueAsString(payload);
+        return report;
     }
 
     private String requiredText(JsonNode payload, String field) {
@@ -190,13 +181,7 @@ public class ReportDiscordConsumer implements ChannelAwareMessageListener {
         return payload.path(field).asText();
     }
 
-    private String truncate(String text, int limit) {
-        if (text.length() <= limit) return text;
-        int end = Character.isHighSurrogate(text.charAt(limit - 2)) ? limit - 2 : limit - 1;
-        return text.substring(0, end) + "…";
-    }
-
     private void count(String outcome) {
-        meters.counter("report.discord.deliveries", "outcome", outcome).increment();
+        meters.counter("report." + channelName + ".deliveries", "outcome", outcome).increment();
     }
 }

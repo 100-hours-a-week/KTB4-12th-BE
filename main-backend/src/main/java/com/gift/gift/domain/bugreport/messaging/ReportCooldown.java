@@ -1,6 +1,5 @@
 package com.gift.gift.domain.bugreport.messaging;
 
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -10,8 +9,7 @@ import java.util.List;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
-public class ReportDiscordCooldown {
-    private static final String GLOBAL_KEY = "report:discord:cooldown:global";
+public class ReportCooldown {
     private static final DefaultRedisScript<Long> REMAINING = new DefaultRedisScript<>("""
             local time = redis.call('TIME')
             local now = time[1] * 1000 + math.floor(time[2] / 1000)
@@ -27,28 +25,33 @@ public class ReportDiscordCooldown {
             return due
             """, Long.class);
     private final StringRedisTemplate redis;
-    private final String webhookKey;
+    private final String scopeKey;
+    private final String globalKey;
 
-    public ReportDiscordCooldown(StringRedisTemplate redis, String webhookUrl) {
+    public ReportCooldown(StringRedisTemplate redis, String channelName, String scope, String projectScope) {
         this.redis = redis;
-        URI uri = URI.create(webhookUrl);
+        String prefix = "report:" + channelName + ":cooldown:";
+        this.scopeKey = prefix + hash(scope);
+        this.globalKey = prefix + ("global".equals(projectScope) ? "global" : "project:" + hash(projectScope));
+    }
+
+    private static String hash(String scope) {
         try {
-            byte[] hash = MessageDigest.getInstance("SHA-256")
-                    .digest((uri.getAuthority() + uri.getPath()).getBytes(StandardCharsets.UTF_8));
-            this.webhookKey = "report:discord:cooldown:" + HexFormat.of().formatHex(hash);
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(scope.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 unavailable", exception);
         }
     }
 
     public long remainingMs(long nextAttemptAt) {
-        Long remaining = redis.execute(REMAINING, List.of(webhookKey, GLOBAL_KEY), Long.toString(nextAttemptAt));
+        Long remaining = redis.execute(REMAINING, List.of(scopeKey, globalKey), Long.toString(nextAttemptAt));
         if (remaining == null) throw new IllegalStateException("Cooldown read unavailable");
         return remaining;
     }
 
     public long extend(long delayMs, boolean global) {
-        Long due = redis.execute(EXTEND, List.of(global ? GLOBAL_KEY : webhookKey), Long.toString(delayMs));
+        Long due = redis.execute(EXTEND, List.of(global ? globalKey : scopeKey), Long.toString(delayMs));
         if (due == null) throw new IllegalStateException("Cooldown update unavailable");
         return due;
     }

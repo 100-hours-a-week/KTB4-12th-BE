@@ -17,12 +17,12 @@ import static org.mockito.Mockito.mock;
 
 class ReportDiscordConfigurationTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-        .withUserConfiguration(ReportDiscordConfiguration.class);
+        .withUserConfiguration(ReportConsumerConfiguration.class);
 
     @Test
     @DisplayName("기본 OFF에서는 MQ·Redis·웹훅 설정 없이 기동한다")
     void disabledDoesNotRequireInfrastructure() {
-        runner.run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(ReportDiscordListener.class));
+        runner.run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(ReportConsumerListener.class));
     }
 
     @Test
@@ -39,7 +39,7 @@ class ReportDiscordConfigurationTest {
             .withBean(DiscordWebhookClient.class, () -> mock(DiscordWebhookClient.class))
             .withBean(RabbitPublisher.class, () -> mock(RabbitPublisher.class))
             .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
-            .run(context -> assertThat(context).hasNotFailed().hasSingleBean(ReportDiscordListener.class)
+            .run(context -> assertThat(context).hasNotFailed().hasSingleBean(ReportConsumerListener.class)
                 .doesNotHaveBean(ReportOutboxRelay.class));
     }
 }
