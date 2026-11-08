@@ -13,6 +13,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import com.gift.gift.domain.bugreport.messaging.ReportDeliveryResult;
+
 @Component
 public class DiscordWebhookClient {
     private final HttpClient client;
@@ -24,7 +26,7 @@ public class DiscordWebhookClient {
         this.mapper = mapper;
     }
 
-    public DeliveryResult send(String webhookUrl, String payloadJson) {
+    public ReportDeliveryResult send(String webhookUrl, String payloadJson) {
         URI uri = UriComponentsBuilder.fromUriString(webhookUrl).replaceQueryParam("wait", "true")
             .build(true).toUri();
         HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20))
@@ -38,15 +40,15 @@ public class DiscordWebhookClient {
                 response.body());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            return new DeliveryResult(false, false, 0, false, "Interrupted");
+            return new ReportDeliveryResult(false, false, 0, false, "Interrupted");
         } catch (Exception exception) {
-            return new DeliveryResult(false, false, 0, false, "NetworkOrTimeout");
+            return new ReportDeliveryResult(false, false, 0, false, "NetworkOrTimeout");
         } finally {
             if (!pending.isDone()) pending.cancel(true);
         }
     }
 
-    DeliveryResult classify(int status, String retryAfter, String body) {
+    ReportDeliveryResult classify(int status, String retryAfter, String body) {
         JsonNode response = null;
         try {
             if (body != null && body.length() <= 65536) response = mapper.readTree(body);
@@ -55,16 +57,16 @@ public class DiscordWebhookClient {
         }
         if (status >= 200 && status < 300 && response != null
             && response.path("id").asText("").matches("[0-9]+")) {
-            return new DeliveryResult(true, false, 0, false, "Success");
+            return new ReportDeliveryResult(true, false, 0, false, "Success");
         }
         if (status == 429) {
             long delay = Math.max(parseSeconds(retryAfter),
                 response == null ? 0 : parseSeconds(response.path("retry_after").asText("")));
-            return new DeliveryResult(false, false, Math.max(30000, delay),
+            return new ReportDeliveryResult(false, false, Math.max(30000, delay),
                 response != null && response.path("global").asBoolean(false), "RateLimited");
         }
         boolean permanent = status == 400 || status == 401 || status == 403 || status == 404 || status == 405;
-        return new DeliveryResult(false, permanent, 0, false,
+        return new ReportDeliveryResult(false, permanent, 0, false,
             permanent ? "InvalidRequestOrCredentials" : "HttpOrInvalidResponse");
     }
 
@@ -78,6 +80,4 @@ public class DiscordWebhookClient {
         }
     }
 
-    public record DeliveryResult(boolean success, boolean permanent, long retryAfterMs,
-                                 boolean global, String errorCode) { }
 }
