@@ -62,7 +62,7 @@ BE의 AMQP/Management 계정 설정은 브로커에 사용자를 생성하지 �
 - 개발 CI는 외부 SSM reconcile 문서를 호출한다. 이 이미지 빌드·배포와 Secret 마운트를 해당 인프라에도
   연결해야 실제 개발 서버에 반영된다. 이 저장소 변경만으로 원격 배포가 완료되는 것은 아니다.
 
-리포트 API·Consumer는 후속 구현이다. 준비 전에는 `REPORT_MQ_ENABLED=false`를 유지한다.
+리포트 API는 JSON 접수 계약을 사용한다. Discord·Sheets Consumer는 각각 기본 OFF이며, 토폴로지·두 채널 전달·복구 준비 전에는 `REPORT_MQ_ENABLED=false`를 유지한다. 활성화 조건과 실패 계약은 [리포트 Consumer 구현·검증 기록](https://app.notion.com/p/412ce59041ef81b39559d8079c7a4d0f)를 따른다.
 `OUTBOX_ENABLED`와 `AI_PROFILE_AMQP_ENABLED`도 기본 false이며 기존 알림 DB Worker 경로는 그대로다.
 
 ## 검증

@@ -9,17 +9,21 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.beans.factory.DisposableBean;
 
 @lombok.extern.slf4j.Slf4j
-public class ReportDiscordListener implements SmartLifecycle, DisposableBean {
+public class ReportConsumerListener implements SmartLifecycle, DisposableBean {
     private final SimpleMessageListenerContainer container;
     private final ReportTopologyPreflight preflight;
-    private final ScheduledExecutorService recovery = Executors.newSingleThreadScheduledExecutor(
-        Thread.ofPlatform().daemon().name("report-discord-recovery").factory());
+    private final ScheduledExecutorService recovery;
+    private final String channelName;
     private volatile boolean running;
     private boolean recovering;
     private long recoveryDelaySeconds = 5;
 
-    public ReportDiscordListener(SimpleMessageListenerContainer container, ReportTopologyPreflight preflight) {
+    public ReportConsumerListener(SimpleMessageListenerContainer container, ReportTopologyPreflight preflight,
+                                  String channelName) {
         this.container = container;
+        this.channelName = channelName;
+        this.recovery = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofPlatform().daemon().name("report-" + channelName + "-recovery").factory());
         this.preflight = preflight;
     }
 
@@ -36,7 +40,7 @@ public class ReportDiscordListener implements SmartLifecycle, DisposableBean {
             container.start();
             recovering = false;
         } catch (RuntimeException exception) {
-            log.warn("Discord consumer topology/start unavailable; retrying without consuming");
+            log.warn("{} consumer topology/start unavailable; retrying without consuming", channelName);
             recover();
         }
     }

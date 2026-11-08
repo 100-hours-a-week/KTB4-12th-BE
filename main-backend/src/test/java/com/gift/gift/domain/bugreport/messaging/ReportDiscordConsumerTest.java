@@ -25,12 +25,13 @@ import static org.mockito.Mockito.*;
 class ReportDiscordConsumerTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final DiscordWebhookClient discord = mock(DiscordWebhookClient.class);
-    private final ReportDiscordCooldown cooldown = mock(ReportDiscordCooldown.class);
+    private final ReportCooldown cooldown = mock(ReportCooldown.class);
     private final RabbitPublisher publisher = mock(RabbitPublisher.class);
     private final Runnable recover = mock(Runnable.class);
     private final Runnable recovered = mock(Runnable.class);
     private final Channel channel = mock(Channel.class);
-    private final ReportDiscordConsumer consumer = new ReportDiscordConsumer(mapper, discord, "http://test/webhook",
+    private final ReportConsumer consumer = new ReportConsumer(mapper, "discord", DISCORD, DISCORD_QUEUE,
+        new ReportDiscordDelivery(mapper, discord, "http://test/webhook")::deliver,
         cooldown, publisher, new SimpleMeterRegistry(), recover, recovered);
 
     @BeforeEach
@@ -169,8 +170,8 @@ class ReportDiscordConsumerTest {
         verify(recovered).run();
     }
 
-    private DiscordWebhookClient.DeliveryResult result(boolean success, boolean permanent, long delay) {
-        return new DiscordWebhookClient.DeliveryResult(success, permanent, delay, false, "TestFailure");
+    private ReportDeliveryResult result(boolean success, boolean permanent, long delay) {
+        return new ReportDeliveryResult(success, permanent, delay, false, "TestFailure");
     }
 
     private Message transferred(String exchange) {

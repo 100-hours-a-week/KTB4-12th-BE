@@ -37,7 +37,7 @@ class ReportDiscordBrokerIntegrationTest {
     private RabbitTemplate template;
     private RabbitAdmin admin;
     private RabbitPublisher publisher;
-    private ReportDiscordListener listener;
+    private ReportConsumerListener listener;
     private SimpleMessageListenerContainer container;
     private final DiscordWebhookClient discord = mock(DiscordWebhookClient.class);
 
@@ -59,6 +59,7 @@ class ReportDiscordBrokerIntegrationTest {
         bind(DISCORD_QUEUE, EVENTS, DISCORD);
         bind(SHEETS_QUEUE, EVENTS, SHEETS);
         bind(RETRY_QUEUE, RETRY, DISCORD);
+        bind(RETRY_QUEUE, RETRY, SHEETS);
         bind(DLQ, DLX, "Report.#");
         publisher = new RabbitPublisher(template, mapper, new OutboxProperties(10, 60, 5000, 10, 2, 300),
             new RabbitRoutingProperties("other.events", "other.key"));
@@ -96,7 +97,7 @@ class ReportDiscordBrokerIntegrationTest {
         broker.stop();
     }
 
-    private void startListener(RabbitPublisher selectedPublisher, ReportDiscordCooldown cooldown) {
+    private void startListener(RabbitPublisher selectedPublisher, ReportCooldown cooldown) {
         container = new SimpleMessageListenerContainer(connection);
         container.setQueueNames(DISCORD_QUEUE);
         container.setAcknowledgeMode(AcknowledgeMode.MANUAL);
@@ -105,14 +106,15 @@ class ReportDiscordBrokerIntegrationTest {
         container.setShutdownTimeout(30000);
         container.setForceStop(true);
         container.setForceCloseChannel(true);
-        listener = new ReportDiscordListener(container, mock(ReportTopologyPreflight.class));
-        container.setMessageListener(new ReportDiscordConsumer(mapper, discord, "https://discord.test/api/webhooks/1/token",
+        listener = new ReportConsumerListener(container, mock(ReportTopologyPreflight.class), "discord");
+        container.setMessageListener(new ReportConsumer(mapper, "discord", DISCORD, DISCORD_QUEUE,
+            new ReportDiscordDelivery(mapper, discord, "https://discord.test/api/webhooks/1/token")::deliver,
             cooldown, selectedPublisher, new SimpleMeterRegistry(), listener::recover, listener::recovered));
         listener.start();
     }
 
-    private ReportDiscordCooldown cooldown() {
-        return new ReportDiscordCooldown(redisTemplate, "https://discord.test/api/webhooks/1/token");
+    private ReportCooldown cooldown() {
+        return new ReportCooldown(redisTemplate, "discord", "discord.test/api/webhooks/1/token", "global");
     }
 
     @Test
@@ -160,7 +162,7 @@ class ReportDiscordBrokerIntegrationTest {
     @Test
     @DisplayName("Redis 장애 시 외부 호출 없이 원본을 재시도 큐로 보존한다")
     void redisFailureDefersWithoutCallingDiscord() throws Exception {
-        ReportDiscordCooldown unavailable = mock(ReportDiscordCooldown.class);
+        ReportCooldown unavailable = mock(ReportCooldown.class);
         when(unavailable.remainingMs(0)).thenThrow(new org.springframework.data.redis.RedisConnectionFailureException("down"));
         startListener(publisher, unavailable);
         Message original = ReportDiscordConsumerTest.event(mapper);
@@ -236,9 +238,9 @@ class ReportDiscordBrokerIntegrationTest {
     @Test
     @DisplayName("공유 Redis 원자 max는 짧은 갱신으로 대기를 줄이지 않고 전역 대기를 전파한다")
     void sharedCooldownUsesAtomicMaximumAndExpires() throws Exception {
-        ReportDiscordCooldown first = cooldown();
-        ReportDiscordCooldown second = new ReportDiscordCooldown(redisTemplate,
-            "https://discord.test/api/webhooks/1/token?wait=true");
+        ReportCooldown first = cooldown();
+        ReportCooldown second = new ReportCooldown(redisTemplate, "discord",
+            "discord.test/api/webhooks/1/token", "global");
         try (var threads = java.util.concurrent.Executors.newFixedThreadPool(4)) {
             var updates = new java.util.ArrayList<java.util.concurrent.Future<Long>>();
             for (int i = 0; i < 20; i++) {
@@ -248,7 +250,7 @@ class ReportDiscordBrokerIntegrationTest {
             for (var update : updates) update.get(3, TimeUnit.SECONDS);
         }
         assertThat(first.remainingMs(0)).isBetween(85000L, 90000L);
-        var different = new ReportDiscordCooldown(redisTemplate, "https://discord.test/api/webhooks/2/other");
+        var different = new ReportCooldown(redisTemplate, "discord", "discord.test/api/webhooks/2/other", "global");
         assertThat(different.remainingMs(0)).isZero();
         first.extend(120000, true);
         assertThat(different.remainingMs(0)).isBetween(115000L, 120000L);
@@ -258,17 +260,70 @@ class ReportDiscordBrokerIntegrationTest {
         });
     }
 
+    @Test
+    @DisplayName("두 채널 동시 소비에서 Sheets 실패는 30초 후 Sheets만 재시도하고 Discord 성공을 반복하지 않는다")
+    void sheetsRetriesWithoutRepeatingSuccessfulDiscord() throws Exception {
+        when(discord.send(anyString(), anyString())).thenReturn(success());
+        startListener(publisher, cooldown());
+        var sheetsContainer = new SimpleMessageListenerContainer(connection);
+        sheetsContainer.setQueueNames(SHEETS_QUEUE);
+        sheetsContainer.setAcknowledgeMode(AcknowledgeMode.MANUAL);
+        sheetsContainer.setPrefetchCount(1);
+        sheetsContainer.setAutoDeclare(false);
+        var sheetsListener = new ReportConsumerListener(sheetsContainer, mock(ReportTopologyPreflight.class), "sheets");
+        var calls = new AtomicInteger();
+        var completed = new CountDownLatch(1);
+        sheetsContainer.setMessageListener(new ReportConsumer(mapper, "sheets", SHEETS, SHEETS_QUEUE, report -> {
+            if (calls.incrementAndGet() == 1) return failure();
+            completed.countDown();
+            return success();
+        }, new ReportCooldown(redisTemplate, "sheets", "project:account", "project"), publisher,
+            new SimpleMeterRegistry(), sheetsListener::recover, sheetsListener::recovered));
+        try {
+            sheetsListener.start();
+            long started = System.nanoTime();
+            template.send(EVENTS, DISCORD, ReportDiscordConsumerTest.event(mapper));
+            template.send(EVENTS, SHEETS, ReportDiscordConsumerTest.event(mapper));
+            assertThat(completed.await(40, TimeUnit.SECONDS)).isTrue();
+            assertThat(Duration.ofNanos(System.nanoTime() - started).toMillis()).isGreaterThanOrEqualTo(29000);
+            sheetsListener.stop();
+            listener.stop();
+            verify(discord, times(1)).send(anyString(), anyString());
+            assertThat(calls.get()).isEqualTo(2);
+            assertThat(template.receive(DISCORD_QUEUE, 100)).isNull();
+            assertThat(template.receive(SHEETS_QUEUE, 100)).isNull();
+        } finally {
+            sheetsListener.destroy();
+        }
+    }
+
+    @Test
+    @DisplayName("Sheets 서비스 계정 대기는 프로젝트 안에서 구분하고 프로젝트 quota만 다른 계정에도 전파한다")
+    void sheetsCooldownScopesDoNotAffectDiscordOrOtherProjects() {
+        var account = new ReportCooldown(redisTemplate, "sheets", "project:a", "project");
+        var sameAccount = new ReportCooldown(redisTemplate, "sheets", "project:a", "project");
+        var otherAccount = new ReportCooldown(redisTemplate, "sheets", "project:b", "project");
+        var otherProject = new ReportCooldown(redisTemplate, "sheets", "other:a", "other");
+        account.extend(60000, false);
+        assertThat(sameAccount.remainingMs(0)).isBetween(55000L, 60000L);
+        assertThat(otherAccount.remainingMs(0)).isZero();
+        account.extend(90000, true);
+        assertThat(otherAccount.remainingMs(0)).isBetween(85000L, 90000L);
+        assertThat(otherProject.remainingMs(0)).isZero();
+        assertThat(cooldown().remainingMs(0)).isZero();
+    }
+
     private void await(java.util.function.BooleanSupplier condition, int seconds) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(100);
         assertThat(condition.getAsBoolean()).isTrue();
     }
 
-    private DiscordWebhookClient.DeliveryResult failure() {
-        return new DiscordWebhookClient.DeliveryResult(false, false, 0, false, "Temporary");
+    private ReportDeliveryResult failure() {
+        return new ReportDeliveryResult(false, false, 0, false, "Temporary");
     }
 
-    private DiscordWebhookClient.DeliveryResult success() {
-        return new DiscordWebhookClient.DeliveryResult(true, false, 0, false, "Success");
+    private ReportDeliveryResult success() {
+        return new ReportDeliveryResult(true, false, 0, false, "Success");
     }
 }
