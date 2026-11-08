@@ -91,3 +91,14 @@ tasks.register('profilingRecovery', JavaExec) {
         languageVersion = JavaLanguageVersion.of(25)
     }
 }
+
+tasks.register('outboxReplay', JavaExec) {
+    group = 'operations'
+    description = '리포트 DLQ 및 알림 FAILED 제한 재처리 (기본 dry-run)'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.gift.gift.domain.bugreport.messaging.OutboxReplayCommand'
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}

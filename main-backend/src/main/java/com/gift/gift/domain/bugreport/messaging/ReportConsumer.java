@@ -72,7 +72,7 @@ public class ReportConsumer implements ChannelAwareMessageListener {
             retryCount = Math.toIntExact(headerLong(original, RETRY_COUNT));
             nextAttemptAt = headerLong(original, NEXT_ATTEMPT_AT);
             if (retryCount > 3) throw new IllegalArgumentException("Invalid retry count");
-            payload = reportPayload(original);
+            payload = parseEnvelope(original, mapper).payload();
         } catch (RuntimeException exception) {
             transfer(original, DLX, 0, 0, "InvalidEnvelope");
             return;
@@ -148,7 +148,7 @@ public class ReportConsumer implements ChannelAwareMessageListener {
         return ((Number) header).longValue();
     }
 
-    private JsonNode reportPayload(Message message) {
+    static MessageEnvelope parseEnvelope(Message message, ObjectMapper mapper) {
         if (message.getBody().length > 32768) throw new IllegalArgumentException("Oversized envelope");
         MessageEnvelope envelope = mapper.readValue(message.getBody(), MessageEnvelope.class);
         if (envelope.schemaVersion() != 1 || !EVENT_TYPE.equals(envelope.eventType())
@@ -171,10 +171,10 @@ public class ReportConsumer implements ChannelAwareMessageListener {
         if (!report.path("userId").isNull() && !report.path("userId").isIntegralNumber()) {
             throw new IllegalArgumentException("Invalid user ID");
         }
-        return report;
+        return envelope;
     }
 
-    private String requiredText(JsonNode payload, String field) {
+    private static String requiredText(JsonNode payload, String field) {
         if (!payload.path(field).isString() || payload.path(field).asText().isBlank()) {
             throw new IllegalArgumentException("Missing report field");
         }

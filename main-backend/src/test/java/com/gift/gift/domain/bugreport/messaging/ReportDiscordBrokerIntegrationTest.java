@@ -313,6 +313,44 @@ class ReportDiscordBrokerIntegrationTest {
         assertThat(cooldown().remainingMs(0)).isZero();
     }
 
+    @Test
+    @DisplayName("운영 재처리는 dry-run 원본을 보존하고 확인 발행 후 단일 채널로 보내며 공유 대기를 우회하지 않는다")
+    void replayPreservesDryRunAndUsesNormalConsumerCooldown() throws Exception {
+        var message = ReportDiscordConsumerTest.event(mapper);
+        var envelope = mapper.readValue(message.getBody(), MessageEnvelope.class);
+        envelope = new MessageEnvelope(java.util.UUID.randomUUID().toString(), envelope.eventType(),
+            envelope.schemaVersion(), envelope.deduplicationKey(), envelope.aggregateType(), envelope.aggregateId(),
+            envelope.aggregateVersion(), envelope.payload(), envelope.occurredAt(), envelope.traceId());
+        message = new Message(mapper.writeValueAsBytes(envelope), message.getMessageProperties());
+        message.getMessageProperties().setMessageId(envelope.eventId());
+        message.getMessageProperties().setHeader("delivery.channel", "discord");
+        message.getMessageProperties().setHeader("delivery.originalQueue", DISCORD_QUEUE);
+        message.getMessageProperties().setHeader(ReportConsumer.RETRY_COUNT, 3);
+        template.send(DLX, DISCORD, message);
+        var replay = new ReportDlqReplay(mapper, publisher);
+        var ids = java.util.Set.of(envelope.eventId());
+        try (var channel = connection.createConnection().createChannel(false)) {
+            assertThat(replay.replay(channel, new ReplayRequest(ReplayRequest.Target.DISCORD, ids, 10, false, "ops"),
+                (id, result) -> { })).isTrue();
+            await(() -> admin.getQueueInfo(DLQ).getMessageCount() == 1, 3);
+            assertThat(channel.queueDeclarePassive(DISCORD_QUEUE).getMessageCount()).isZero();
+            assertThat(replay.replay(channel, new ReplayRequest(ReplayRequest.Target.DISCORD, ids, 10, true, "ops"),
+                (id, result) -> { })).isTrue();
+            await(() -> admin.getQueueInfo(DLQ).getMessageCount() == 0, 3);
+        }
+        var forwarded = template.receive(DISCORD_QUEUE, 1000);
+        assertThat(forwarded).isNotNull();
+        assertThat(forwarded.getBody()).isEqualTo(message.getBody());
+        assertThat(forwarded.getMessageProperties().getMessageId()).isEqualTo(envelope.eventId());
+        assertThat(forwarded.getMessageProperties().getReceivedDeliveryMode()).isEqualTo(MessageDeliveryMode.PERSISTENT);
+        assertThat(template.receive(SHEETS_QUEUE, 100)).isNull();
+        cooldown().extend(60000, false);
+        template.send(EVENTS, DISCORD, forwarded);
+        startListener(publisher, cooldown());
+        await(() -> admin.getQueueInfo(RETRY_QUEUE).getMessageCount() == 1, 5);
+        verifyNoInteractions(discord);
+    }
+
     private void await(java.util.function.BooleanSupplier condition, int seconds) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(100);
