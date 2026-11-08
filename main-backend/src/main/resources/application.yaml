@@ -84,6 +84,8 @@ app:
       username: ${RABBITMQ_MANAGEMENT_USERNAME:}
       password: ${RABBITMQ_MANAGEMENT_PASSWORD:}
   report:
+    discord:
+      enabled: ${REPORT_DISCORD_CONSUMER_ENABLED:false}
     mq:
       enabled: ${REPORT_MQ_ENABLED:false}
       batch-size: ${REPORT_MQ_BATCH_SIZE:10}
