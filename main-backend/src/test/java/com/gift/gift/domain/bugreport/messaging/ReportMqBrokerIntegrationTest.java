@@ -63,8 +63,7 @@ class ReportMqBrokerIntegrationTest {
         connection.setVirtualHost("gift");
         connection.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
         connection.setPublisherReturns(true);
-        template = new RabbitTemplate(connection);
-        template.setMandatory(true);
+        template = new RabbitPublisherConfiguration().outboxRabbitTemplate(connection);
         admin = new RabbitAdmin(connection);
         admin.declareExchange(new DirectExchange("existing.search", true, false));
         admin.declareQueue(QueueBuilder.durable("existing.profiling").quorum().build());

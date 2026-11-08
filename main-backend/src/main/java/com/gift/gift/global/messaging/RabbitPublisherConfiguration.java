@@ -16,6 +16,7 @@ public class RabbitPublisherConfiguration {
     public RabbitTemplate outboxRabbitTemplate(
             @Qualifier("rabbitConnectionFactory") CachingConnectionFactory connectionFactory) {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
+        template.setUsePublisherConnection(true);
         template.setMandatory(true);
         return template;
     }

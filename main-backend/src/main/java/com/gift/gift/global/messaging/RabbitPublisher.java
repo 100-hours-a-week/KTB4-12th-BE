@@ -31,16 +31,25 @@ public class RabbitPublisher {
 
     public CompletableFuture<Result> publish(MessageEnvelope envelope, String claimToken,
                                              String exchange, String routingKey) {
-        CorrelationData correlation = new CorrelationData(envelope.eventId() + ":" + claimToken);
         try {
             MessageProperties properties = new MessageProperties();
             properties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
             properties.setContentEncoding("UTF-8");
             properties.setMessageId(envelope.eventId());
             properties.setType(envelope.eventType());
-            properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
-            outboxRabbitTemplate.send(exchange, routingKey,
-                    new Message(mapper.writeValueAsBytes(envelope), properties), correlation);
+            return publish(new Message(mapper.writeValueAsBytes(envelope), properties),
+                envelope.eventId() + ":" + claimToken, exchange, routingKey);
+        } catch (RuntimeException exception) {
+            return CompletableFuture.completedFuture(new Result(false, "PublishException"));
+        }
+    }
+
+    public CompletableFuture<Result> publish(Message message, String correlationId,
+                                            String exchange, String routingKey) {
+        CorrelationData correlation = new CorrelationData(correlationId);
+        try {
+            message.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);
+            outboxRabbitTemplate.send(exchange, routingKey, message, correlation);
         } catch (RuntimeException exception) {
             return CompletableFuture.completedFuture(new Result(false, "PublishException"));
         }

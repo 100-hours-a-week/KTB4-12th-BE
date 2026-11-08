@@ -28,6 +28,10 @@ class RabbitPublisherIntegrationTest {
                 connection.setPublisherReturns(true);
                 RabbitPublisherConfiguration topology = new RabbitPublisherConfiguration();
                 var template = topology.outboxRabbitTemplate(connection);
+                var consumerConnection = connection.createConnection();
+                var publisherFactory = (CachingConnectionFactory) connection.getPublisherConnectionFactory();
+                var publisherConnections = new java.util.concurrent.atomic.AtomicInteger();
+                publisherFactory.addConnectionListener(opened -> publisherConnections.incrementAndGet());
                 RabbitAdmin admin = new RabbitAdmin(connection);
                 admin.declareExchange(new DirectExchange("test.events", true, false));
                 var mapper = new ObjectMapper();
@@ -43,10 +47,18 @@ class RabbitPublisherIntegrationTest {
                         org.springframework.amqp.core.Binding.DestinationType.QUEUE,
                         "test.events", "test.search", null));
                 assertThat(publisher.publish(event, "routed", "test.search").get(10, TimeUnit.SECONDS).confirmed()).isTrue();
+                assertThat(publisherConnections.get()).isEqualTo(1);
+                var publisherConnection = publisherFactory.createConnection();
+                assertThat(publisherConnection.getDelegate()).isNotSameAs(consumerConnection.getDelegate());
+                publisherFactory.resetConnection();
+                assertThat(consumerConnection.isOpen()).isTrue();
                 var delivered = template.receive("test.queue", 5000);
                 assertThat(delivered).isNotNull();
                 assertThat(delivered.getMessageProperties().getMessageId()).isEqualTo("event-1");
                 assertThat(mapper.readTree(delivered.getBody()).get("eventId").asText()).isEqualTo("event-1");
+                assertThat(publisher.publish(event, "reconnected", "test.search")
+                        .get(10, TimeUnit.SECONDS).confirmed()).isTrue();
+                assertThat(template.receive("test.queue", 5000)).isNotNull();
             } finally {
                 connection.destroy();
             }
