@@ -1,6 +1,9 @@
 package com.gift.gift.domain.order.service;
 
+import java.time.LocalDateTime;
+
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +25,7 @@ import com.gift.gift.domain.order.event.PaymentCanceledEvent;
 import com.gift.gift.domain.order.event.PaymentRefundReceiptEmailEvent;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
+import com.gift.gift.domain.order.messaging.PaymentOutboxEventWriter.PaymentCanceledOutboxRequested;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 import com.gift.gift.domain.product.service.ProductStockService;
@@ -31,8 +35,7 @@ import com.gift.gift.domain.user.entity.User;
 @RequiredArgsConstructor
 public class PaymentCancellationCompensationService {
 
-    private static final String LEDGER_KEY_PREFIX =
-            "PAYMENT_REFUND:";
+    private static final String LEDGER_KEY_PREFIX = "PAYMENT_REFUND:";
 
     private final OrderRepository orderRepository;
     private final PaymentCancellationRepository cancellationRepository;
@@ -43,29 +46,25 @@ public class PaymentCancellationCompensationService {
     private final OrderCouponService orderCouponService;
     private final ApplicationEventPublisher eventPublisher;
 
+    @Value("${app.payment.mq.enabled:false}")
+    private boolean paymentMqEnabled;
+
     @Transactional
-    public PaymentCancellationResult compensate(
-            PaymentCancellationApproval approval
-    ) {
+    public PaymentCancellationResult compensate(PaymentCancellationApproval approval) {
+
         PaymentCancellation cancellation = findCancellation(
                 approval.cancellation().getId()
         );
 
-        if (cancellation.getStatus()
-                == PaymentCancellationStatus.COMPLETED) {
+        if (cancellation.getStatus() == PaymentCancellationStatus.COMPLETED) {
             return restore(cancellation, false);
         }
 
-        if (cancellation.getStatus()
-                != PaymentCancellationStatus.PENDING) {
-            throw new OrderException(
-                    OrderErrorCode.PAYMENT_NOT_CANCELABLE
-            );
+        if (cancellation.getStatus() != PaymentCancellationStatus.PENDING) {
+            throw new OrderException(OrderErrorCode.PAYMENT_NOT_CANCELABLE);
         }
 
-        Order order = findOrder(
-                cancellation.getOrderRecordId()
-        );
+        Order order = findOrder(cancellation.getOrderRecordId());
 
         GiftHistory gift = giftHistoryRepository
                 .findByOrderRecordId(order.getId())
@@ -75,13 +74,11 @@ public class PaymentCancellationCompensationService {
 
         validate(order, gift, approval);
 
-        // 취소 bulk update가 persistence context를 비우므로 수신 정보를 먼저 읽는다.
+        // bulk update가 persistence context를 비우므로 UPDATE 전에 시각과 수신 자격을 확보한다.
+        LocalDateTime paymentCompletedAt = order.getUpdatedAt();
         User sender = gift.getSender();
-
-        String recipientEmail =
-                sender.getEmailVerifiedAt() == null
-                        ? null
-                        : sender.getEmail();
+        boolean receiptEligible = sender.getEmailVerifiedAt() != null;
+        String recipientEmail = receiptEligible ? sender.getEmail() : null;
 
         int giftCanceled = giftHistoryRepository.cancel(
                 gift.getId(),
@@ -107,9 +104,9 @@ public class PaymentCancellationCompensationService {
             );
         }
 
-        orderCouponService.restoreAfterCancellation(
-                order.getId()
-        );
+        if (!paymentMqEnabled) {
+            orderCouponService.restoreAfterCancellation(order.getId());
+        }
 
         int balanceUpdated = creditAccountRepository.increaseBalance(
                 order.getPayerId(),
@@ -185,7 +182,15 @@ public class PaymentCancellationCompensationService {
                 )
         );
 
-        if (recipientEmail != null) {
+        if (paymentMqEnabled) {
+            eventPublisher.publishEvent(
+                    new PaymentCanceledOutboxRequested(
+                            completedCancellation.getId(),
+                            paymentCompletedAt,
+                            receiptEligible
+                    )
+            );
+        } else if (recipientEmail != null) {
             eventPublisher.publishEvent(
                     new PaymentRefundReceiptEmailEvent(
                             recipientEmail,
@@ -226,9 +231,7 @@ public class PaymentCancellationCompensationService {
             PaymentCancellation cancellation,
             boolean created
     ) {
-        Order order = findOrder(
-                cancellation.getOrderRecordId()
-        );
+        Order order = findOrder(cancellation.getOrderRecordId());
 
         GiftHistory gift = giftHistoryRepository
                 .findByOrderRecordId(order.getId())
@@ -270,9 +273,7 @@ public class PaymentCancellationCompensationService {
                 ));
     }
 
-    private PaymentCancellation findCancellation(
-            Long cancellationId
-    ) {
+    private PaymentCancellation findCancellation(Long cancellationId) {
         return cancellationRepository.findById(cancellationId)
                 .orElseThrow(() -> new IllegalStateException(
                         "결제 취소 요청을 찾을 수 없습니다."

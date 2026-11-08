@@ -16,15 +16,33 @@ import com.gift.gift.global.outbox.OutboxClaimRepository.Job;
 import static org.mockito.Mockito.*;
 
 class OutboxRelayTest {
+
     private final OutboxClaimRepository repository = mock(OutboxClaimRepository.class);
     private final RabbitPublisher publisher = mock(RabbitPublisher.class);
-    private final OutboxRelay relay = new OutboxRelay(repository, publisher,
+    private final OutboxRelay relay = new OutboxRelay(
+            repository,
+            publisher,
             new OutboxProperties(5, 60, 5000, 10, 2, 300),
-            new RabbitRoutingProperties("test.events", "test.search"));
+            new RabbitRoutingProperties("test.events", "test.search")
+    );
 
     private Job job(long id) {
-        return new Job(id, "token", new MessageEnvelope("event-" + id, "product.search.sync.v1", 1,
-                "key-" + id, "GIFT", "42", null, new ObjectMapper().readTree("{}"), LocalDateTime.now(), null));
+        return new Job(
+                id,
+                "token",
+                new MessageEnvelope(
+                        "event-" + id,
+                        "product.search.sync.v1",
+                        1,
+                        "key-" + id,
+                        "GIFT",
+                        "42",
+                        null,
+                        new ObjectMapper().createObjectNode(),
+                        LocalDateTime.now(),
+                        null
+                )
+        );
     }
 
     @Test
@@ -33,12 +51,26 @@ class OutboxRelayTest {
         Job success = job(1);
         Job failure = job(2);
         when(repository.claim("product.search.sync.v1", 5)).thenReturn(List.of(success, failure));
+
         var pending = new CompletableFuture<RabbitPublisher.Result>();
-        when(publisher.publish(success.envelope(), "token", "test.events", "test.search")).thenReturn(pending);
-        when(publisher.publish(failure.envelope(), "token", "test.events", "test.search")).thenAnswer(call -> {
+        when(publisher.publish(
+                success.envelope(),
+                "token",
+                "test.events",
+                "test.search"
+        )).thenReturn(pending);
+
+        when(publisher.publish(
+                failure.envelope(),
+                "token",
+                "test.events",
+                "test.search"
+        )).thenAnswer(call -> {
             verify(repository, never()).complete(success);
             pending.complete(new RabbitPublisher.Result(true, null));
-            return CompletableFuture.completedFuture(new RabbitPublisher.Result(false, "ConfirmTimeout"));
+            return CompletableFuture.completedFuture(
+                    new RabbitPublisher.Result(false, "ConfirmTimeout")
+            );
         });
         relay.relaySearch();
         verify(repository).complete(success);
@@ -52,10 +84,20 @@ class OutboxRelayTest {
         Job first = job(1);
         Job second = job(2);
         when(repository.claim("product.search.sync.v1", 5)).thenReturn(List.of(first, second));
-        when(publisher.publish(first.envelope(), "token", "test.events", "test.search"))
-                .thenReturn(CompletableFuture.completedFuture(new RabbitPublisher.Result(true, null)));
-        when(publisher.publish(second.envelope(), "token", "test.events", "test.search"))
-                .thenReturn(CompletableFuture.completedFuture(new RabbitPublisher.Result(true, null)));
+        when(publisher.publish(
+                first.envelope(),
+                "token",
+                "test.events",
+                "test.search"
+        )).thenReturn(CompletableFuture.completedFuture(new RabbitPublisher.Result(true, null)));
+        when(publisher.publish(
+                second.envelope(),
+                "token",
+                "test.events",
+                "test.search"
+        )).thenReturn(CompletableFuture.completedFuture(
+                new RabbitPublisher.Result(true, null)
+        ));
         when(repository.complete(first)).thenThrow(new IllegalStateException("DB unavailable"));
         relay.relaySearch();
         verify(repository).complete(second);

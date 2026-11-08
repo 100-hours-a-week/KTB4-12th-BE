@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ import com.gift.gift.domain.order.event.PaymentCompletedEvent;
 import com.gift.gift.domain.order.event.PaymentReceiptEmailEvent;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
+import com.gift.gift.domain.order.messaging.PaymentOutboxEventWriter.PaymentCompletedOutboxRequested;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.service.ProductQueryService;
@@ -54,6 +56,9 @@ public class PaymentCompletionService {
     private final OrderRewardQueryService orderRewardQueryService;
     private final Clock clock;
     private final RouletteService rouletteService;
+
+    @Value("${app.payment.mq.enabled:false}")
+    private boolean paymentMqEnabled;
 
     @Transactional
     public PaymentCompletion complete(Long orderRecordId) {
@@ -163,9 +168,16 @@ public class PaymentCompletionService {
         );
 
         creditTransactionRepository.saveAndFlush(transaction);
-        rouletteService.grantGift(order.getPayerId(), savedGift.getId());
+
+        if (!paymentMqEnabled) {
+            rouletteService.grantGift(
+                    order.getPayerId(),
+                    savedGift.getId()
+            );
+        }
 
         Order completedOrder = findOrder(orderRecordId);
+        boolean receiptEligible = sender.getEmailVerifiedAt() != null;
 
         eventPublisher.publishEvent(
                 new PaymentCompletedEvent(
@@ -184,7 +196,15 @@ public class PaymentCompletionService {
                 )
         );
 
-        if (sender.getEmailVerifiedAt() != null) {
+        if (paymentMqEnabled) {
+            eventPublisher.publishEvent(
+                    new PaymentCompletedOutboxRequested(
+                            completedOrder.getId(),
+                            completedAt,
+                            receiptEligible
+                    )
+            );
+        } else if (receiptEligible) {
             eventPublisher.publishEvent(
                     new PaymentReceiptEmailEvent(
                             sender.getEmail(),
