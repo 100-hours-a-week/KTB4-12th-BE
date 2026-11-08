@@ -14,7 +14,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.util.Assert;
 
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnExpression("${app.outbox.enabled:false} or ${app.ai-profile.amqp.enabled:false}")
+@ConditionalOnExpression(
+        "${app.outbox.enabled:false} or ${app.ai-profile.amqp.enabled:false} or "
+                + "${app.payment.mq.topology.enabled:false}"
+)
 public class RabbitConnectionConfiguration {
 
     @Bean
