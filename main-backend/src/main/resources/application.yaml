@@ -199,6 +199,10 @@ app:
       stale-age: ${PAYMENT_RECONCILIATION_STALE_AGE:1m}
       timeout: ${PAYMENT_RECONCILIATION_TIMEOUT:10m}
 
+  notification:
+    common-outbox:
+      enabled: ${NOTIFICATION_COMMON_OUTBOX_ENABLED:false}
+
   bug-report:
     webhook-url: ${DISCORD_WEBHOOK_URL:}
     google-sheets:
