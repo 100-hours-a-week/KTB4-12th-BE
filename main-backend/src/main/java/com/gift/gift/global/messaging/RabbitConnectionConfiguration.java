@@ -16,7 +16,8 @@ import org.springframework.util.Assert;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnExpression(
         "${app.outbox.enabled:false} or ${app.ai-profile.amqp.enabled:false} or "
-                + "${app.payment.mq.topology.enabled:false}"
+                + "${app.payment.mq.topology.enabled:false} or "
+                + "${app.payment.recovery.dispatch.enabled:false}"
 )
 public class RabbitConnectionConfiguration {
 
@@ -37,17 +38,21 @@ public class RabbitConnectionConfiguration {
     public static BeanPostProcessor rabbitConnectionLimits() {
         return new BeanPostProcessor() {
             @Override
-            public Object postProcessBeforeInitialization(Object bean, String beanName) {
+            public Object postProcessBeforeInitialization(
+                    Object bean,
+                    String beanName
+            ) {
                 if ("rabbitConnectionFactory".equals(beanName)
                         && bean instanceof CachingConnectionFactory factory) {
                     var client = factory.getRabbitConnectionFactory();
                     Assert.hasText(client.getHost(), "spring.rabbitmq.host는 필수입니다.");
-                    Assert.isTrue(client.getPort() >= 1 && client.getPort() <= 65535,
-                            "spring.rabbitmq.port는 1~65535 범위여야 합니다.");
+                    Assert.isTrue(
+                            client.getPort() >= 1 && client.getPort() <= 65535,
+                            "spring.rabbitmq.port는 1~65535 범위여야 합니다."
+                    );
                     Assert.hasText(client.getUsername(), "spring.rabbitmq.username은 필수입니다.");
                     Assert.hasText(client.getPassword(), "spring.rabbitmq.password는 필수입니다.");
                     Assert.hasText(client.getVirtualHost(), "spring.rabbitmq.virtual-host는 필수입니다.");
-                    // Boot의 접속·TLS 설정은 보존하고 공유 연결의 대기 제한만 보완한다.
                     factory.setChannelCheckoutTimeout(3000);
                     factory.setCloseTimeout(3000);
                     factory.setConnectionNameStrategy(connectionFactory -> "gift-be");
@@ -59,7 +64,9 @@ public class RabbitConnectionConfiguration {
 
     @Bean
     public RabbitHealthIndicator rabbitHealthIndicator(
-            @Qualifier("rabbitConnectionFactory") CachingConnectionFactory connectionFactory) {
+            @Qualifier("rabbitConnectionFactory")
+            CachingConnectionFactory connectionFactory
+    ) {
         return new RabbitHealthIndicator(new RabbitTemplate(connectionFactory));
     }
 }

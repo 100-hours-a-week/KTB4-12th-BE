@@ -192,6 +192,15 @@ app:
       initial-group-size: ${AI_PROFILE_QUORUM_INITIAL_GROUP_SIZE:1}
 
   payment:
+    mq:
+      topology:
+        enabled: ${PAYMENT_MQ_TOPOLOGY_ENABLED:false}
+      recovery:
+        dispatch:
+          enabled: ${PAYMENT_RECOVERY_DISPATCH_ENABLED:false}
+          batch-size: ${PAYMENT_RECOVERY_DISPATCH_BATCH_SIZE:100}
+          lease-seconds: ${PAYMENT_RECOVERY_DISPATCH_LEASE_SECONDS:60}
+          poll-interval-ms: ${PAYMENT_RECOVERY_DISPATCH_POLL_INTERVAL_MS:5000}
     client:
       base-url: ${PAYMENT_SERVER_BASE_URL}
       api-key: ${PAYMENT_SERVER_API_KEY}
