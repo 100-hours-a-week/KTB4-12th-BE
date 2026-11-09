@@ -90,6 +90,7 @@ v7 이벤트가 v8보다 늦게 Redis SET을 수행하면 DB는 v8인데 캐시�
 ```
 
 실제 MQ 결과 소비·AI 연동·운영 환경 장애 검증은 후속 PR 범위다.
+실제 결과 큐 연결·ACK·DLX·최소 중지는 [PR3 결과 Listener](ai-profiling-result-listener.md)에서 다룬다.
 
 ### 2026-11-09 검증 결과
 

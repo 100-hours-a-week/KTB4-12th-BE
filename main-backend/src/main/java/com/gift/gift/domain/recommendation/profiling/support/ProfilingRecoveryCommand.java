@@ -58,6 +58,7 @@ public final class ProfilingRecoveryCommand {
                     "--app.scheduling.enabled=false",
                     "--app.ai-profile.scheduling-enabled=false",
                     "--app.ai-profile.amqp.enabled=false",
+                    "--app.ai-profile.result-consumer.enabled=false",
                     "--app.outbox.enabled=false",
                     "--spring.rabbitmq.dynamic=false"
             )) {
