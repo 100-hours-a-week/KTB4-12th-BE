@@ -68,13 +68,31 @@ public class RouletteService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void grantGift(Long senderId, Long giftId) {
+        Instant grantedAt = clock.instant();
+        recordGiftGrant(senderId, giftId, grantedAt.atZone(RoulettePolicy.ZONE).toLocalDate(), grantedAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void grantGift(Long senderId, Long giftId, LocalDate participationDate) {
+        if (participationDate == null) {
+            throw new IllegalArgumentException("참여권 지급 날짜는 필수입니다.");
+        }
+
+        recordGiftGrant(senderId, giftId, participationDate, clock.instant());
+    }
+
+    private void recordGiftGrant(Long senderId, Long giftId, LocalDate participationDate, Instant grantedAt) {
         RouletteAccount account = lockAccount(senderId);
-        Instant now = clock.instant();
-        LocalDate date = now.atZone(RoulettePolicy.ZONE).toLocalDate();
-        RouletteParticipationDay day = initializeDay(senderId, date);
-        String key = "GIFT:" + giftId;
-        if (grantRepository.insertIfAbsent(senderId, date, key, RouletteTicketSource.GIFT.name(),
-                LocalDateTime.ofInstant(now, RoulettePolicy.ZONE)) == 1) {
+        RouletteParticipationDay day = initializeDay(senderId, participationDate);
+        String sourceKey = "GIFT:" + giftId;
+
+        if (grantRepository.insertIfAbsent(
+                senderId,
+                participationDate,
+                sourceKey,
+                RouletteTicketSource.GIFT.name(),
+                LocalDateTime.ofInstant(grantedAt, RoulettePolicy.ZONE)
+        ) == 1) {
             day.grantGift();
             account.grantTicket();
         }
