@@ -8,6 +8,9 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 import com.gift.gift.domain.user.entity.User;
@@ -18,6 +21,64 @@ import static org.assertj.core.api.Assertions.*;
 
 class ProfilingJobTest {
     private final ProfilingMessageSerializer serializer = new ProfilingMessageSerializer(new ObjectMapper());
+
+    @ParameterizedTest
+    @EnumSource(value = ProfilingResultStatus.class, names = {"COMPLETED", "FAILED"})
+    @DisplayName("최종 결과 기록은 발행 선점·예약을 정리하고 오류와 시도 이력을 구분한다")
+    void finalResultClearsPublicationClaimAndPreservesHistory(ProfilingResultStatus finalStatus) {
+        var job = ProfilingJob.create(profile(), message(1, 1, null), serializer);
+        var finished = LocalDateTime.of(2030, 11, 9, 9, 0);
+        var published = finished.minusHours(9);
+        ReflectionTestUtils.setField(job, "publishStatus", ProfilingPublishStatus.CLAIMED);
+        ReflectionTestUtils.setField(job, "claimToken", UUID.randomUUID().toString());
+        ReflectionTestUtils.setField(job, "claimedAt", published.minusSeconds(1));
+        ReflectionTestUtils.setField(job, "nextAttemptAt", published.plusSeconds(1));
+        ReflectionTestUtils.setField(job, "attemptCount", 2);
+        ReflectionTestUtils.setField(job, "firstFailedAt", published.minusMinutes(1));
+        ReflectionTestUtils.setField(job, "lastErrorCode", "PUBLISH_NACK");
+
+        assertThat(job.finishFromResult(finalStatus, "a".repeat(64), finished, published)).isTrue();
+        assertThat(job.getPublishStatus()).isEqualTo(ProfilingPublishStatus.PUBLISHED);
+        assertThat(job.getResultStatus()).isEqualTo(finalStatus);
+        assertThat(job.getResultFingerprint()).isEqualTo("a".repeat(64));
+        assertThat(job.getFinishedAt()).isEqualTo(finished);
+        assertThat(job.getPublishedAt()).isEqualTo(published);
+        assertThat(job.getAttemptCount()).isEqualTo(2);
+        assertThat(job.getFirstFailedAt()).isEqualTo(published.minusMinutes(1));
+        assertThat(job.getClaimToken()).isNull();
+        assertThat(job.getClaimedAt()).isNull();
+        assertThat(job.getNextAttemptAt()).isNull();
+        assertThat(job.getLastErrorCode()).isEqualTo(
+                finalStatus == ProfilingResultStatus.FAILED ? "AI_RESULT_FAILED" : null);
+    }
+
+    @Test
+    @DisplayName("이미 확인된 발행 시각은 보존하고 종료 작업의 해시를 다시 쓸 수 없다")
+    void preservesPublishedTimeAndRejectsRepeatedTermination() {
+        var job = ProfilingJob.create(profile(), message(1, 1, null), serializer);
+        var published = LocalDateTime.of(2026, 11, 9, 0, 0);
+        ReflectionTestUtils.setField(job, "publishedAt", published);
+        assertThat(job.finishFromResult(ProfilingResultStatus.COMPLETED, "a".repeat(64),
+                published.plusDays(1), published.plusHours(1))).isFalse();
+        assertThat(job.getPublishedAt()).isEqualTo(published);
+        assertThatThrownBy(() -> job.finishFromResult(ProfilingResultStatus.FAILED, "b".repeat(64),
+                published.plusDays(2), published.plusHours(2))).isInstanceOf(IllegalStateException.class);
+        assertThat(job.getResultStatus()).isEqualTo(ProfilingResultStatus.COMPLETED);
+        assertThat(job.getResultFingerprint()).isEqualTo("a".repeat(64));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"abc", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"})
+    @DisplayName("잘못된 해시는 상태를 변경하기 전에 거부한다")
+    void rejectsInvalidResultFingerprintWithoutMutation(String invalidHash) {
+        var job = ProfilingJob.create(profile(), message(1, 1, null), serializer);
+        assertThatThrownBy(() -> job.finishFromResult(ProfilingResultStatus.COMPLETED,
+                invalidHash, LocalDateTime.now(), LocalDateTime.now())).isInstanceOf(IllegalArgumentException.class);
+        assertThat(job.getResultStatus()).isEqualTo(ProfilingResultStatus.WAITING);
+        assertThat(job.getResultFingerprint()).isNull();
+        assertThat(job.getPublishStatus()).isEqualTo(ProfilingPublishStatus.READY);
+    }
 
     private RecipientProfile profile() {
         User user = new User("job@example.com", "hash", "테스트", LocalDate.of(1990, 1, 1));

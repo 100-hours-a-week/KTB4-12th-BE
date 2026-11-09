@@ -11,6 +11,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import tools.jackson.databind.json.JsonMapper;
 
+import com.gift.gift.domain.recommendation.profiling.event.RecommendationAnalysisCompletedEvent;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -27,6 +29,28 @@ class AiRecommendedProductCacheTest {
 
     private AiRecommendedProductCache cache() {
         return new AiRecommendedProductCache(redis, JsonMapper.builder().build(), Duration.ofMinutes(30));
+    }
+
+    @Test
+    @DisplayName("완료 이벤트는 버전을 직접 쓰지 않고 다음 조회가 DB 최신 버전을 읽도록 무효화한다")
+    void committedResultInvalidatesVersionInsteadOfOverwritingIt() {
+        var cache = cache();
+        cache.onRecommendationAnalysisCompleted(new RecommendationAnalysisCompletedEvent(1L, 8));
+        cache.onRecommendationAnalysisCompleted(new RecommendationAnalysisCompletedEvent(1L, 7));
+        verify(redis, times(2)).delete("gift:product:ai-recommended-version:1");
+        verify(values, never()).set(anyString(), anyString(), any(java.time.Duration.class));
+        when(values.setIfAbsent("gift:product:ai-recommended-version:1", "8", Duration.ofMinutes(30)))
+                .thenReturn(true);
+        assertThat(cache.resolveAnalyzedSourceVersion(1L, () -> 8L).version()).isEqualTo(8);
+    }
+
+    @Test
+    @DisplayName("완료 후 Redis 무효화 실패는 이미 커밋된 DB 결과를 실패로 전파하지 않는다")
+    void committedCacheInvalidationFailureDoesNotPropagate() {
+        doThrow(new DataAccessResourceFailureException("test"))
+                .when(redis).delete("gift:product:ai-recommended-version:1");
+        cache().onRecommendationAnalysisCompleted(new RecommendationAnalysisCompletedEvent(1L, 8));
+        verify(redis).delete("gift:product:ai-recommended-version:1");
     }
 
     @Test

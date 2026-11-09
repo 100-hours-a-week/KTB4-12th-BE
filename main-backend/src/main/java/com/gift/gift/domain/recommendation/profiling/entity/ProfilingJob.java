@@ -242,4 +242,68 @@ public class ProfilingJob extends BaseTimeEntity {
         lastErrorCode = null;
         lastErrorMessage = null;
     }
+
+    public boolean finishFromResult(
+            ProfilingResultStatus finalStatus,
+            String fingerprint,
+            LocalDateTime finishedAt,
+            LocalDateTime publishedAtFallback
+    ) {
+        Objects.requireNonNull(finalStatus, "최종 상태는 필수입니다.");
+        Objects.requireNonNull(fingerprint, "결과 fingerprint는 필수입니다.");
+        Objects.requireNonNull(finishedAt, "종료 시각은 필수입니다.");
+        Objects.requireNonNull(
+                publishedAtFallback,
+                "발행 시각 보완값은 필수입니다."
+        );
+
+        if (finalStatus != ProfilingResultStatus.COMPLETED
+                && finalStatus != ProfilingResultStatus.FAILED) {
+            throw new IllegalArgumentException(
+                    "최종 결과는 COMPLETED 또는 FAILED여야 합니다."
+            );
+        }
+
+        if (!fingerprint.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException(
+                    "결과 fingerprint는 소문자 SHA-256 hex여야 합니다."
+            );
+        }
+
+        if (resultStatus != ProfilingResultStatus.WAITING
+                || resultFingerprint != null
+                || this.finishedAt != null) {
+            throw new IllegalStateException(
+                    "결과를 수락하지 않은 WAITING 작업만 종료할 수 있습니다."
+            );
+        }
+
+        boolean publishedAtInferred = publishedAt == null;
+
+        resultStatus = finalStatus;
+        resultFingerprint = fingerprint;
+        this.finishedAt = finishedAt;
+
+        // 유효한 최종 결과는 요청이 실제 전달됐다는 증거다.
+        publishStatus = ProfilingPublishStatus.PUBLISHED;
+
+        if (publishedAtInferred) {
+            publishedAt = publishedAtFallback;
+        }
+
+        claimToken = null;
+        claimedAt = null;
+        nextAttemptAt = null;
+
+        // 발행 오류와 AI 최종 실패를 구분한다.
+        lastErrorCode = finalStatus == ProfilingResultStatus.FAILED
+                ? "AI_RESULT_FAILED"
+                : null;
+
+        lastErrorMessage = finalStatus == ProfilingResultStatus.FAILED
+                ? "AI가 최종 실패 결과를 반환했습니다."
+                : null;
+
+        return publishedAtInferred;
+    }
 }

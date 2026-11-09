@@ -4,6 +4,8 @@
 
 결과 본문 검증·fingerprint·V53 컬럼 기반은 [결과 계약 PR1](ai-profiling-result-contract.md)을 참고한다.
 
+브로커 없는 결과 저장·멱등성·Publisher 경합 처리는 [결과 저장 PR2](ai-profiling-result-store.md)를 참고한다.
+
 ## 로컬 실행
 
 먼저 [공통 RabbitMQ 이미지 가이드](../infrastructure/rabbitmq/README.md)에 따라 계정·권한 Secret 파일을 준비하고
