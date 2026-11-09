@@ -1,13 +1,14 @@
 # 선잘알 로컬 성능 모니터링
 
-프로파일링 발행 지표·RabbitMQ 수집·로컬 경보는 [PR4-3 운영·검증 문서](ai-profiling-observability.md)를 따른다.
-기본 구성은 유지하며 `PROFILING_MONITORING_ENABLED=true`와 Compose `profiling` 프로필을 명시했을 때 추가한다.
+프로파일링 발행 지표·RabbitMQ 수집·경보는 [PR4-3 운영·검증 문서](ai-profiling-observability.md)를 따른다.
+Prometheus YAML과 Grafana JSON을 직접 마운트한다. 설정 생성용 Python 실행은 필요 없다.
+기본 수집에 RabbitMQ가 포함되며, 기존 프로파일링 경보는 `prometheus-profiling.yml`과 Compose `profiling` 프로필을 선택한다.
 
 ## 구성과 적용 범위
 
 Spring Boot 4.1.1 / Java 25 / Micrometer 1.17.1 / HikariCP 7.0.2 / Hibernate 7.4.5.Final.
 Actuator는 기존 의존성을 재사용하고 `micrometer-registry-prometheus`만 추가했다. 버전은 Boot BOM에 맡긴다.
-기존 Sentry 8.56.0, 로깅, 비즈니스 로직, Dockerfile 및 CI 설정은 유지한다.
+기존 Sentry 8.56.0, 로깅, 비즈니스 로직과 Dockerfile은 유지한다. CI에서는 정적 Prometheus 설정도 검사한다.
 현재 저장소에는 운영 Compose/배포 실행 설정이 없어 운영 DB 버전·네트워크·제한값은 확인되지 않았다.
 
 ```mermaid
@@ -26,13 +27,12 @@ cAdvisor는 컨테이너 자원/제한 상태를 담당한다. node_exporter와 
 
 ## 실행: 연결 설정 → 앱 → 모니터링
 
-1. 기존 `.env`에 `.env.example`의 Monitoring 항목을 채운다. 앱의 DB 설정과 exporter의 DB 설정은 독립적이다.
-   `MONITORING_PASSWORD`는 `openssl rand -hex 32`로 생성하고 `GRAFANA_ADMIN_PASSWORD`,
-   `MYSQL_EXPORTER_PASSWORD`도 별도 값으로 지정한다. 비밀번호를 소스/공유 명령/로그에 넣지 않는다.
-2. 대상 MySQL에서 아래 전용 계정을 준비한다. 기존 관리자 클라이언트에서 비밀번호를 대체하여 실행한다.
-3. 앱에 `monitoring` 프로필을 추가하고 관리 포트 접근 범위를 맞춘다.
-4. 설정을 생성하고 Compose를 실행한다.
-5. Grafana에 로그인하고 검증 스크립트를 실행한다.
+1. 앱의 `MONITORING_PASSWORD`(32자 이상), Grafana 비밀번호, MySQL exporter 전용 계정을 준비한다.
+2. 저장소 밖에 앱과 같은 메트릭 비밀번호 파일과 `monitoring/exporter.cnf.example` 형식의 DB 설정 파일을 만든다.
+3. `.env`에 `MONITORING_PASSWORD_FILE`, `MYSQL_EXPORTER_CONFIG_FILE`의 절대 경로와 Grafana 인증값을 넣는다.
+   컨테이너 UID가 파일을 읽을 수 있도록 상위 디렉터리·파일 권한을 설정한다. 실제 값은 커밋하지 않는다.
+4. `monitoring/scrape.yml`의 대상과 vhost를 맞춘다. 환경별 복사본은 `PROMETHEUS_SCRAPE_CONFIG_FILE`로 선택한다.
+5. 앱에 `monitoring` 프로필을 추가하고 Compose를 기동한 뒤 실제 target과 최신 표본을 확인한다.
 
 ```sql
 -- '%' 대신 실행 환경의 exporter 출발지/내부 서브넷으로 좁힐 수 있으면 좁힌다.
@@ -59,21 +59,18 @@ set +a
 앱을 시작한 터미널과 별도 터미널에서 동일 `.env`를 내보낸 뒤:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 monitoring/configure.py
 docker compose -f compose.monitoring.yaml up -d
-PYTHONDONTWRITEBYTECODE=1 python3 monitoring/verify.py
 ```
 
 Grafana: <http://127.0.0.1:3001>, 계정은 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`.
-`Gift Monitoring` 폴더에 대시보드 5개가 자동 등록된다.
-생성 설정·비밀번호는 Git에서 제외된 `monitoring/runtime.tmp/`에 저장한다(디렉터리 0700).
-컨테이너 UID가 읽을 수 있도록 개별 마운트 파일은 0644이며, 다른 호스트 사용자에게 디렉터리를 공유하지 않는다.
-설정/비밀번호 변경 후 configure.py를 재실행하고 해당 컨테이너를 재생성한다.
+`Gift Monitoring` 폴더에 기존 5개와 RabbitMQ/리포트 대시보드가 등록된다.
+설정과 Secret 파일은 읽기 전용으로 마운트한다. 변경 후 해당 컨테이너를 재생성한다.
+정적 YAML 내부의 환경변수는 자동 치환되지 않는다. 실제 Secret 파일 생성은 배포 측 책임이다.
 Grafana admin 환경변수는 **DB 최초 초기화**에 적용된다. 기존 Grafana 볼륨의 비밀번호를 자동 변경하지 않는다.
 
 ## 환경별 연결 예시
 
-| 실행 환경 | APP_METRICS_TARGET | 관리 포트 bind | MYSQL_EXPORTER_HOST / PORT |
+| 실행 환경 | scrape.yml의 spring target | 관리 포트 bind | exporter.cnf의 host / port |
 |---|---|---|---|
 | Docker Desktop의 호스트 JVM + 로컬 DB | `host.docker.internal:8081` | `127.0.0.1` 기본 | `host.docker.internal` / DB 공개 포트 |
 | 로컬 부하테스트 DB(현재 3307 공개) | 앱 실행 위치에 따라 위/아래 선택 | 실행 위치에 따라 설정 | `host.docker.internal` / `3307` |
@@ -87,7 +84,7 @@ docker network connect --alias backend gift-monitoring APP_CONTAINER
 docker network connect --alias mysql gift-monitoring MYSQL_CONTAINER
 ```
 
-이 경우 `APP_METRICS_TARGET=backend:8081`, `MYSQL_EXPORTER_HOST=mysql`, `MYSQL_EXPORTER_PORT=3306`.
+이 경우 scrape.yml의 spring target을 `backend:8081`, exporter.cnf의 host/port를 `mysql`/`3306`으로 설정한다.
 이미 다른 네트워크에 붙은 앱·DB도 추가 연결할 수 있다. 네트워크 이름 변경 시 명령도 변경한다.
 앱 컨테이너의 관리 포트는 **호스트에 publish하지 않는다**. 앱 포트 8080만 기존 정책대로 공개한다.
 별도 관리 포트를 쓰면 기존 Dockerfile의 8080 healthcheck는 관리 endpoint를 찾지 못하므로,
@@ -107,7 +104,7 @@ Linux 호스트 JVM은 내부 IP bind와 방화벽으로 Prometheus 출발지 �
   신뢰하는 앱·도구만 연결한다. Basic 인증은 내부 HTTP이므로 다른 호스트/운영 연결에서는 내부망+TLS를 따로 구성한다.
 - cAdvisor는 privileged 및 호스트 경로·Docker 소켓 접근이 필요하다. 소켓의 `:ro`는 Docker API 쓰기 권한을 차단하지 않는다.
   외부 접근을 열지 않고 신뢰하는 로컬 Docker 호스트에서만 사용한다. Docker Desktop 지표는 Linux VM 기준이다.
-- 초기 `PROMETHEUS_SCRAPE_INTERVAL=15s`, `PROMETHEUS_RETENTION=7d`, 크기 상한 `2GB`.
+- 초기 YAML의 `scrape_interval: 15s`, `PROMETHEUS_RETENTION=7d`, 크기 상한 `2GB`.
   시간/크기 한도 중 먼저 충족하는 조건에 따라 삭제된다. 크기 상한 때문에 실제 보관 기간이 7일보다 짧아질 수 있다.
 
 ```bash
@@ -117,7 +114,7 @@ docker compose -f compose.monitoring.yaml logs --tail 50 prometheus mysqld-expor
 ```
 
 Overview의 health 패널에서 `up`, `mysql_up`, `mysql_exporter_collector_success`를 같이 본다.
-exporter HTTP가 UP이어도 DB 인증/collector가 실패할 수 있다. verify.py는 이 경우 실패 종료한다.
+exporter HTTP가 UP이어도 DB 인증/collector가 실패할 수 있다. target UP과 DB collector 성공을 별도로 확인한다.
 수집 실패를 0으로 채우지 않는다. API 요청이 없으면 백분위/평균/에러율 계산이 비어 있거나 NaN일 수 있다.
 HTTP 지표는 완료 요청 기준이므로 부하 생성기의 시작 RPS·네트워크 포함 지연과 차이가 있다.
 
@@ -231,7 +228,7 @@ cAdvisor의 초기 root-only 수집은 Docker Desktop 소켓 누락을 수정한
 
 ### 최종 쿼리 검증
 
-`monitoring/verify.py` 최종 실행 통과: 네 Target UP, DB collector 정상, 5개 대시보드 조회 및 모든 panel PromQL이
+초기 구현 당시 검증 스크립트 실행 통과(현재는 정적 설정 방식으로 전환해 해당 스크립트를 제거함): 네 Target UP, DB collector 정상, 5개 대시보드 조회 및 모든 panel PromQL이
 실제 시계열을 반환했다. Buffer pool의 실제 state는 data/free/misc이며 total 라벨은 없으므로 합계를 분모로 사용한다.
 상품 1/2/3 정상 응답의 HTTP 시계열은 `/products/{productId}`로 통합됐다.
 잠금 실험 후 cumulative row_lock_waits=15, row_lock_time=244148ms, loadtest interval Annotation 1개 저장 확인.
@@ -239,15 +236,52 @@ cAdvisor의 초기 root-only 수집은 Docker Desktop 소켓 누락을 수정한
 Chrome에서 Grafana 로그인 화면은 열었으나, 로그인 이후 전체 그래프의 **시각 검증은 미실시**다.
 API provisioning/데이터 검증과 화면 표시 검증을 구분한다.
 
-### 변경 파일
+### 초기 구현 당시 변경 파일
 
 - `build.gradle`, `.env.example`, `src/main/resources/application-monitoring.yaml`
 - `src/main/java/com/gift/gift/global/config/MonitoringSecurityConfig.java`
 - `src/test/java/com/gift/gift/global/security/MonitoringSecurityTest.java`
 - `compose.monitoring.yaml`, `docs/monitoring.md`
-- `monitoring/configure.py`, `verify.py`, `annotate.py`, `test_configure.py`
+- 초기 생성·검증 Python 도구는 이번 정적 설정 전환에서 제거했다. `monitoring/annotate.py`는 유지한다.
 - `monitoring/grafana/provisioning/datasources/prometheus.yaml`, `provisioning/dashboards/dashboards.yaml`
 - `monitoring/grafana/dashboards/gift-overview.json`, `gift-jvm.json`, `gift-database.json`, `gift-container.json`, `gift-loadtest.json`
 
 결정 기록은 `탐플/결정후보및결정사항.md`에, 조사 과정은 Desktop의 `KTB4-12th-BE-troubleshooting.md`에 append했다.
 기존 변경사항, README/Postman 보류 파일 및 local-only 성능 테스트 브랜치는 수정/스테이징/커밋/푸시하지 않았다.
+
+
+## RabbitMQ·리포트 지표와 Discord 경고
+
+`Gift / RabbitMQ & Reports` 대시보드는 `gift-prometheus` 데이터 소스를 사용한다.
+공용 Cloud Grafana에 가져올 때는 기존 datasource UID에 맞춰 매핑한다.
+브로커 합계와 지정 vhost의 Report 4개 큐·profiling.request/result 상세 지표만 수집한다.
+retry/DLQ의 Consumer 0은 정상이다. 채널 처리 시간은 개별 시도 기준이며 전체 접수 완료 지연이 아니다.
+기존 Micrometer Counter는 이벤트 발생 전 시계열이 없을 수 있고 이를 성공 0으로 채우지 않는다.
+기본 prometheus.yml은 경고 전송을 활성화하지 않는다. 신규 리포트 경고 규칙·백로그 임계값은 별도 작업이다.
+
+```promql
+up{job=~"spring|rabbitmq|rabbitmq-queues"}
+time() - timestamp(rabbitmq_detailed_queue_messages{job="rabbitmq-queues"})
+count_over_time(rabbitmq_detailed_queue_messages{job="rabbitmq-queues"}[1m])
+```
+
+15초 간격으로 3회 이상 수집하고 target UP, 최신 표본 나이, 실제 패널 쿼리를 확인한다.
+Linux의 host-gateway와 호스트 loopback은 다르다. 별도 관측 노드에서는 내부 주소·방화벽 경로를 설정한다.
+Outbox 미발행 작업은 큐가 비었다는 이유만으로 없다고 판단하지 않는다.
+
+Alertmanager의 Discord 수신자는 `webhook_url_file: /run/secrets/discord-webhook-url`을 사용한다.
+배포 측에서 GitHub Secrets 또는 Secret Manager의 URL을 plain text 파일로 생성하고,
+`ALERTMANAGER_DISCORD_WEBHOOK_FILE`에 호스트의 절대 경로를 지정한다. 현재 코드는 파일 마운트만 담당한다.
+GitHub-hosted runner에 만든 파일은 서버에 자동 전달되지 않는다. 배포 서버 또는 관측 노드에서 준비한다.
+Secret 파일은 서비스 수명 동안 유지하고 재부팅 시 재생성한다. URL 교체 후 Alertmanager를 재생성한다.
+계정·웹훅 원문은 저장소/로그/빌드 아티팩트에 포함하지 않는다. 버그 리포트 웹훅과 운영 경고 웹훅은 분리한다.
+
+```bash
+# 기존 프로파일링 경고를 Discord로 보낼 때만 활성화한다. 실제 발송 전에 수신 채널을 확인한다.
+PROMETHEUS_CONFIG_FILE=./monitoring/prometheus-profiling.yml \
+  docker compose -f compose.monitoring.yaml --profile profiling up -d
+```
+
+수집 간격 변경 시 기본/프로파일링 YAML과 Grafana datasource timeInterval을 함께 맞춘다.
+일반 설정은 현재 Cloud 개발 배포에서 서버 .env, staging/production에서는 ECS environment로 전달한다.
+.env.example의 Parameter Store 표시는 저장 위치 제안이며 자동 조회 구현을 뜻하지 않는다.

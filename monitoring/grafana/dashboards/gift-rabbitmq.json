@@ -1,0 +1,494 @@
+{
+  "uid": "gift-rabbitmq",
+  "title": "Gift / RabbitMQ & Reports",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "tags": [
+    "gift",
+    "monitoring",
+    "rabbitmq"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "rabbit_instance",
+        "label": "RabbitMQ instance",
+        "query": "label_values(up{job=\"rabbitmq\"}, instance)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "vhost",
+        "label": "Virtual host",
+        "query": "label_values(rabbitmq_detailed_queue_messages, vhost)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "queue",
+        "label": "Queue",
+        "query": "label_values(rabbitmq_detailed_queue_messages{vhost=~\"$vhost\"}, queue)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "instance",
+        "label": "App instance",
+        "query": "label_values(up{job=\"spring\"}, instance)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Scrape health",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "description": "1=healthy, 0=scrape failure. No data is not zero.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"rabbitmq|rabbitmq-queues\",instance=~\"$rabbit_instance\"}",
+          "legendFormat": "{{job}} {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "up{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "app {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Queue ready / unacknowledged",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq-queues\",instance=~\"$rabbit_instance\",vhost=~\"$vhost\",queue=~\"$queue\"}",
+          "legendFormat": "ready {{vhost}} / {{queue}} / {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rabbitmq_detailed_queue_messages_unacked{job=\"rabbitmq-queues\",instance=~\"$rabbit_instance\",vhost=~\"$vhost\",queue=~\"$queue\"}",
+          "legendFormat": "unacked {{vhost}} / {{queue}} / {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Consumers by queue",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Retry and DLQ intentionally have no consumer. Check work queues separately.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_detailed_queue_consumers{job=\"rabbitmq-queues\",instance=~\"$rabbit_instance\",vhost=~\"$vhost\",queue=~\"$queue\"}",
+          "legendFormat": "{{vhost}} / {{queue}} / {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Queue deliveries / ACK / redelivery",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(rabbitmq_detailed_queue_messages_delivered_ack_total{job=\"rabbitmq-queues\",instance=~\"$rabbit_instance\",vhost=~\"$vhost\",queue=~\"$queue\"}[$__rate_interval])",
+          "legendFormat": "delivered_ack {{queue}} / {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(rabbitmq_detailed_queue_messages_acked_total{job=\"rabbitmq-queues\",instance=~\"$rabbit_instance\",vhost=~\"$vhost\",queue=~\"$queue\"}[$__rate_interval])",
+          "legendFormat": "acked {{queue}} / {{instance}}"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(rabbitmq_detailed_queue_messages_redelivered_total{job=\"rabbitmq-queues\",instance=~\"$rabbit_instance\",vhost=~\"$vhost\",queue=~\"$queue\"}[$__rate_interval])",
+          "legendFormat": "redelivered {{queue}} / {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Broker publish / confirm",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Broker-wide rate, including other domains; confirms do not mean external delivery completed.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(rabbitmq_channel_messages_published_total{job=\"rabbitmq\",instance=~\"$rabbit_instance\"}[$__rate_interval])",
+          "legendFormat": "published {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(rabbitmq_channel_messages_confirmed_total{job=\"rabbitmq\",instance=~\"$rabbit_instance\"}[$__rate_interval])",
+          "legendFormat": "confirmed {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Memory usage / limit",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_process_resident_memory_bytes{job=\"rabbitmq\",instance=~\"$rabbit_instance\"}",
+          "legendFormat": "used {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rabbitmq_resident_memory_limit_bytes{job=\"rabbitmq\",instance=~\"$rabbit_instance\"}",
+          "legendFormat": "limit {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Disk available / limit",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_disk_space_available_bytes{job=\"rabbitmq\",instance=~\"$rabbit_instance\"}",
+          "legendFormat": "available {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rabbitmq_disk_space_available_limit_bytes{job=\"rabbitmq\",instance=~\"$rabbit_instance\"}",
+          "legendFormat": "limit {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Connections / channels",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_connections{job=\"rabbitmq\",instance=~\"$rabbit_instance\"}",
+          "legendFormat": "connections {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rabbitmq_channels{job=\"rabbitmq\",instance=~\"$rabbit_instance\"}",
+          "legendFormat": "channels {{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Discord delivery outcomes / second",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Lazy counters appear after that outcome occurs. Absence does not prove success or zero failures.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(report_discord_deliveries_total{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Discord processing duration",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "description": "One consumer attempt, not end-to-end delay including Outbox and retry wait.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(report_discord_processing_seconds_sum{job=\"spring\",instance=~\"$instance\"}[$__rate_interval])) / sum(rate(report_discord_processing_seconds_count{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "mean"
+        },
+        {
+          "refId": "B",
+          "expr": "max(report_discord_processing_seconds_max{job=\"spring\",instance=~\"$instance\"})",
+          "legendFormat": "window max"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Sheets delivery outcomes / second",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Lazy counters appear after that outcome occurs. Absence does not prove success or zero failures.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(report_sheets_deliveries_total{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Sheets processing duration",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "description": "One consumer attempt, not end-to-end delay including Outbox and retry wait.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(report_sheets_processing_seconds_sum{job=\"spring\",instance=~\"$instance\"}[$__rate_interval])) / sum(rate(report_sheets_processing_seconds_count{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "mean"
+        },
+        {
+          "refId": "B",
+          "expr": "max(report_sheets_processing_seconds_max{job=\"spring\",instance=~\"$instance\"})",
+          "legendFormat": "window max"
+        }
+      ]
+    }
+  ]
+}

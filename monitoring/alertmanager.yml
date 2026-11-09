@@ -1,0 +1,12 @@
+# The deployment supplies the webhook URL as a secret file.
+route:
+  receiver: discord
+  group_by: [ alertname ]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url_file: /run/secrets/discord-webhook-url
+        send_resolved: true

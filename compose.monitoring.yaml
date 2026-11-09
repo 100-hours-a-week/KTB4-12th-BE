@@ -8,8 +8,9 @@ services:
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-7d}
       - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-2GB}
     volumes:
-      - ./monitoring/runtime.tmp/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/runtime.tmp/monitoring-password:/etc/prometheus/monitoring-password:ro
+      - ${PROMETHEUS_CONFIG_FILE:-./monitoring/prometheus.yml}:/etc/prometheus/prometheus.yml:ro
+      - ${PROMETHEUS_SCRAPE_CONFIG_FILE:-./monitoring/scrape.yml}:/etc/prometheus/scrape.yml:ro
+      - ${MONITORING_PASSWORD_FILE:?Set MONITORING_PASSWORD_FILE}:/run/secrets/monitoring-password:ro
       - ./monitoring/profiling-alerts.yml:/etc/prometheus/profiling-alerts.yml:ro
       - prometheus-data:/prometheus
     extra_hosts:
@@ -22,7 +23,13 @@ services:
     image: prom/alertmanager:v0.34.2
     command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--cluster.listen-address="]
     volumes:
-      - ./monitoring/runtime.tmp/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ${ALERTMANAGER_CONFIG_FILE:-./monitoring/alertmanager.yml}:/etc/alertmanager/alertmanager.yml:ro
+      - type: bind
+        source: ${ALERTMANAGER_DISCORD_WEBHOOK_FILE:-/etc/gift/secrets/discord-webhook-url}
+        target: /run/secrets/discord-webhook-url
+        read_only: true
+        bind:
+          create_host_path: false
     extra_hosts:
       - host.docker.internal:host-gateway
     networks: [monitoring]
@@ -37,7 +44,6 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
-      PROMETHEUS_SCRAPE_INTERVAL: ${PROMETHEUS_SCRAPE_INTERVAL:-15s}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -52,7 +58,7 @@ services:
       - --no-collect.slave_status
       - --exporter.max_open_connections=2
     volumes:
-      - ./monitoring/runtime.tmp/exporter.cnf:/etc/mysql/exporter.cnf:ro
+      - ${MYSQL_EXPORTER_CONFIG_FILE:?Set MYSQL_EXPORTER_CONFIG_FILE}:/etc/mysql/exporter.cnf:ro
     extra_hosts:
       - host.docker.internal:host-gateway
     networks: [monitoring]

@@ -110,6 +110,13 @@ jobs:
         shell: bash
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s monitoring -p 'test_*.py'
+          printf '%s' 'ci-only-not-a-real-monitoring-password' > "$RUNNER_TEMP/monitoring-password"
+          for config in prometheus.yml prometheus-profiling.yml; do
+            docker run --rm --entrypoint promtool \
+              -v "$PWD/monitoring:/etc/prometheus:ro" \
+              -v "$RUNNER_TEMP/monitoring-password:/run/secrets/monitoring-password:ro" \
+              prom/prometheus:v3.15.0 check config "/etc/prometheus/$config"
+          done
           docker run --rm --entrypoint promtool \
             -v "$PWD/monitoring:/rules:ro" prom/prometheus:v3.15.0 \
             test rules /rules/profiling-alerts.test.yml

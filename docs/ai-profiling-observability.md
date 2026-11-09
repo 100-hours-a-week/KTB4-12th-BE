@@ -1,11 +1,11 @@
-# 프로파일링 발행 관측·로컬 경보 — PR 4-3
+# 프로파일링 발행 관측·경보 — PR 4-3
 
 관련 이슈: #526 / 상위 BE 작업 #522. 기존 프로파일·작업 테이블과 Micrometer를 재사용한다.
 스키마·AI Consumer·결과 수신 계약은 변경하지 않는다.
 
 ## 관측 경로
 
-`Publisher / 작업 DB → MeterRegistry → 인증된 /actuator/prometheus → Prometheus → Alertmanager → 로컬 수신기`
+`Publisher / 작업 DB → MeterRegistry → 인증된 /actuator/prometheus → Prometheus → Alertmanager → 설정한 수신자(기본 Discord)`
 
 - 로그: 요청 UUID와 고정 오류 코드로 개별 실패·DB 반영 제외·연결 차단/복구를 찾는다.
 - 지표: 전체 횟수·시간·크기·현재 상태를 집계한다. requestId·사용자 ID·선점 토큰·본문을 태그로 넣지 않는다.
@@ -29,7 +29,7 @@
 
 DB를 공유하는 BE 인스턴스의 작업 수·최장 나이는 `max`로 본다. 발행 Counter 증가량은 합산한다.
 여러 환경을 하나의 Prometheus에 연결하면 환경 라벨을 추가하고 경보 집계/그룹도 환경별로 나눠야 한다.
-Quorum 복제본 수만큼 Ready를 단순 합산하지 않는다. 현재 설정은 선택한 vhost의 프로파일링 큐만 상세 수집한다.
+Quorum 복제본 수만큼 Ready를 단순 합산하지 않는다. 현재 설정은 선택한 vhost의 프로파일링 큐와 Report 4개 큐만 상세 수집한다.
 
 ## 실행
 
@@ -40,34 +40,29 @@ Quorum 복제본 수만큼 Ready를 단순 합산하지 않는다. 현재 설정
 SCHEDULING_ENABLED=true
 AI_PROFILE_SCHEDULING_ENABLED=true
 AI_PROFILE_AMQP_ENABLED=true
-PROFILING_MONITORING_ENABLED=true
+PROMETHEUS_CONFIG_FILE=./monitoring/prometheus-profiling.yml
 RABBITMQ_METRICS_PORT=15692
-RABBITMQ_METRICS_TARGET=host.docker.internal:15692
-LOCAL_ALERT_WEBHOOK_URL=http://host.docker.internal:19093/alerts
+ALERTMANAGER_DISCORD_WEBHOOK_FILE=/etc/gift/secrets/discord-webhook-url
 ```
 
-위 주소는 Docker Desktop에서 호스트 JVM·loopback 포트 연결 예시다.
+RabbitMQ 주소는 `monitoring/scrape.yml`의 두 RabbitMQ job에 직접 지정한다. 기본 주소는 Docker Desktop 로컬 예시다.
 앱·RabbitMQ가 같은 Docker 네트워크에 있으면 실제 네트워크 별칭과 내부 포트를 지정한다.
 공통 RabbitMQ 이미지는 빌드 시 prometheus 플러그인을 활성화한다. 기존 계정 Secret·정의 import·데이터 볼륨은 유지한다.
 이미지 재빌드·포트 반영에는 컨테이너 재생성이 필요하므로 로컬 진행 작업을 확인한 뒤 실행한다. 볼륨 삭제는 필요 없다.
 최신 공통 이미지의 기본 vhost는 gift다. 실제 AMQP vhost와 SPRING_RABBITMQ_VIRTUAL_HOST를 일치시켜 상세 수집한다.
 15692는 호스트 loopback으로만 공개한다. 운영은 내부망·인증/TLS 정책을 별도로 정한다.
 
-```bash
-# 수신기는 별도 터미널에서 실행한다. 최근 100개 알림의 이름·상태만 메모리에 보관한다.
-python3 monitoring/local_alert_receiver.py
-```
+운영 경고용 Discord URL은 배포 측에서 저장소 밖 Secret 파일로 준비한다.
+파일 생성·Secret 조회 자동화는 이 백엔드 코드에 포함하지 않는다.
 
 ```bash
-# 기존 프로젝트 절차대로 .env를 내보낸 터미널에서 실행한다. 값을 출력하지 않는다.
-PYTHONDONTWRITEBYTECODE=1 python3 monitoring/configure.py
+# 기존 절차대로 .env를 내보내고 Secret 파일·정적 scrape 설정을 준비한 터미널에서 실행한다.
 docker compose -f compose.monitoring.yaml --profile profiling up -d
 docker compose -f compose.monitoring.yaml exec -T prometheus promtool check config /etc/prometheus/prometheus.yml
-curl --fail http://127.0.0.1:19093/alerts
 ```
 
-Linux의 host-gateway는 loopback 접근을 보장하지 않는다. 위 로컬 수신 예시를 운영 주소로 간주하지 않는다.
-재현 가능한 격리 통합 테스트는 아래 명령을 사용한다. 운영용 외부 알림 채널은 연결하지 않았다.
+현재 기본 receiver는 Discord다. 로컬 수신기가 필요한 격리 통합 테스트는 테스트 내부 설정을 사용한다.
+Linux host-gateway는 loopback 접근을 보장하지 않는다. 운영에서는 실제 내부 네트워크 경로를 맞춘다.
 
 ## 경보와 운영 순서
 
@@ -86,11 +81,11 @@ Linux의 host-gateway는 loopback 접근을 보장하지 않는다. 위 로컬 �
 | spring/rabbitmq/rabbitmq-queues 수집 대상 DOWN | 1분 / 수집 경로 확인. AI 장애라고 단정하지 않음 |
 
 Ready 550건 ≈ 5분은 정상 처리량 110건/분을 가정한 추정이다. 모델 장애·429 상황에는 적용하지 않는다.
-Alertmanager는 10초 group_wait/group_interval, 4시간 repeat_interval, send_resolved=true를 사용한다.
+배포용 Alertmanager는 group_wait 30초, group_interval 5분, repeat_interval 4시간, send_resolved=true를 사용한다.
 조건 해제 후에도 수집·평가·그룹 간격에 따른 전달 지연이 있다. 실패 증가량 경보는 5분 조회 창 동안 남을 수 있다.
 로컬 수신기는 외부 통지를 보내지 않으며 재시작하면 수신 이력이 사라진다.
 
-대시보드가 필요하면 기존 Grafana의 Prometheus 데이터 소스에서 위 지표를 조회한다. 새 대시보드·외부 채널·결과 미수신 경보는 추가하지 않았다.
+RabbitMQ/리포트 대시보드와 Discord 수신자 설정이 추가돼 있다. 실제 운영 웹훅 연결·발송은 별도 검증하며, 결과 미수신 경보는 추가하지 않았다.
 
 ## 검증
 

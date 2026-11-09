@@ -8,4 +8,4 @@ datasources:
     isDefault: true
     editable: false
     jsonData:
-      timeInterval: ${PROMETHEUS_SCRAPE_INTERVAL}
+      timeInterval: 15s

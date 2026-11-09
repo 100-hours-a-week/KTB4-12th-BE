@@ -1,0 +1,36 @@
+scrape_configs:
+  - job_name: spring
+    metrics_path: /actuator/prometheus
+    basic_auth:
+      username: prometheus
+      password_file: /run/secrets/monitoring-password
+    static_configs:
+      - targets: [host.docker.internal:8081]
+
+  - job_name: mysql
+    static_configs:
+      - targets: [mysqld-exporter:9104]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: [cadvisor:8080]
+    metric_relabel_configs:
+      - action: labeldrop
+        regex: container_label_.*
+
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
+
+  - job_name: rabbitmq
+    static_configs:
+      - targets: [host.docker.internal:15692]
+
+  - job_name: rabbitmq-queues
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics, queue_consumer_count, queue_delivery_metrics]
+      vhost: [gift]
+      queue: ['^(Report[.](discord|sheets|retry|dlq)|profiling[.](request|result))$']
+    static_configs:
+      - targets: [host.docker.internal:15692]
