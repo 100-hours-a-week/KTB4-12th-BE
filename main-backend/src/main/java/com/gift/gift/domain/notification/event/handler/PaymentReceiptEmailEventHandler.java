@@ -15,6 +15,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.gift.gift.domain.order.event.PaymentReceiptEmailEvent;
 import com.gift.gift.domain.order.event.PaymentRefundReceiptEmailEvent;
+import com.gift.gift.domain.order.repository.PaymentReceiptDeliveryType;
+import com.gift.gift.domain.order.repository.PaymentReceiptMailData;
 
 @Slf4j
 @Component
@@ -72,7 +74,59 @@ public class PaymentReceiptEmailEventHandler {
         );
     }
 
+    public void sendFromQueue(PaymentReceiptDeliveryType receiptType, PaymentReceiptMailData mailData) {
+        String subject = switch (receiptType) {
+            case PAYMENT -> PaymentReceiptEmailTemplate.SUBJECT;
+            case CANCELLATION -> PaymentReceiptEmailTemplate.REFUND_SUBJECT;
+        };
+
+        String body = switch (receiptType) {
+            case PAYMENT -> PaymentReceiptEmailTemplate.BODY_FORMAT.formatted(
+                    mailData.orderId(),
+                    mailData.productName(),
+                    mailData.quantity(),
+                    formatCredit(mailData.amount()),
+                    formatCredit(mailData.balanceAfter()),
+                    formatTime(mailData.paymentCompletedAt())
+            );
+            case CANCELLATION -> PaymentReceiptEmailTemplate.CANCELLATION_BODY_FORMAT.formatted(
+                    mailData.orderId(),
+                    mailData.productName(),
+                    mailData.quantity(),
+                    formatCredit(mailData.amount()),
+                    formatCredit(mailData.balanceAfter()),
+                    formatTime(mailData.paymentCompletedAt()),
+                    formatTime(mailData.canceledAt())
+            );
+        };
+
+        sendWithoutSwallowingErrors(
+                mailData.recipientEmail(),
+                mailData.orderId(),
+                subject,
+                body
+        );
+    }
+
     private void send(
+            String recipientEmail,
+            String orderId,
+            String subject,
+            String body
+    ) {
+        try {
+            sendWithoutSwallowingErrors(recipientEmail, orderId, subject, body);
+        } catch (MailException exception) {
+            // shortcut: 동기 후처리 경로는 기존 계약대로 발송 오류를 기록하고 업무 결과를 유지한다.
+            log.error(
+                    "크레딧 영수증 이메일 발송에 실패했습니다. orderId={}, errorType={}",
+                    orderId,
+                    exception.getClass().getSimpleName()
+            );
+        }
+    }
+
+    private void sendWithoutSwallowingErrors(
             String recipientEmail,
             String orderId,
             String subject,
@@ -83,17 +137,7 @@ public class PaymentReceiptEmailEventHandler {
         message.setTo(recipientEmail);
         message.setSubject(subject);
         message.setText(body);
-
-        try {
-            mailSender.send(message);
-        } catch (MailException exception) {
-            // shortcut: SMTP 실패는 기록만 한다. 발송 보장이 필요해지면 Outbox와 재시도를 도입한다.
-            log.error(
-                    "크레딧 영수증 이메일 발송에 실패했습니다. orderId={}, errorType={}",
-                    orderId,
-                    exception.getClass().getSimpleName()
-            );
-        }
+        mailSender.send(message);
     }
 
     private String formatCredit(long amount) {
