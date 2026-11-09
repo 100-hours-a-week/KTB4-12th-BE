@@ -1,5 +1,6 @@
 package com.gift.gift.global.messaging;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
 
@@ -14,6 +15,7 @@ import tools.jackson.databind.ObjectMapper;
 import com.gift.gift.global.outbox.OutboxProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 class RabbitPublisherIntegrationTest {
     @Test
@@ -26,6 +28,7 @@ class RabbitPublisherIntegrationTest {
             try {
                 connection.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
                 connection.setPublisherReturns(true);
+                connection.afterPropertiesSet();
                 RabbitPublisherConfiguration topology = new RabbitPublisherConfiguration();
                 var template = topology.outboxRabbitTemplate(connection);
                 var consumerConnection = connection.createConnection();
@@ -51,6 +54,9 @@ class RabbitPublisherIntegrationTest {
                 assertThat(publisherConnections.get()).isEqualTo(1);
                 var publisherConnection = publisherFactory.createConnection();
                 assertThat(publisherConnection.getDelegate()).isNotSameAs(consumerConnection.getDelegate());
+                await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                        assertThat(publisherFactory.getCacheProperties().getProperty("idleChannelsNotTx"))
+                                .isEqualTo("1"));
                 publisherFactory.resetConnection();
                 assertThat(consumerConnection.isOpen()).isTrue();
                 var delivered = template.receive("test.queue", 5000);
