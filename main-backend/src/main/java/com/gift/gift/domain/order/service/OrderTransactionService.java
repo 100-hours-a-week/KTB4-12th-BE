@@ -12,6 +12,8 @@ import com.gift.gift.domain.coupon.service.OrderCouponService;
 import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.repository.OrderRepository;
+import com.gift.gift.domain.order.recovery.PaymentRecoveryTaskService;
+import com.gift.gift.domain.order.recovery.PaymentRecoveryTaskType;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
 
@@ -21,12 +23,13 @@ public class OrderTransactionService {
 
     private final OrderRepository orderRepository;
     private final OrderCouponService orderCouponService;
+    private final PaymentRecoveryTaskService recoveryTaskService;
 
     @Value("${app.coupon.payment-enabled:true}")
     private boolean couponPaymentEnabled;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Order create(
+    public PaymentStartResult create(
             Long payerId,
             String idempotencyKey,
             String requestHash,
@@ -59,14 +62,22 @@ public class OrderTransactionService {
         );
 
         Order savedOrder = orderRepository.saveAndFlush(order);
+        String token = recoveryTaskService.createSyncTask(
+                PaymentRecoveryTaskType.APPROVAL,
+                savedOrder.getId()
+        );
 
         if (multiplier != null) {
-            orderCouponService.reserve(
-                    savedOrder.getId(),
-                    multiplier
-            );
+            orderCouponService.reserve(savedOrder.getId(), multiplier);
         }
 
-        return savedOrder;
+        return PaymentStartResult.created(savedOrder, token);
+    }
+
+    public com.gift.gift.domain.order.recovery.PaymentRecoveryTaskClaim claimSyncOwner(Long orderRecordId) {
+        return recoveryTaskService.claimSyncOwner(
+                PaymentRecoveryTaskType.APPROVAL,
+                orderRecordId
+        );
     }
 }
