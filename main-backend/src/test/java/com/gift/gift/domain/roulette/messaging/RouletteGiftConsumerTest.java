@@ -49,38 +49,38 @@ class RouletteGiftConsumerTest {
     }
 
     @Test
-    @DisplayName("Envelope와 payload의 주문 ID가 다르면 DLQ로 보낸다")
-    void onMessage_mismatchedOrderId_rejectsWithoutRequeue() throws Exception {
+    @DisplayName("Envelope와 payload의 주문 ID가 다르면 재전달 없이 NACK해 DLQ로 보낸다")
+    void onMessage_mismatchedOrderId_nacksWithoutRequeue() throws Exception {
         consumer.onMessage(event(ORDER_RECORD_ID, "999"), channel);
 
         verifyNoInteractions(transactionService);
-        verify(channel).basicReject(17L, false);
+        verify(channel).basicNack(17L, false, false);
         verify(channel, never()).basicAck(17L, false);
     }
 
     @Test
-    @DisplayName("일시적인 DB 오류는 재전달을 요청한다")
-    void onMessage_temporaryDatabaseError_rejectsWithRequeue() throws Exception {
+    @DisplayName("일시적인 DB 오류는 재전달을 위해 NACK한다")
+    void onMessage_temporaryDatabaseError_nacksWithRequeue() throws Exception {
         doThrow(new DataAccessResourceFailureException("database unavailable"))
                 .when(transactionService)
                 .grantForCompletedPayment(ORDER_RECORD_ID, PAYMENT_COMPLETED_AT);
 
         consumer.onMessage(event(ORDER_RECORD_ID, Long.toString(ORDER_RECORD_ID)), channel);
 
-        verify(channel).basicReject(17L, true);
+        verify(channel).basicNack(17L, false, true);
         verify(channel, never()).basicAck(17L, false);
     }
 
     @Test
-    @DisplayName("복구할 수 없는 업무 데이터 오류는 DLQ로 보낸다")
-    void onMessage_permanentDataError_rejectsWithoutRequeue() throws Exception {
+    @DisplayName("복구할 수 없는 업무 데이터 오류는 재전달 없이 NACK해 DLQ로 보낸다")
+    void onMessage_permanentDataError_nacksWithoutRequeue() throws Exception {
         doThrow(new IllegalStateException("주문 데이터 불일치"))
                 .when(transactionService)
                 .grantForCompletedPayment(ORDER_RECORD_ID, PAYMENT_COMPLETED_AT);
 
         consumer.onMessage(event(ORDER_RECORD_ID, Long.toString(ORDER_RECORD_ID)), channel);
 
-        verify(channel).basicReject(17L, false);
+        verify(channel).basicNack(17L, false, false);
         verify(channel, never()).basicAck(17L, false);
     }
 
