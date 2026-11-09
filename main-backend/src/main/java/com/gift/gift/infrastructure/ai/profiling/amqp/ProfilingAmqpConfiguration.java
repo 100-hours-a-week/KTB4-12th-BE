@@ -1,15 +1,10 @@
 package com.gift.gift.infrastructure.ai.profiling.amqp;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
-import org.springframework.amqp.core.Binding;
-import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.Declarables;
-import org.springframework.amqp.core.DirectExchange;
-import org.springframework.amqp.core.MessageDeliveryMode;
-import org.springframework.amqp.core.MessageProperties;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -36,6 +31,11 @@ public class ProfilingAmqpConfiguration {
 
     public static final String REQUEST_ROUTING_KEY = REQUEST_QUEUE;
     public static final String RESULT_ROUTING_KEY = RESULT_QUEUE;
+
+    public static final String REQUEST_FAILED_QUEUE =
+            "profiling.request.failed";
+    public static final String RESULT_FAILED_QUEUE =
+            "profiling.result.failed";
 
     @Bean
     public RabbitTemplate profilingRabbitTemplate(
@@ -89,47 +89,39 @@ public class ProfilingAmqpConfiguration {
                 false
         );
 
-        Queue requestQueue = QueueBuilder
-                .durable(REQUEST_QUEUE)
-                .quorum()
-                .withArgument(
-                        "x-quorum-initial-group-size",
-                        properties.initialGroupSize()
-                )
-                .build();
-
-        Queue resultQueue = QueueBuilder
-                .durable(RESULT_QUEUE)
-                .quorum()
-                .withArgument(
-                        "x-quorum-initial-group-size",
-                        properties.initialGroupSize()
-                )
-                .build();
-
-        Binding requestBinding = BindingBuilder
-                .bind(requestQueue)
-                .to(exchange)
-                .with(REQUEST_ROUTING_KEY);
-
-        Binding resultBinding = BindingBuilder
-                .bind(resultQueue)
-                .to(exchange)
-                .with(RESULT_ROUTING_KEY);
-
         exchange.setAdminsThatShouldDeclare(admin);
-        requestQueue.setAdminsThatShouldDeclare(admin);
-        resultQueue.setAdminsThatShouldDeclare(admin);
-        requestBinding.setAdminsThatShouldDeclare(admin);
-        resultBinding.setAdminsThatShouldDeclare(admin);
 
-        return new Declarables(
-                exchange,
-                requestQueue,
-                resultQueue,
-                requestBinding,
-                resultBinding
-        );
+        List<Declarable> declarations = new ArrayList<>();
+        declarations.add(exchange);
+
+        for (String queueName : List.of(
+                REQUEST_QUEUE,
+                RESULT_QUEUE,
+                REQUEST_FAILED_QUEUE,
+                RESULT_FAILED_QUEUE
+        )) {
+            Queue queue = QueueBuilder
+                    .durable(queueName)
+                    .quorum()
+                    .withArgument(
+                            "x-quorum-initial-group-size",
+                            properties.initialGroupSize()
+                    )
+                    .build();
+
+            Binding binding = BindingBuilder
+                    .bind(queue)
+                    .to(exchange)
+                    .with(queueName);
+
+            queue.setAdminsThatShouldDeclare(admin);
+            binding.setAdminsThatShouldDeclare(admin);
+
+            declarations.add(queue);
+            declarations.add(binding);
+        }
+
+        return new Declarables(declarations);
     }
 
     @Bean

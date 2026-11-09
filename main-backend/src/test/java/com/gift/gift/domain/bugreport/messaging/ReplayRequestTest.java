@@ -60,7 +60,8 @@ class ReplayRequestTest {
     @DisplayName("CLI는 모든 스케줄러·소비자를 중지하고 리포트일 때만 MQ를 활성화한다")
     void cliDisablesBackgroundProcessing() {
         assertThat(OutboxReplayCommand.startupArguments(true)).contains("--app.scheduling.enabled=false",
-            "--app.ai-profile.amqp.enabled=false", "--app.report.discord.enabled=false",
+            "--app.ai-profile.amqp.enabled=false", "--app.ai-profile.result-consumer.enabled=false",
+            "--app.report.discord.enabled=false",
             "--app.report.sheets.enabled=false", "--spring.rabbitmq.dynamic=false", "--app.outbox.enabled=true");
         assertThat(OutboxReplayCommand.startupArguments(false)).contains("--app.outbox.enabled=false",
             "--app.report.mq.enabled=false");

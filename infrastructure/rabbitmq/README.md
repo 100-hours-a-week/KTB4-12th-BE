@@ -1,4 +1,4 @@
-# 공통 RabbitMQ 이미지와 리포트 토폴로지
+# 공통 RabbitMQ 이미지와 도메인 토폴로지
 
 관련: [BE #546](https://github.com/100-hours-a-week/KTB4-12th-BE/issues/546).
 
@@ -11,17 +11,21 @@ Python·curl·별도 시작 스크립트는 사용하지 않는다. 기본 이�
 
 ## 파일 역할
 
-- `Dockerfile`: 비밀정보가 없는 설정과 리포트 정의만 이미지에 복사한다.
+- `Dockerfile`: 비밀정보가 없는 설정과 리포트·프로파일링 정의를 이미지에 복사한다.
 - `rabbitmq.conf`: `/etc/rabbitmq/definitions` 디렉터리를 부팅 시 import한다.
 - `report-definitions.json`: `gift` vhost, Topic Exchange 3개, Classic 큐 4개, binding 7개, policy 3개.
+- `profiling-definitions.json`: 결과 큐의 at-least-once DLX와 요청/결과 실패 큐의 reject-publish Policy. TTL은 설정하지 않는다.
 - `access-definitions.example.json`: 계정·권한 Secret의 형식 예시다. 실제로 적용할 비밀번호 해시는 없다.
-- `.dockerignore`: 이미지 빌드 컨텍스트를 Dockerfile·설정·리포트 정의로 제한한다.
+- `.dockerignore`: 이미지 빌드 컨텍스트를 Dockerfile·설정·도메인 정의로 제한한다.
 
 리포트 큐는 `Report.discord`, `Report.sheets`, `Report.retry`, `Report.dlq`다.
 최초 `Report.created`는 두 처리 큐로 분배한다. 재시도는 채널별 routing key를 보존하여
 공용 대기 큐에서 30초 후 `report.events`로 돌아간다. DLQ 보관 기간은 7일이다.
 TTL/DLX/overflow는 policy이며 처리 큐의 크기 상한은 아직 설정하지 않았다.
 프로파일링의 Direct/Quorum 선언은 기존 전용 RabbitAdmin이 담당한다.
+프로파일링 큐는 `profiling.request`, `profiling.result`, `profiling.request.failed`, `profiling.result.failed`다.
+결과 Consumer는 [PR3 구현 기록](../../docs/ai-profiling-result-listener.md)을 따른다.
+요청 큐의 DLX·AI ACK 정책은 이 이미지에서 정하지 않는다.
 
 이미지는 `rabbitmq_prometheus`도 활성화한다. 메트릭 포트 15692는 로컬 Compose에서 loopback으로만 공개한다.
 수집·로컬 경보는 [프로파일링 관측 문서](../../docs/ai-profiling-observability.md)를 따른다.
@@ -70,6 +74,7 @@ BE의 AMQP/Management 계정 설정은 브로커에 사용자를 생성하지 �
 
 리포트 API는 JSON 접수 계약을 사용한다. Discord·Sheets Consumer는 각각 기본 OFF이며, 토폴로지·두 채널 전달·복구 준비 전에는 `REPORT_MQ_ENABLED=false`를 유지한다. 활성화 조건과 실패 계약은 [리포트 Consumer 구현·검증 기록](https://app.notion.com/p/412ce59041ef81b39559d8079c7a4d0f)를 따른다.
 `OUTBOX_ENABLED`와 `AI_PROFILE_AMQP_ENABLED`도 기본 false이며 기존 알림 DB Worker 경로는 그대로다.
+`AI_PROFILE_RESULT_CONSUMER_ENABLED`도 기본 false다. PR4의 복구·운영 제어 준비 전에는 테스트에서만 활성화한다.
 
 ## 검증
 
@@ -79,6 +84,7 @@ BE의 AMQP/Management 계정 설정은 브로커에 사용자를 생성하지 �
 
 ```bash
 ./gradlew :main-backend:test --tests '*ReportMqBrokerIntegrationTest'
+./gradlew :main-backend:test --tests '*ProfilingResultBrokerIntegrationTest'
 ```
 
 공식 근거: [부팅 시 정의 import](https://www.rabbitmq.com/docs/definitions),

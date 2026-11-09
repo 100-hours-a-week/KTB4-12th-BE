@@ -2,3 +2,4 @@
 !Dockerfile
 !rabbitmq.conf
 !report-definitions.json
+!profiling-definitions.json

@@ -130,6 +130,8 @@ class ProfilingRecoveryScriptIntegrationTest {
         // 브로커가 없는 주소에서도 운영 명령은 DB 변경까지만 수행해야 한다.
         environment.put("SPRING_RABBITMQ_HOST", "127.0.0.1");
         environment.put("SPRING_RABBITMQ_PORT", "1");
+        // 서버 환경에서 수신을 켰어도 일회성 DB 복구 명령은 Consumer를 실행하지 않아야 한다.
+        environment.put("SPRING_APPLICATION_JSON", "{\"app\":{\"ai-profile\":{\"result-consumer\":{\"enabled\":true}}}}");
         return environment;
     }
 

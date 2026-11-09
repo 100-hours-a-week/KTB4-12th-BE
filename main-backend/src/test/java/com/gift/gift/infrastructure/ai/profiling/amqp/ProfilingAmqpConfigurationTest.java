@@ -81,7 +81,12 @@ class ProfilingAmqpConfigurationTest {
                     context.getBean(Declarables.class);
 
             assertThat(topology.getDeclarablesByType(Queue.class))
-                    .hasSize(2)
+                    .hasSize(4)
+                    .extracting(Queue::getName)
+                    .containsExactlyInAnyOrder("profiling.request", "profiling.result",
+                            "profiling.request.failed", "profiling.result.failed");
+
+            assertThat(topology.getDeclarablesByType(Queue.class))
                     .allSatisfy(queue -> {
                         assertThat(queue.isDurable()).isTrue();
                         assertThat(queue.isExclusive()).isFalse();

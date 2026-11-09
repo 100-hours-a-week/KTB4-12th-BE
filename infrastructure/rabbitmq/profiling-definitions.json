@@ -1,0 +1,27 @@
+{
+  "policies": [
+    {
+      "vhost": "gift",
+      "name": "profiling-result-dead-lettering",
+      "pattern": "^profiling\\.result$",
+      "apply-to": "quorum_queues",
+      "priority": 100,
+      "definition": {
+        "dead-letter-exchange": "profiling.exchange",
+        "dead-letter-routing-key": "profiling.result.failed",
+        "dead-letter-strategy": "at-least-once",
+        "overflow": "reject-publish"
+      }
+    },
+    {
+      "vhost": "gift",
+      "name": "profiling-failed-queue-protection",
+      "pattern": "^profiling\\.(request|result)\\.failed$",
+      "apply-to": "quorum_queues",
+      "priority": 100,
+      "definition": {
+        "overflow": "reject-publish"
+      }
+    }
+  ]
+}

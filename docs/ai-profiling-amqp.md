@@ -1,6 +1,6 @@
 # 프로파일링 RabbitMQ 발행·수동 복구
 
-관련 이슈: #525·#526 / 상위 #522. PR 3-3의 작업 준비·발행 루프와 PR 4-1의 수동 재개를 설명한다. 결과 Consumer는 후속 범위다.
+관련 이슈: #525·#526 / 상위 #522. PR 3-3의 작업 준비·발행 루프와 PR 4-1의 수동 재개를 설명한다. 결과 Consumer 연결은 [결과 Listener PR3](ai-profiling-result-listener.md)을 참고한다.
 
 결과 본문 검증·fingerprint·V53 컬럼 기반은 [결과 계약 PR1](ai-profiling-result-contract.md)을 참고한다.
 
@@ -29,7 +29,7 @@ BE 실행 환경에 `AI_PROFILE_AMQP_ENABLED=true`와 접속 정보를 전달하
 
 - RabbitMQ 4.4.0-management, 고정 노드 이름·데이터 볼륨
 - Direct Exchange `profiling.exchange`
-- Quorum 큐·Routing Key `profiling.request`, `profiling.result`
+- Quorum 큐·Routing Key `profiling.request`, `profiling.result`, `profiling.request.failed`, `profiling.result.failed`
 - Durable·exclusive=false·auto-delete=false, Persistent JSON/UTF-8
 - 공통 `rabbitConnectionFactory`를 Outbox·프로파일링 템플릿과 Admin이 명시적으로 주입받는다. 프로파일링 템플릿은 별도 발행 연결을 사용한다.
 - 연결 3초·Heartbeat 요청 20초·프로파일링 Confirm 대기 설정 30초이며 실제 발행에서는 Confirm을 최대 30초 대기한다. Outbox Confirm 대기는 기존 발행 코드의 정책을 유지한다.

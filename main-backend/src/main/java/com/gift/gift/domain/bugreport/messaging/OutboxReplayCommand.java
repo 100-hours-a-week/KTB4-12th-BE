@@ -74,6 +74,7 @@ public final class OutboxReplayCommand {
                 "--logging.level.root=OFF", "--logging.level.com.gift.gift=OFF", "--sentry.dsn=",
                 "--app.scheduling.enabled=false", "--app.ai-profile.scheduling-enabled=false",
                 "--app.ai-profile.amqp.enabled=false", "--app.product-search.outbox.enabled=false",
+                "--app.ai-profile.result-consumer.enabled=false",
                 "--app.product-search.sync.enabled=false", "--app.notification.common-outbox.enabled=false",
                 "--app.report.discord.enabled=false", "--app.report.sheets.enabled=false",
                 "--app.report.mq.enabled=" + report, "--app.outbox.enabled=" + report, "--spring.rabbitmq.dynamic=false"
