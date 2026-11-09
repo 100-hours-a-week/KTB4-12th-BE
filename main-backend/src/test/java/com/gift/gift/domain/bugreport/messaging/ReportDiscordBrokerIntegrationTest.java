@@ -61,8 +61,9 @@ class ReportDiscordBrokerIntegrationTest {
         bind(RETRY_QUEUE, RETRY, DISCORD);
         bind(RETRY_QUEUE, RETRY, SHEETS);
         bind(DLQ, DLX, "Report.#");
-        publisher = new RabbitPublisher(template, mapper, new OutboxProperties(10, 60, 5000, 10, 2, 300),
-            new RabbitRoutingProperties("other.events", "other.key"));
+        publisher = new RabbitPublisher(
+                template, mapper, new OutboxProperties(10, 60, 5000, 10, 2, 300)
+        );
         redisConnection = new LettuceConnectionFactory(redis.getHost(), redis.getMappedPort(6379));
         redisConnection.afterPropertiesSet();
         redisConnection.start();

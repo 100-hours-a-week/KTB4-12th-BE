@@ -21,8 +21,7 @@ class RabbitPublisherTest {
     private final RabbitTemplate template = mock(RabbitTemplate.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private final RabbitPublisher publisher = new RabbitPublisher(template, mapper,
-            new OutboxProperties(10, 60, 30, 10, 2, 300),
-            new RabbitRoutingProperties("test.events", "test.search"));
+            new OutboxProperties(10, 60, 30, 10, 2, 300));
 
     private MessageEnvelope envelope() {
         return new MessageEnvelope("stable-id", "product.search.sync.v1", 1, "key", "GIFT", "42",
@@ -38,7 +37,7 @@ class RabbitPublisherTest {
             data.getFuture().complete(new CorrelationData.Confirm(true, null));
             return null;
         }).when(template).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
-        assertThat(publisher.publish(envelope(), "token", "test.search").join())
+        assertThat(publisher.publish(envelope(), "token", "test.events", "test.search").join())
                 .isEqualTo(new RabbitPublisher.Result(false, "Unroutable"));
     }
 
@@ -50,9 +49,11 @@ class RabbitPublisherTest {
             data.getFuture().complete(new CorrelationData.Confirm(false, "nack"));
             return null;
         }).when(template).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
-        assertThat(publisher.publish(envelope(), "first", "test.search").join().errorType()).isEqualTo("BrokerNack");
+        assertThat(publisher.publish(envelope(), "first", "test.events", "test.search")
+                .join().errorType()).isEqualTo("BrokerNack");
         reset(template);
-        assertThat(publisher.publish(envelope(), "second", "test.search").get(2, TimeUnit.SECONDS).errorType())
+        assertThat(publisher.publish(envelope(), "second", "test.events", "test.search")
+                .get(2, TimeUnit.SECONDS).errorType())
                 .isEqualTo("ConfirmTimeout");
     }
 
@@ -85,6 +86,7 @@ class RabbitPublisherTest {
             data.getFuture().complete(new CorrelationData.Confirm(true, null));
             return null;
         }).when(template).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
-        assertThat(publisher.publish(envelope(), "token", "test.search").join().confirmed()).isTrue();
+        assertThat(publisher.publish(envelope(), "token", "test.events", "test.search")
+                .join().confirmed()).isTrue();
     }
 }
