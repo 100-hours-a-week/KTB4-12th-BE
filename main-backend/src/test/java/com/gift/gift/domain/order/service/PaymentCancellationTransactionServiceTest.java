@@ -9,8 +9,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.gift.gift.domain.gift.repository.GiftHistoryRepository;
 import com.gift.gift.domain.order.entity.PaymentCancellationFailureCode;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
+import com.gift.gift.domain.order.recovery.PaymentRecoveryTaskService;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 
@@ -41,8 +43,9 @@ class PaymentCancellationTransactionServiceTest {
         service = new PaymentCancellationTransactionService(
                 repository,
                 orderRepository,
-                mock(com.gift.gift.domain.gift.repository.GiftHistoryRepository.class),
-                clock
+                mock(GiftHistoryRepository.class),
+                clock,
+                mock(PaymentRecoveryTaskService.class)
         );
     }
 

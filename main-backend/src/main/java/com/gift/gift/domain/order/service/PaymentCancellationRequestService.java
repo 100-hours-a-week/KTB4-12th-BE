@@ -22,6 +22,7 @@ import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
+import com.gift.gift.domain.order.recovery.PaymentRecoveryTaskClaim;
 import com.gift.gift.domain.order.support.PaymentCancellationRequestHasher;
 import com.gift.gift.global.exception.BusinessException;
 import com.gift.gift.global.exception.ErrorCode;
@@ -30,12 +31,15 @@ import com.gift.gift.global.exception.ErrorCode;
 @RequiredArgsConstructor
 public class PaymentCancellationRequestService {
 
-    private static final String IDEMPOTENCY_CONSTRAINT = "uk_payment_cancellations_requester_idempotency";
+    private static final String IDEMPOTENCY_CONSTRAINT =
+            "uk_payment_cancellations_requester_idempotency";
     private static final String INTEGRITY_SQL_STATE = "23000";
     private static final int DUPLICATE_ENTRY_CODE = 1062;
-    private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9:_-]{1,100}$");
+    private static final Pattern IDEMPOTENCY_KEY_PATTERN =
+            Pattern.compile("^[A-Za-z0-9:_-]{1,100}$");
     private static final String GIFT_EXPIRATION_PREFIX = "GIFT_EXPIRATION:";
-    private static final String LOCAL_PROCESSING_FAILURE_PREFIX = "LOCAL_PROCESSING_FAILURE:";
+    private static final String LOCAL_PROCESSING_FAILURE_PREFIX =
+            "LOCAL_PROCESSING_FAILURE:";
 
     private final OrderRepository orderRepository;
     private final GiftHistoryRepository giftHistoryRepository;
@@ -50,14 +54,12 @@ public class PaymentCancellationRequestService {
             CancellationSource source
     ) {
         validateInput(requesterId, orderId, idempotencyKey, source);
-
         String requestHash = requestHasher.hash(orderId);
+
         Optional<PaymentCancellation> existing =
                 cancellationRepository.findByRequesterIdAndIdempotencyKey(
-                        requesterId,
-                        idempotencyKey
+                        requesterId, idempotencyKey
                 );
-
         if (existing.isPresent()) {
             return existing(existing.get(), requesterId, requestHash, source);
         }
@@ -65,47 +67,31 @@ public class PaymentCancellationRequestService {
         Order order = orderRepository
                 .findByOrderIdAndPayerId(orderId, requesterId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.PAYMENT_NOT_FOUND));
-
         validateCancelable(order, source);
 
         try {
-            PaymentCancellation cancellation = transactionService.create(
-                    order,
-                    requesterId,
-                    source,
-                    idempotencyKey,
-                    requestHash
+            return transactionService.create(
+                    order, requesterId, source, idempotencyKey, requestHash
             );
-
-            return PaymentCancellationStartResult.created(cancellation, order);
         } catch (OrderException exception) {
             if (exception.getErrorCode() == ErrorCode.CONFLICT) {
-                Optional<PaymentCancellation> racedRequest =
+                Optional<PaymentCancellation> raced =
                         cancellationRepository.findByRequesterIdAndIdempotencyKey(
-                                requesterId,
-                                idempotencyKey
+                                requesterId, idempotencyKey
                         );
-
-                if (racedRequest.isPresent()) {
-                    return existing(
-                            racedRequest.get(),
-                            requesterId,
-                            requestHash,
-                            source
-                    );
+                if (raced.isPresent()) {
+                    return existing(raced.get(), requesterId, requestHash, source);
                 }
             }
-
             throw exception;
         } catch (DataIntegrityViolationException exception) {
             if (!isIdempotencyDuplicate(exception)) {
                 throw exception;
             }
-
-            PaymentCancellation cancellation = cancellationRepository
-                    .findByRequesterIdAndIdempotencyKey(requesterId, idempotencyKey)
-                    .orElseThrow(() -> exception);
-
+            PaymentCancellation cancellation =
+                    cancellationRepository.findByRequesterIdAndIdempotencyKey(
+                            requesterId, idempotencyKey
+                    ).orElseThrow(() -> exception);
             return existing(cancellation, requesterId, requestHash, source);
         }
     }
@@ -121,12 +107,14 @@ public class PaymentCancellationRequestService {
             throw new BusinessException(ErrorCode.IDEMPOTENCY_KEY_CONFLICT);
         }
 
-        Order order = orderRepository
-                .findById(cancellation.getOrderRecordId())
+        Order order = orderRepository.findById(cancellation.getOrderRecordId())
                 .filter(found -> found.getPayerId().equals(requesterId))
                 .orElseThrow(() -> new OrderException(OrderErrorCode.PAYMENT_NOT_FOUND));
 
-        return PaymentCancellationStartResult.existing(cancellation, order);
+        PaymentRecoveryTaskClaim claim = source == CancellationSource.USER
+                ? transactionService.claimSyncOwner(cancellation.getId())
+                : PaymentRecoveryTaskClaim.unmanaged();
+        return PaymentCancellationStartResult.existing(cancellation, order, claim);
     }
 
     private void validateCancelable(Order order, CancellationSource source) {
@@ -136,7 +124,6 @@ public class PaymentCancellationRequestService {
                     || !hasText(order.getPaymentKey())) {
                 throw new OrderException(OrderErrorCode.PAYMENT_NOT_CANCELABLE);
             }
-
             return;
         }
 
@@ -150,7 +137,6 @@ public class PaymentCancellationRequestService {
                 .orElseThrow(() -> new OrderException(
                         OrderErrorCode.PAYMENT_NOT_CANCELABLE
                 ));
-
         if (gift.getStatus() != GiftStatus.WAITING_FOR_ACCEPTANCE
                 || gift.getDeletedAt() != null) {
             throw new OrderException(OrderErrorCode.PAYMENT_NOT_CANCELABLE);
@@ -166,13 +152,11 @@ public class PaymentCancellationRequestService {
         if (requesterId == null || requesterId <= 0) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
-
         try {
             UUID.fromString(orderId);
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
-
         if (source == null
                 || idempotencyKey == null
                 || !IDEMPOTENCY_KEY_PATTERN.matcher(idempotencyKey).matches()
@@ -185,24 +169,18 @@ public class PaymentCancellationRequestService {
 
     private boolean isIdempotencyDuplicate(Throwable throwable) {
         Throwable cause = throwable;
-
         while (cause != null) {
-            if (cause instanceof SQLException sqlException
-                    && INTEGRITY_SQL_STATE.equals(sqlException.getSQLState())
-                    && sqlException.getErrorCode() == DUPLICATE_ENTRY_CODE
-                    && containsConstraint(sqlException.getMessage())) {
+            if (cause instanceof SQLException sql
+                    && INTEGRITY_SQL_STATE.equals(sql.getSQLState())
+                    && sql.getErrorCode() == DUPLICATE_ENTRY_CODE
+                    && sql.getMessage() != null
+                    && sql.getMessage().toLowerCase(Locale.ROOT)
+                    .contains(IDEMPOTENCY_CONSTRAINT)) {
                 return true;
             }
-
             cause = cause.getCause();
         }
-
         return false;
-    }
-
-    private boolean containsConstraint(String message) {
-        return message != null
-                && message.toLowerCase(Locale.ROOT).contains(IDEMPOTENCY_CONSTRAINT);
     }
 
     private boolean hasText(String value) {

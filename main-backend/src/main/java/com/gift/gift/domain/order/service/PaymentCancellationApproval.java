@@ -11,6 +11,27 @@ public record PaymentCancellationApproval(
         String transactionKey,
         Long cancelAmount,
         LocalDateTime canceledAt,
-        boolean created
+        boolean created,
+        boolean recoveryTaskManaged,
+        String syncOwnerToken
 ) {
+    public PaymentCancellationApproval(
+            PaymentCancellation cancellation,
+            Order order,
+            String transactionKey,
+            Long cancelAmount,
+            LocalDateTime canceledAt,
+            boolean created
+    ) {
+        this(
+                cancellation,
+                order,
+                transactionKey,
+                cancelAmount,
+                canceledAt,
+                created,
+                false,
+                null
+        );
+    }
 }

@@ -74,7 +74,7 @@ class ReportMqBrokerIntegrationTest {
                         URI.create(managementUrl), "test", "test-password")),
                 URI.create(managementUrl), "gift");
         awaitPreflight();
-        publisher = new RabbitPublisher(template, mapper, settings, routing);
+        publisher = new RabbitPublisher(template, mapper, settings);
     }
 
     @BeforeEach

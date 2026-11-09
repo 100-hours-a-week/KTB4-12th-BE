@@ -383,6 +383,13 @@ class PaymentFlowIntegrationTest {
                 )
         );
 
+        // 테스트가 직접 생성한 주문의 임대를 만료시켜 pay()가 승인 처리를 선점하게 한다.
+        jdbcTemplate.update("""
+                UPDATE payment_recovery_tasks
+                SET lease_until = DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 1 SECOND)
+                WHERE target_type = 'APPROVAL' AND target_id = ?
+                """, pendingOrder.getId());
+
         stubApproval();
         String cancellationKey = "LOCAL_PROCESSING_FAILURE:"
                 + pendingOrder.getOrderId();
@@ -487,8 +494,8 @@ class PaymentFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("미확정 주문 재요청은 승인 명령을 재전송하지 않고 같은 주문의 결과를 조회한다")
-    void pay_queriesSameApprovalWhenUnknownOrderIsRetried() {
+    @DisplayName("복구 작업이 예약된 미확정 주문은 즉시 재요청해도 외부 결제 서버를 다시 호출하지 않는다")
+    void pay_keepsUnknownOrderProcessingUntilRecoveryTaskRuns() {
         String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
         PaymentCreateRequest request = request();
 
@@ -528,29 +535,24 @@ class PaymentFlowIntegrationTest {
         assertThat(unknownOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.UNKNOWN);
         assertThat(unknownOrder.getFailureCode()).isEqualTo(OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
 
-        PaymentResult recovered = paymentService.pay(
+        org.mockito.Mockito.clearInvocations(paymentClient);
+        PaymentResult repeated = paymentService.pay(
                 payerId,
                 idempotencyKey,
                 "TIMEOUT_AFTER_APPROVAL",
                 request
         );
 
-        Order completedOrder = orderRepository.findById(unknownOrder.getId()).orElseThrow();
+        Order stillUnknownOrder = orderRepository.findById(unknownOrder.getId()).orElseThrow();
 
-        assertThat(recovered.isProcessing()).isFalse();
-        assertThat(recovered.created()).isFalse();
-        assertThat(completedOrder.getStatus()).isEqualTo(OrderStatus.COMPLETED);
-        assertThat(completedOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.APPROVED);
-        assertThat(readProductQuantity()).isEqualTo(8);
-        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE - AMOUNT);
-
-        verify(paymentClient, times(1))
-                .confirm(
-                        any(PaymentConfirmRequest.class),
-                        eq("TIMEOUT_AFTER_APPROVAL")
-                );
-        verify(paymentClient, times(5))
-                .getByOrderId(unknownOrder.getOrderId());
+        assertThat(repeated.isProcessing()).isTrue();
+        assertThat(repeated.created()).isFalse();
+        assertThat(stillUnknownOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(stillUnknownOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.UNKNOWN);
+        assertThat(readProductQuantity()).isEqualTo(10);
+        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE);
+        verify(paymentClient, org.mockito.Mockito.never()).confirm(any(), any());
+        verify(paymentClient, org.mockito.Mockito.never()).getByOrderId(anyString());
     }
 
     @Test

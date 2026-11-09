@@ -12,6 +12,7 @@ import com.gift.gift.domain.order.entity.PaymentCancellationFailureCode;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
+import com.gift.gift.domain.order.recovery.StalePaymentRecoveryOwnerException;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
 import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
@@ -34,37 +35,40 @@ public class PaymentCancellationService {
             CancellationSource source
     ) {
         PaymentCancellationStartResult start = requestService.start(
-                requesterId,
-                orderId,
-                idempotencyKey,
-                source
+                requesterId, orderId, idempotencyKey, source
         );
-
         PaymentCancellation cancellation = start.cancellation();
         Order order = start.order();
 
-        if (cancellation.getStatus()
-                == PaymentCancellationStatus.COMPLETED) {
+        if (cancellation.getStatus() == PaymentCancellationStatus.COMPLETED) {
             return completed(start);
         }
-
-        if (cancellation.getStatus()
-                == PaymentCancellationStatus.DECLINED) {
+        if (cancellation.getStatus() == PaymentCancellationStatus.DECLINED) {
             throw new OrderException(OrderErrorCode.CANCELLATION_DECLINED);
         }
-
-        if (cancellation.getStatus()
-                == PaymentCancellationStatus.FAILED) {
+        if (cancellation.getStatus() == PaymentCancellationStatus.FAILED) {
             throw new OrderException(
                     OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED
             );
         }
 
+        if (source == CancellationSource.USER
+                && start.recoveryTaskManaged()
+                && start.syncOwnerToken() == null) {
+            throw new OrderException(
+                    OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED
+            );
+        }
+
+        String token = start.syncOwnerToken();
         boolean sendRequest = source != CancellationSource.USER
-                || transactionService.claimUserRequest(cancellation.getId());
+                || token != null
+                || (!start.recoveryTaskManaged()
+                && transactionService.claimUserRequest(cancellation.getId()));
+
         PaymentCancelResponse response = sendRequest
-                ? requestCancellation(cancellation, order)
-                : recoverCancellation(cancellation, order);
+                ? requestCancellation(cancellation, order, token)
+                : recoverCancellation(cancellation, order, token);
 
         validateResponse(order, response);
 
@@ -74,7 +78,9 @@ public class PaymentCancellationService {
                 response.transactionKey(),
                 response.cancelAmount(),
                 response.canceledAt(),
-                start.created()
+                start.created(),
+                start.recoveryTaskManaged(),
+                token
         );
     }
 
@@ -85,92 +91,111 @@ public class PaymentCancellationService {
             CancellationSource source
     ) {
         PaymentCancellationApproval approval = request(
-                requesterId,
-                orderId,
-                idempotencyKey,
-                source
+                requesterId, orderId, idempotencyKey, source
         );
-
-        transactionService.recordPaymentServerCancellationResult(
-                approval.cancellation().getId(),
-                approval.transactionKey(),
-                approval.cancelAmount(),
-                approval.canceledAt()
-        );
+        Long cancellationId = approval.cancellation().getId();
+        String token = approval.syncOwnerToken();
 
         try {
-            return compensationService.compensate(approval);
-        } catch (RuntimeException exception) {
-            transactionService.markLocalFailure(
-                    approval.cancellation().getId()
-            );
+            if (token == null) {
+                transactionService.recordPaymentServerCancellationResult(
+                        cancellationId,
+                        approval.transactionKey(),
+                        approval.cancelAmount(),
+                        approval.canceledAt()
+                );
+                return compensationService.compensate(approval);
+            }
 
+            transactionService.recordPaymentServerCancellationResult(
+                    cancellationId,
+                    token,
+                    approval.transactionKey(),
+                    approval.cancelAmount(),
+                    approval.canceledAt()
+            );
+            return transactionService.completeWithOwner(
+                    approval,
+                    () -> compensationService.compensate(approval)
+            );
+        } catch (StalePaymentRecoveryOwnerException exception) {
+            throw new OrderException(
+                    OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED, exception
+            );
+        } catch (RuntimeException exception) {
+            if (token == null) {
+                transactionService.markLocalFailure(cancellationId);
+            } else {
+                transactionService.markLocalFailure(cancellationId, token);
+            }
             throw exception;
         }
     }
 
     private PaymentCancelResponse requestCancellation(
             PaymentCancellation cancellation,
-            Order order
+            Order order,
+            String token
     ) {
         try {
             return paymentClient.cancel(
-                    order.getPaymentKey(),
-                    cancellation.getIdempotencyKey()
+                    order.getPaymentKey(), cancellation.getIdempotencyKey()
             );
         } catch (PaymentClientException exception) {
-            if (isResultUnconfirmed(exception.failure()) || exception.outcomeUncertain()) {
-                return recoverCancellation(cancellation, order);
+            if (isResultUnconfirmed(exception.failure())
+                    || exception.outcomeUncertain()) {
+                return recoverCancellation(cancellation, order, token);
             }
 
-            boolean cancellationDeclined = exception.failure()
-                    == PaymentClientFailure.CANCELLATION_DECLINED
-                    && cancellation.getCancellationSource()
-                    != CancellationSource.LOCAL_PROCESSING_FAILURE;
-            boolean userRequestRejected = cancellation.getCancellationSource()
-                    == CancellationSource.USER
-                    && (exception.failure() == PaymentClientFailure.AUTHENTICATION_FAILED
-                    || exception.failure() == PaymentClientFailure.INVALID_REQUEST);
+            boolean cancellationDeclined =
+                    exception.failure() == PaymentClientFailure.CANCELLATION_DECLINED
+                            && cancellation.getCancellationSource()
+                            != CancellationSource.LOCAL_PROCESSING_FAILURE;
+            boolean userRequestRejected =
+                    cancellation.getCancellationSource() == CancellationSource.USER
+                            && (exception.failure()
+                            == PaymentClientFailure.AUTHENTICATION_FAILED
+                            || exception.failure()
+                            == PaymentClientFailure.INVALID_REQUEST);
 
             if (cancellationDeclined || userRequestRejected) {
-                transactionService.markDeclined(cancellation.getId());
+                if (token == null) {
+                    transactionService.markDeclined(cancellation.getId());
+                } else {
+                    transactionService.markDeclined(cancellation.getId(), token);
+                }
             }
-
             throw convertClientFailure(exception);
         }
     }
 
     private PaymentCancelResponse recoverCancellation(
             PaymentCancellation cancellation,
-            Order order
+            Order order,
+            String token
     ) {
         PaymentCancelResponse response;
-
         try {
             response = paymentClient.getCancellation(
-                    order.getPaymentKey(),
-                    cancellation.getIdempotencyKey()
+                    order.getPaymentKey(), cancellation.getIdempotencyKey()
             );
         } catch (PaymentClientException exception) {
-            markResultUnconfirmed(cancellation, exception.failure());
-
+            markResultUnconfirmed(cancellation, exception.failure(), token);
             throw new OrderException(
-                    OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED,
-                    exception
+                    OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED, exception
             );
         }
 
         if (!isValidResponse(order, response)) {
-            transactionService.markResultUnconfirmed(
-                    cancellation.getId(),
-                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+            markResultUnconfirmed(
+                    cancellation,
+                    PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED,
+                    token
             );
-
             throw new OrderException(
                     OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED
             );
         }
-
         return response;
     }
 
@@ -178,14 +203,15 @@ public class PaymentCancellationService {
             PaymentCancellationStartResult start
     ) {
         PaymentCancellation cancellation = start.cancellation();
-
         return new PaymentCancellationApproval(
                 cancellation,
                 start.order(),
                 cancellation.getCancelTransactionKey(),
                 cancellation.getCancelAmount(),
                 cancellation.getCanceledAt(),
-                false
+                false,
+                start.recoveryTaskManaged(),
+                start.syncOwnerToken()
         );
     }
 
@@ -193,62 +219,48 @@ public class PaymentCancellationService {
             PaymentClientException exception
     ) {
         PaymentClientFailure failure = exception.failure();
-
         if (failure == PaymentClientFailure.IDEMPOTENCY_KEY_CONFLICT) {
-            return new OrderException(
-                    OrderErrorCode.IDEMPOTENCY_KEY_CONFLICT,
-                    exception
-            );
+            return new OrderException(OrderErrorCode.IDEMPOTENCY_KEY_CONFLICT, exception);
         }
-
         if (failure == PaymentClientFailure.PAYMENT_NOT_CANCELABLE) {
-            return new OrderException(
-                    OrderErrorCode.PAYMENT_NOT_CANCELABLE,
-                    exception
-            );
+            return new OrderException(OrderErrorCode.PAYMENT_NOT_CANCELABLE, exception);
         }
-
         if (failure == PaymentClientFailure.CANCELLATION_DECLINED) {
-            return new OrderException(
-                    OrderErrorCode.CANCELLATION_DECLINED,
-                    exception
-            );
+            return new OrderException(OrderErrorCode.CANCELLATION_DECLINED, exception);
         }
-
         if (isResultUnconfirmed(failure)
                 || failure == PaymentClientFailure.PAYMENT_NOT_FOUND) {
             return new OrderException(
-                    OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED,
-                    exception
+                    OrderErrorCode.CANCELLATION_RESULT_UNCONFIRMED, exception
             );
         }
-
         return new OrderException(
-                OrderErrorCode.CANCELLATION_PROCESSING_FAILED,
-                exception
+                OrderErrorCode.CANCELLATION_PROCESSING_FAILED, exception
         );
     }
 
     private void markResultUnconfirmed(
             PaymentCancellation cancellation,
-            PaymentClientFailure failure
+            PaymentClientFailure failure,
+            String token
     ) {
-        PaymentCancellationFailureCode failureCode =
+        PaymentCancellationFailureCode code =
                 failure == PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE
                         ? PaymentCancellationFailureCode.PAYMENT_SERVER_UNAVAILABLE
                         : PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED;
 
-        transactionService.markResultUnconfirmed(
-                cancellation.getId(),
-                failureCode
-        );
+        if (token == null) {
+            transactionService.markResultUnconfirmed(cancellation.getId(), code);
+        } else {
+            transactionService.markResultUnconfirmed(
+                    cancellation.getId(), token, code
+            );
+        }
     }
 
     private boolean isResultUnconfirmed(PaymentClientFailure failure) {
-        return failure
-                == PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
-                || failure
-                == PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE;
+        return failure == PaymentClientFailure.CANCELLATION_RESULT_UNCONFIRMED
+                || failure == PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE;
     }
 
     private void validateResponse(Order order, PaymentCancelResponse response) {

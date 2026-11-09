@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
 import com.gift.gift.domain.order.entity.Order;
@@ -65,7 +66,7 @@ class PaymentRequestServiceTest {
                 requestHash,
                 request,
                 validation
-        )).thenReturn(order);
+        )).thenReturn(PaymentStartResult.created(order, "sync-owner"));
 
         PaymentStartResult result = service.start(
                 PAYER_ID,
@@ -75,6 +76,8 @@ class PaymentRequestServiceTest {
 
         assertThat(result.order()).isSameAs(order);
         assertThat(result.created()).isTrue();
+        assertThat(result.recoveryTaskManaged()).isTrue();
+        assertThat(result.syncOwnerToken()).isEqualTo("sync-owner");
         assertThat(result.order().getStatus().name()).isEqualTo("PENDING");
     }
 
@@ -99,7 +102,8 @@ class PaymentRequestServiceTest {
         assertThat(result.order()).isSameAs(order);
         assertThat(result.created()).isFalse();
 
-        verifyNoInteractions(paymentValidator, transactionService);
+        verifyNoInteractions(paymentValidator);
+        verify(transactionService).claimSyncOwner(order.getId());
     }
 
     @Test
@@ -210,7 +214,7 @@ class PaymentRequestServiceTest {
 
         long amount = request.expectedUnitPrice() * request.quantity();
 
-        return new Order(
+        Order order = new Order(
                 "550e8400-e29b-41d4-a716-446655440000",
                 PAYER_ID,
                 request.recipientUserId(),
@@ -221,6 +225,8 @@ class PaymentRequestServiceTest {
                 IDEMPOTENCY_KEY,
                 requestHash
         );
+        ReflectionTestUtils.setField(order, "id", 17L);
+        return order;
     }
 
     private DataIntegrityViolationException duplicate(String constraint) {

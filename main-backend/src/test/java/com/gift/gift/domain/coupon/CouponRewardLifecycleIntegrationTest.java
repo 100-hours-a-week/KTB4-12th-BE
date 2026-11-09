@@ -496,26 +496,31 @@ class CouponRewardLifecycleIntegrationTest {
     }
 
     @Test
-    @DisplayName("응답 유실 후 조회에 주문이 없으면 복구하지 않고 재요청도 결과만 조회한다")
-    void payment_unknownDoesNotRestoreOrSubmitAgain() {
+    @DisplayName("응답 유실 후 복구가 예약된 주문은 즉시 재요청해도 외부 결제를 다시 호출하지 않는다")
+    void payment_unknownDoesNotRestoreOrSubmitBeforeRecoveryIsDue() {
         grant(3, 1);
         String requestKey = key();
         when(paymentClient.confirm(any(), any()))
                 .thenThrow(clientFailure(PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED));
         when(paymentClient.getByOrderId(any())).thenThrow(clientFailure(PaymentClientFailure.PAYMENT_NOT_FOUND));
         var firstResult = payments.pay(payerId, requestKey, null, paymentRequest(3));
-        var repeatedResult = payments.pay(payerId, requestKey, null, paymentRequest(3));
         assertThat(firstResult.isProcessing()).isTrue();
         assertThat(firstResult.created()).isTrue();
+
+        Order order = orders.findByPayerIdAndIdempotencyKey(payerId, requestKey).orElseThrow();
+        verify(paymentClient, times(4)).confirm(any(), any());
+        verify(paymentClient, times(4)).getByOrderId(order.getOrderId());
+
+        org.mockito.Mockito.clearInvocations(paymentClient);
+        var repeatedResult = payments.pay(payerId, requestKey, null, paymentRequest(3));
         assertThat(repeatedResult.isProcessing()).isTrue();
         assertThat(repeatedResult.created()).isFalse();
-        Order order = orders.findByPayerIdAndIdempotencyKey(payerId, requestKey).orElseThrow();
+        verify(paymentClient, never()).confirm(any(), any());
+        verify(paymentClient, never()).getByOrderId(any());
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(usageStatus(order)).isEqualTo("RESERVED");
         assertThat(quantity(payerId, 3)).isZero();
         assertThat(balance(payerId)).isEqualTo(500_000L);
-        verify(paymentClient, times(4)).confirm(any(), any());
-        verify(paymentClient, times(5)).getByOrderId(order.getOrderId());
     }
 
     @Test
@@ -602,8 +607,8 @@ class CouponRewardLifecycleIntegrationTest {
     @ParameterizedTest
     @EnumSource(value = PaymentClientFailure.class,
             names = {"INVALID_REQUEST", "AUTHENTICATION_FAILED"})
-    @DisplayName("재시도 거절 후 조회에도 기록이 없으면 예약을 유지하고 최종 실패 확인 때만 한 번 복구한다")
-    void payment_retryRejectionWaitsForConfirmedFailure(PaymentClientFailure failure) {
+    @DisplayName("재시도 거절 후 결과가 미확정이면 예약을 유지하고 즉시 재요청의 외부 호출을 막는다")
+    void payment_retryRejectionKeepsReservationUntilRecoveryRuns(PaymentClientFailure failure) {
         grant(3, 1);
         String requestKey = key();
         when(paymentClient.confirm(any(), any()))
@@ -620,20 +625,19 @@ class CouponRewardLifecycleIntegrationTest {
         assertThat(quantity(payerId, 3)).isZero();
         assertThat(balance(payerId)).isEqualTo(500_000L);
 
-        doReturn(new PaymentResponse(
-                pending.getOrderId(), key(), null, PaymentServerStatus.DECLINED, 1000L, null
-        )).when(paymentClient).getByOrderId(any());
+        org.mockito.Mockito.clearInvocations(paymentClient);
         for (int attempt = 0; attempt < 2; attempt++) {
-            assertThatThrownBy(() -> payments.pay(payerId, requestKey, null, paymentRequest(3)))
-                    .isInstanceOf(OrderException.class);
+            var repeatedResult = payments.pay(payerId, requestKey, null, paymentRequest(3));
+            assertThat(repeatedResult.isProcessing()).isTrue();
+            assertThat(repeatedResult.created()).isFalse();
         }
-        Order declined = orders.findById(pending.getId()).orElseThrow();
-        assertThat(declined.getStatus()).isEqualTo(OrderStatus.DECLINED);
-        assertThat(usageStatus(declined)).isEqualTo("RESTORED");
-        assertThat(quantity(payerId, 3)).isEqualTo(1);
+        verify(paymentClient, never()).confirm(any(), any());
+        verify(paymentClient, never()).getByOrderId(any());
+        Order stillPending = orders.findById(pending.getId()).orElseThrow();
+        assertThat(stillPending.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(usageStatus(stillPending)).isEqualTo("RESERVED");
+        assertThat(quantity(payerId, 3)).isZero();
         assertThat(balance(payerId)).isEqualTo(500_000L);
-        verify(paymentClient, times(4)).confirm(any(), any());
-        verify(paymentClient, times(5)).getByOrderId(pending.getOrderId());
     }
 
     @Test
@@ -700,8 +704,8 @@ class CouponRewardLifecycleIntegrationTest {
     }
 
     @Test
-    @DisplayName("취소 재시도 이후 인증 거절은 수락을 차단하고 조회로 취소 확정 후에만 복구한다")
-    void cancellation_uncertainAuthenticationRejectionWaitsForFinalResult() {
+    @DisplayName("취소 재시도 이후 결과가 미확정이면 복구가 실행될 때까지 수락을 계속 차단한다")
+    void cancellation_uncertainAuthenticationRejectionKeepsAcceptanceBlockedUntilRecovery() {
         Order order = completed(3);
         String cancellationKey = key();
         when(paymentClient.cancel(any(), any()))
@@ -717,13 +721,19 @@ class CouponRewardLifecycleIntegrationTest {
         assertThat(usageStatus(order)).isEqualTo("USED");
         assertThat(quantity(payerId, 3)).isZero();
         assertThat(balance(payerId)).isEqualTo(499_000L);
-
-        doReturn(cancelResponse(order)).when(paymentClient).getCancellation(any(), any());
-        cancellationService.cancel(payerId, order.getOrderId(), cancellationKey, CancellationSource.USER);
-        assertThat(usageStatus(order)).isEqualTo("RESTORED");
-        assertThat(quantity(payerId, 3)).isEqualTo(1);
-        assertThat(balance(payerId)).isEqualTo(500_000L);
         verify(paymentClient, times(1)).cancel(any(), any());
+        verify(paymentClient, times(1)).getCancellation(any(), any());
+
+        org.mockito.Mockito.clearInvocations(paymentClient);
+        assertThatThrownBy(() -> cancellationService.cancel(
+                payerId, order.getOrderId(), cancellationKey, CancellationSource.USER
+        )).isInstanceOf(OrderException.class);
+        assertThat(cancellationStatus(cancellationKey)).isEqualTo("PENDING");
+        assertThat(usageStatus(order)).isEqualTo("USED");
+        assertThat(quantity(payerId, 3)).isZero();
+        assertThat(balance(payerId)).isEqualTo(499_000L);
+        verify(paymentClient, never()).cancel(any(), any());
+        verify(paymentClient, never()).getCancellation(any(), any());
     }
 
     @Test

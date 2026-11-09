@@ -18,6 +18,7 @@ import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
 import com.gift.gift.domain.order.exception.OrderException;
+import com.gift.gift.domain.order.recovery.PaymentRecoveryTaskClaim;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 import com.gift.gift.domain.order.support.PaymentCancellationRequestHasher;
@@ -80,7 +81,11 @@ class PaymentCancellationRequestServiceTest {
                 CancellationSource.USER,
                 IDEMPOTENCY_KEY,
                 requestHasher.hash(ORDER_ID)
-        )).thenReturn(cancellation);
+        )).thenReturn(PaymentCancellationStartResult.created(
+                cancellation,
+                order,
+                PaymentRecoveryTaskClaim.managed("sync-owner")
+        ));
 
         PaymentCancellationStartResult result = service.start(
                 REQUESTER_ID,
@@ -92,6 +97,8 @@ class PaymentCancellationRequestServiceTest {
         assertThat(result.cancellation()).isSameAs(cancellation);
         assertThat(result.order()).isSameAs(order);
         assertThat(result.created()).isTrue();
+        assertThat(result.recoveryTaskManaged()).isTrue();
+        assertThat(result.syncOwnerToken()).isEqualTo("sync-owner");
     }
 
     @Test
@@ -119,7 +126,11 @@ class PaymentCancellationRequestServiceTest {
                 CancellationSource.LOCAL_PROCESSING_FAILURE,
                 idempotencyKey,
                 requestHasher.hash(ORDER_ID)
-        )).thenReturn(cancellation);
+        )).thenReturn(PaymentCancellationStartResult.created(
+                cancellation,
+                order,
+                PaymentRecoveryTaskClaim.unmanaged()
+        ));
 
         PaymentCancellationStartResult result = service.start(
                 REQUESTER_ID,
@@ -129,6 +140,7 @@ class PaymentCancellationRequestServiceTest {
         );
 
         assertThat(result.cancellation()).isSameAs(cancellation);
+        assertThat(result.recoveryTaskManaged()).isFalse();
         verifyNoInteractions(giftHistoryRepository);
     }
 
@@ -154,7 +166,8 @@ class PaymentCancellationRequestServiceTest {
 
         assertThat(result.cancellation()).isSameAs(cancellation);
         assertThat(result.created()).isFalse();
-        verifyNoInteractions(giftHistoryRepository, transactionService);
+        verifyNoInteractions(giftHistoryRepository);
+        verify(transactionService).claimSyncOwner(cancellation.getId());
     }
 
     @Test
@@ -310,13 +323,15 @@ class PaymentCancellationRequestServiceTest {
     }
 
     private PaymentCancellation cancellation(Order order) {
-        return new PaymentCancellation(
+        PaymentCancellation cancellation = new PaymentCancellation(
                 order.getId(),
                 REQUESTER_ID,
                 CancellationSource.USER,
                 IDEMPOTENCY_KEY,
                 requestHasher.hash(ORDER_ID)
         );
+        ReflectionTestUtils.setField(cancellation, "id", 19L);
+        return cancellation;
     }
 
     private GiftHistory waitingGift() {
