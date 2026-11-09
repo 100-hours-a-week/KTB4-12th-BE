@@ -2,6 +2,8 @@
 
 관련 이슈: #525·#526 / 상위 #522. PR 3-3의 작업 준비·발행 루프와 PR 4-1의 수동 재개를 설명한다. 결과 Consumer는 후속 범위다.
 
+결과 본문 검증·fingerprint·V53 컬럼 기반은 [결과 계약 PR1](ai-profiling-result-contract.md)을 참고한다.
+
 ## 로컬 실행
 
 먼저 [공통 RabbitMQ 이미지 가이드](../infrastructure/rabbitmq/README.md)에 따라 계정·권한 Secret 파일을 준비하고

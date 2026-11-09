@@ -157,7 +157,10 @@ class ProfilingJobPreparationIntegrationTest {
         jdbc.update("UPDATE profiling_jobs SET publish_status='BLOCKED' WHERE request_id=?", oldId);
         changeInput("재요청");
         // 다음 버전을 미리 넣어 작업 INSERT의 UNIQUE 충돌을 재현한다.
-        jdbc.update("INSERT INTO profiling_jobs SELECT ?" +
+        jdbc.update("INSERT INTO profiling_jobs (request_id, profile_id, source_version, request_body," +
+                " publish_status, attempt_count, first_failed_at, next_attempt_at, claim_token, claimed_at," +
+                " published_at, result_status, finished_at, last_error_code, last_error_message," +
+                " created_at, updated_at) SELECT ?" +
                 ", profile_id, source_version + 1, request_body, publish_status, attempt_count," +
                 " first_failed_at, next_attempt_at, claim_token, claimed_at, published_at," +
                 " result_status, finished_at, last_error_code, last_error_message, created_at, updated_at" +

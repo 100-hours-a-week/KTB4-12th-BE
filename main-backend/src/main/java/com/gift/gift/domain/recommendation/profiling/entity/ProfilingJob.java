@@ -115,6 +115,9 @@ public class ProfilingJob extends BaseTimeEntity {
     @Column(name = "last_error_message", columnDefinition = "TEXT")
     private String lastErrorMessage;
 
+    @Column(name = "result_fingerprint", columnDefinition = "CHAR(64)")
+    private String resultFingerprint;
+
     public static ProfilingJob create(
             RecipientProfile profile,
             ProfilingRequestMessage message,

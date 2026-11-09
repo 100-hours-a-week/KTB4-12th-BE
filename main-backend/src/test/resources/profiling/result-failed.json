@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "requestId": "83ae0a27-0ddc-4fb0-a587-35e4937e4f74",
+  "createdAt": "2026-11-03T05:00:15Z",
+  "payload": {
+    "recipientUserId": 123,
+    "sourceVersion": 7,
+    "outcome": "FAILED",
+    "error": {"code": "ANALYSIS_FAILED", "message": "프로파일링 분석에 실패했습니다."}
+  }
+}
