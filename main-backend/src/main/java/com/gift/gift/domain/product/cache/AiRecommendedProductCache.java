@@ -269,27 +269,14 @@ public class AiRecommendedProductCache {
         String key = activeVersionKey(event.recipientId());
 
         try {
-            redisTemplate.opsForValue().set(
-                    key,
-                    Long.toString(event.analyzedSourceVersion()),
-                    ttl
-            );
+            // 커밋 후 이벤트 순서가 뒤집혀도 과거 버전으로 덮어쓰지 않는다.
+            redisTemplate.delete(key);
         } catch (DataAccessException exception) {
             log.warn(
-                    "커밋된 추천 분석 버전을 Redis에 반영하지 못했다. " + "recipientId={}",
+                    "커밋된 추천 분석 버전 캐시를 무효화하지 못했다. recipientId={}",
                     event.recipientId(),
                     exception
             );
-
-            try {
-                redisTemplate.delete(key);
-            } catch (DataAccessException deleteException) {
-                log.warn(
-                        "추천 분석 버전 캐시 제거에도 실패했다. recipientId={}",
-                        event.recipientId(),
-                        deleteException
-                );
-            }
         }
     }
 

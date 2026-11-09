@@ -65,4 +65,31 @@ public interface ProfilingJobRepository
 
         LocalDateTime getUpdatedAt();
     }
+
+    @Query("""
+        select job.profile.id as profileId,
+               job.profile.recipient.id as recipientId
+        from ProfilingJob job
+        where job.requestId = :requestId
+        """)
+    Optional<ResultTargetView> findResultTarget(
+            @Param("requestId") String requestId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select job
+        from ProfilingJob job
+        where job.requestId = :requestId
+        """)
+    Optional<ProfilingJob> findByRequestIdForUpdate(
+            @Param("requestId") String requestId
+    );
+
+    interface ResultTargetView {
+
+        Long getProfileId();
+
+        Long getRecipientId();
+    }
 }

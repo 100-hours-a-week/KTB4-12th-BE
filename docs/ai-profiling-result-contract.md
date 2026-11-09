@@ -1,5 +1,7 @@
 # 프로파일링 결과 계약 — PR1
 
+후속 원자적 저장·멱등성·발행 경합 처리는 [PR2 결과 저장](ai-profiling-result-store.md)을 참고한다.
+
 관련 작업: [BE #581](https://github.com/100-hours-a-week/KTB4-12th-BE/issues/581),
 [상위 BE #522](https://github.com/100-hours-a-week/KTB4-12th-BE/issues/522).
 설계 기준: [BE Consumer](https://app.notion.com/p/4121885e7728806696a5d518fadebca7),
