@@ -468,8 +468,12 @@ class CouponRewardLifecycleIntegrationTest {
     @DisplayName("취소 거절 확정은 수락 차단을 해제하지만 쿠폰을 복구하지 않는다")
     void cancellation_declineAllowsAcceptanceWithoutCouponRestore() {
         Order order = completed(2);
-        var approval = cancellation(order, CancellationSource.USER);
-        cancellationTransactions.markDeclined(approval.cancellation().getId());
+        var started = cancellationRequests.start(
+                payerId, order.getOrderId(), key(), CancellationSource.USER
+        );
+        cancellationTransactions.markDeclined(
+                started.cancellation().getId(), started.syncOwnerToken()
+        );
         assertThat(acceptances.accept(recipientId, giftId(order)).rewardAmount()).isEqualTo(100_000L);
         assertThat(usageStatus(order)).isEqualTo("USED");
         assertThat(quantity(payerId, 2)).isZero();
