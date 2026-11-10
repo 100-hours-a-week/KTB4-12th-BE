@@ -255,7 +255,9 @@ public class PaymentCancellationTransactionService {
                 cancellationId,
                 LocalDateTime.now(clock)
         );
-        completeTask(cancellationId, token);
+        if (token != null) {
+            completeTask(cancellationId, token);
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
