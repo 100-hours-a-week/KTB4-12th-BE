@@ -125,3 +125,11 @@ DLX 타이머 기준: [RabbitMQ 4.4 기본값](https://github.com/rabbitmq/rabbi
 - 두 모듈 build(-x test), 최종 import 정리 후 테스트 소스 컴파일, 실제 Docker 빌드, git diff --check 통과.
 - 복구 명령 두 곳의 새 Consumer 플래그 충돌은 회귀 테스트로 먼저 재현한 뒤 수정하여 관련 7건 통과를 확인했다.
 - 운영 환경·실제 AI 연결은 실행하지 않았고 커밋·푸시·PR 생성은 수행하지 않았다.
+
+## PR4 검증 기록
+
+2026-11-10 [PR4 실제 장애·전체 회귀 검증](ai-profiling-result-pr4-validation.md)에서 실제 DB 접속 차단·RabbitMQ 중단/복구, 발견한 오류 분류 결함 수정 및 최종 전체 회귀 결과를 확인할 수 있다.
+
+[PR4 장애 복구·운영 제어 구현](ai-profiling-result-recovery.md)에서 추가 클래스·상태 전이·설정·운영 제어·테스트의 역할과 미검증 범위를 확인할 수 있다.
+
+PR4에서는 핵심 동작 검증을 위해 테스트 전용 DLQ Confirm 대기를 5초로 단축하고 실제 DB/브로커 통합의 복구 시점을 명시적으로 제어한다. PR3의 기본 180초 주기 검증 기록은 역사적 결과이며 현재 반복 시험의 대기 조건과 구분한다.

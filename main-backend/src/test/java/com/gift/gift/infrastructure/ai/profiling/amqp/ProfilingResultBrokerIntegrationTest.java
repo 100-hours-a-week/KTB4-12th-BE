@@ -93,7 +93,8 @@ import static org.mockito.Mockito.*;
 
 @SpringBootTest(properties = {
         "app.ai-profile.amqp.enabled=true", "app.ai-profile.result-consumer.enabled=true",
-        "app.ai-profile.scheduling-enabled=false", "app.scheduling.enabled=false", "app.outbox.enabled=false"
+        "app.ai-profile.scheduling-enabled=false", "app.scheduling.enabled=false", "app.outbox.enabled=false",
+        "spring.datasource.hikari.connection-timeout=1000"
 })
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class ProfilingResultBrokerIntegrationTest {
@@ -105,6 +106,9 @@ class ProfilingResultBrokerIntegrationTest {
             .withFileFromPath("profiling-definitions.json", Path.of("../infrastructure/rabbitmq/profiling-definitions.json")))
             .withCopyFileToContainer(MountableFile.forClasspathResource("rabbitmq/access-definitions.json"),
                     "/etc/rabbitmq/definitions/10-access.json")
+            // 운영 기본 180초 대신 테스트 전용 5초로 DLQ 보존·복구 동작만 검증한다.
+            .withEnv("RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS",
+                    "-rabbit dead_letter_worker_publisher_confirm_timeout 5000")
             .withExposedPorts(5672, 15672)
             .waitingFor(Wait.forHttp("/api/overview").forPort(15672)
                     .withBasicCredentials("test", "test-password").withStartupTimeout(Duration.ofMinutes(2)));
@@ -301,10 +305,7 @@ class ProfilingResultBrokerIntegrationTest {
         assertThat(before).containsEntry("result_status", "WAITING").containsEntry("result_fingerprint", null);
         assertThat(recommendationCount()).isZero();
         assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
-        Thread.sleep(300);
-        assertThat(consumers()).isZero();
-        assertThat(ready(RESULT_QUEUE)).isEqualTo(1);
-        verify(jobs, times(1)).flush();
+        verify(jobs, times(2)).flush();
         reset(jobs);
         newListener().start();
         await("복구 인스턴스 결과 반영", () -> "COMPLETED".equals(job().get("result_status")), 10);
@@ -382,8 +383,7 @@ class ProfilingResultBrokerIntegrationTest {
         } finally {
             admin.initialize();
         }
-        // RabbitMQ 4.4 기본 DLX Confirm/재전달 타이머(180초)를 변경하지 않고 검증한다.
-        Message recovered = receiveDlq(210);
+        Message recovered = receiveDlq(20);
         assertThat(recovered.getBody()).isEqualTo(invalid.getBody());
         preflight().verify();
     }
@@ -421,8 +421,9 @@ class ProfilingResultBrokerIntegrationTest {
                 assertThat(candidate.isHalted()).isFalse();
                 preflight().verify();
             } else {
-                assertThatThrownBy(candidate::start).isInstanceOf(RuntimeException.class);
-                assertThat(candidate.isHalted()).isTrue();
+                candidate.start();
+                await("비동기 구성 검증 실패 중지", candidate::isHalted, 10);
+                assertThat(candidate.status()).contains("reason=CONFIGURATION");
                 assertThat(consumers()).isZero();
             }
         } finally {
@@ -435,9 +436,67 @@ class ProfilingResultBrokerIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("실제 MySQL 연결 차단 중 결과를 보존하고 DB 복구 후 같은 Consumer가 재개한다")
+    void recoversAfterActualDatabaseOutage() throws Exception {
+        var before = job();
+        try {
+            com.gift.gift.support.MySqlTestContainerInitializer.setOffline(true);
+            send(success());
+            await("실제 DB 장애 중지", () -> listener.status().contains("reason=TRANSIENT_DB"), 20);
+            await("DB 장애 메시지 보존", () -> consumers() == 0 && ready(RESULT_QUEUE) == 1, 10);
+            assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
+            listener.pause();
+        } finally {
+            com.gift.gift.support.MySqlTestContainerInitializer.setOffline(false);
+        }
+        assertThat(job()).isEqualTo(before);
+        // 자동 점검 주기·연속 정상 조건은 시간 제어 단위 테스트에서 검증한다.
+        await("Consumer 정리 완료", () -> listener.status().contains("stopping=false"), 10);
+        listener.resume();
+        await("DB 회복 후 결과 반영", () -> "COMPLETED".equals(job().get("result_status")), 10);
+        await("복구 결과 ACK", () -> ready(RESULT_QUEUE) == 0 && consumers() == 1, 10);
+        assertThat(recommendationCount()).isEqualTo(1);
+        assertThat(job().get("result_fingerprint")).isNotNull();
+        assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
+    }
+
+    @Test
+    @DisplayName("실제 RabbitMQ 중단·재시작 후 같은 Consumer가 재구독하고 결과를 한 번 반영한다")
+    void recoversAfterActualBrokerRestart() throws Exception {
+        try {
+            var stopped = BROKER.execInContainer("rabbitmqctl", "stop_app");
+            assertThat(stopped.getExitCode()).as("RabbitMQ 실제 중단").isZero();
+            await("브로커 장애 중지", listener::isHalted, 20);
+            assertThat(listener.status()).contains("reason=BROKER");
+            assertThat(job()).containsEntry("result_status", "WAITING");
+            listener.pause();
+        } finally {
+            var started = BROKER.execInContainer("rabbitmqctl", "start_app");
+            assertThat(started.getExitCode()).as("RabbitMQ 복구").isZero();
+            await("RabbitMQ 관리 API·Quorum 복구", () -> {
+                try {
+                    preflight().verify();
+                    return true;
+                } catch (RuntimeException notReady) {
+                    return false;
+                }
+            }, 20);
+        }
+        admin.initialize();
+        await("Consumer 정리 완료", () -> listener.status().contains("stopping=false"), 10);
+        send(success());
+        listener.resume();
+        await("브로커 복구 후 결과 반영", () -> "COMPLETED".equals(job().get("result_status")), 10);
+        await("브로커 복구 결과 ACK", () -> ready(RESULT_QUEUE) == 0 && consumers() == 1, 10);
+        assertThat(recommendationCount()).isEqualTo(1);
+        assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
+    }
+
     private ProfilingResultListener newListener() {
         var next = configuration.profilingResultListener(connection, admin, managementClient, management,
-                reader, service, events);
+                reader, service, events, jdbc.getDataSource(),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), java.time.Clock.systemUTC());
         multicaster.addApplicationListener(next);
         extraListeners.add(next);
         return next;

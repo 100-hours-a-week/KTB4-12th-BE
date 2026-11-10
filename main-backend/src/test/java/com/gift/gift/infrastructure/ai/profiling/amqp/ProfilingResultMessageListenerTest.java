@@ -3,6 +3,16 @@ package com.gift.gift.infrastructure.ai.profiling.amqp;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.jdbc.BadSqlGrammarException;
+import java.sql.SQLException;
+import com.gift.gift.domain.recommendation.profiling.dto.request.ProfilingResultMessage;
 
 import com.rabbitmq.client.Channel;
 import org.junit.jupiter.api.DisplayName;
@@ -31,17 +41,29 @@ class ProfilingResultMessageListenerTest {
     private final ProfilingResultService service = mock(ProfilingResultService.class);
     private final Channel channel = mock(Channel.class);
     private final AtomicReference<String> haltReason = new AtomicReference<>();
+    private final ProfilingResultListener lifecycle = mock(ProfilingResultListener.class);
+    private final List<Long> waits = new ArrayList<>();
     private final ProfilingResultMessageListener listener = new ProfilingResultMessageListener(
-            reader, service, reason -> haltReason.compareAndSet(null, reason), () -> haltReason.get() != null);
+            reader, service, lifecycle, new SimpleMeterRegistry(), 2,
+            millis -> { waits.add(millis); return true; });
+
+    @BeforeEach
+    void configureHaltGate() {
+        when(lifecycle.isHalted()).thenAnswer(call -> haltReason.get() != null);
+        doAnswer(call -> {
+            haltReason.compareAndSet(null, call.getArgument(0).toString());
+            return null;
+        }).when(lifecycle).halt(any(ProfilingResultListener.Reason.class));
+    }
 
     @ParameterizedTest
     @EnumSource(Decision.class)
     @DisplayName("서비스 정상 반환 후에만 메시지별 ACK 또는 재큐잉 없는 거절을 한 번 보낸다")
     void settlesAccordingToCommittedDecision(Decision decision) throws Exception {
-        when(service.save(any())).thenReturn(new Result(decision, reason(decision), false, false));
+        when(service.saveWithCommitObserver(any(), any())).thenReturn(new Result(decision, reason(decision), false, false));
         listener.onMessage(validMessage(), channel);
         var order = inOrder(service, channel);
-        order.verify(service).save(any());
+        order.verify(service).saveWithCommitObserver(any(), any());
         if (decision == Decision.QUARANTINE) {
             order.verify(channel).basicReject(42, false);
         } else {
@@ -94,10 +116,10 @@ class ProfilingResultMessageListenerTest {
                 case "illegalArgument" -> new IllegalArgumentException("test-service-bug");
                 default -> new IllegalStateException("test-unclassified");
             };
-            when(service.save(any())).thenThrow(exception);
+            when(service.saveWithCommitObserver(any(), any())).thenThrow(exception);
         }
         listener.onMessage(validMessage(), channel);
-        assertThat(haltReason.get()).isEqualTo(failure.equals("db") ? "DB_ERROR" : "UNCLASSIFIED");
+        assertThat(haltReason.get()).isEqualTo("UNCLASSIFIED");
         verifyNoInteractions(channel);
         listener.onMessage(validMessage(), channel);
         verifyNoInteractions(channel);
@@ -108,7 +130,7 @@ class ProfilingResultMessageListenerTest {
     @ValueSource(booleans = {false, true})
     @DisplayName("ACK 또는 거절 전송 실패 시 추가 정산 없이 중지하고 재배달에 맡긴다")
     void haltsOnSettlementFailure(boolean rejected) throws Exception {
-        when(service.save(any())).thenReturn(new Result(
+        when(service.saveWithCommitObserver(any(), any())).thenReturn(new Result(
                 rejected ? Decision.QUARANTINE : Decision.RECORDED,
                 rejected ? Reason.IDENTITY_MISMATCH : Reason.FINAL_RESULT_RECORDED, false, false));
         if (rejected) {
@@ -117,7 +139,7 @@ class ProfilingResultMessageListenerTest {
             doThrow(new IOException("test-channel-down")).when(channel).basicAck(42, false);
         }
         listener.onMessage(validMessage(), channel);
-        assertThat(haltReason.get()).isEqualTo("SETTLEMENT_ERROR");
+        assertThat(haltReason.get()).isEqualTo("SETTLEMENT");
         if (rejected) {
             verify(channel).basicReject(42, false);
         } else {
@@ -130,8 +152,82 @@ class ProfilingResultMessageListenerTest {
     @DisplayName("채널이 없으면 저장하지 않고 안전 중지를 요청한다")
     void haltsWhenChannelIsMissing() throws Exception {
         listener.onMessage(validMessage(), null);
-        assertThat(haltReason.get()).isEqualTo("CHANNEL_MISSING");
+        assertThat(haltReason.get()).isEqualTo("UNCLASSIFIED");
         verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("일시 DB 오류는 최초 포함 3회와 1초·2초 대기 후 미ACK 중지한다")
+    void boundsTransientDatabaseRetries() throws Exception {
+        when(service.saveWithCommitObserver(any(), any()))
+                .thenThrow(new CannotAcquireLockException("busy"));
+        listener.onMessage(validMessage(), channel);
+        verify(service, times(3)).saveWithCommitObserver(any(), any());
+        assertThat(waits).containsExactly(1000L, 2000L);
+        assertThat(haltReason.get()).isEqualTo("TRANSIENT_DB");
+        verifyNoInteractions(channel);
+    }
+
+    @Test
+    @DisplayName("일시 오류 뒤 저장이 성공하면 커밋 결과에 따라 한 번만 ACK한다")
+    void acknowledgesAfterRetrySucceeds() throws Exception {
+        when(service.saveWithCommitObserver(any(), any()))
+                .thenThrow(new CannotAcquireLockException("busy"))
+                .thenReturn(new Result(Decision.RECORDED, Reason.FINAL_RESULT_RECORDED, false, false));
+        listener.onMessage(validMessage(), channel);
+        verify(service, times(2)).saveWithCommitObserver(any(), any());
+        assertThat(waits).containsExactly(1000L);
+        verify(channel).basicAck(42, false);
+        verifyNoMoreInteractions(channel);
+    }
+
+    @Test
+    @DisplayName("구성 오류는 재시도나 정산 없이 중지한다")
+    void doesNotRetryConfigurationFailure() throws Exception {
+        when(service.saveWithCommitObserver(any(), any())).thenThrow(
+                new BadSqlGrammarException("save", "invalid", new SQLException("bad SQL", "42000")));
+        listener.onMessage(validMessage(), channel);
+        verify(service).saveWithCommitObserver(any(), any());
+        assertThat(waits).isEmpty();
+        assertThat(haltReason.get()).isEqualTo("CONFIGURATION");
+        verifyNoInteractions(channel);
+    }
+
+    @Test
+    @DisplayName("미분류 오류는 설정된 최초 포함 2회에서 끝난다")
+    void boundsUnclassifiedRetries() throws Exception {
+        when(service.saveWithCommitObserver(any(), any())).thenThrow(new IllegalStateException("unknown"));
+        listener.onMessage(validMessage(), channel);
+        verify(service, times(2)).saveWithCommitObserver(any(), any());
+        assertThat(waits).containsExactly(1000L);
+        assertThat(haltReason.get()).isEqualTo("UNCLASSIFIED");
+        verifyNoInteractions(channel);
+    }
+
+    @Test
+    @DisplayName("커밋 확인 후 부수 효과가 실패해도 재저장하지 않고 ACK한다")
+    void doesNotRetryCommittedResult() throws Exception {
+        when(service.saveWithCommitObserver(any(), any())).thenAnswer(call -> {
+            Consumer<Result> committed = call.getArgument(1);
+            committed.accept(new Result(Decision.RECORDED, Reason.FINAL_RESULT_RECORDED, false, false));
+            throw new IllegalStateException("after commit");
+        });
+        listener.onMessage(validMessage(), channel);
+        verify(service).saveWithCommitObserver(any(), any());
+        assertThat(waits).isEmpty();
+        verify(channel).basicAck(42, false);
+        verifyNoMoreInteractions(channel);
+    }
+
+    @Test
+    @DisplayName("대기 중 중지되면 추가 저장이나 ACK를 하지 않는다")
+    void cancelsRetryWhenWaitIsStopped() throws Exception {
+        var cancellable = new ProfilingResultMessageListener(reader, service, lifecycle,
+                new SimpleMeterRegistry(), 2, millis -> false);
+        when(service.saveWithCommitObserver(any(), any())).thenThrow(new CannotAcquireLockException("busy"));
+        cancellable.onMessage(validMessage(), channel);
+        verify(service).saveWithCommitObserver(any(), any());
+        verifyNoInteractions(channel);
     }
 
     private Reason reason(Decision decision) {

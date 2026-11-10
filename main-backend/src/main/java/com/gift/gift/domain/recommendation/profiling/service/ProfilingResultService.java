@@ -1,16 +1,12 @@
 package com.gift.gift.domain.recommendation.profiling.service;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
@@ -300,6 +296,31 @@ public class ProfilingResultService {
                                 result.recommendationsChanged(),
                                 result.publishedAtInferred()
                         );
+                    }
+                }
+        );
+
+        return result;
+    }
+
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            isolation = Isolation.READ_COMMITTED
+    )
+    public Result saveWithCommitObserver(
+            ProfilingResultMessage message,
+            Consumer<Result> committed
+    ) {
+        // 자기 호출은 바깥 메소드가 시작한 새 트랜잭션을 그대로 사용한다.
+        Result result = save(message);
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status == STATUS_COMMITTED) {
+                            committed.accept(result);
+                        }
                     }
                 }
         );

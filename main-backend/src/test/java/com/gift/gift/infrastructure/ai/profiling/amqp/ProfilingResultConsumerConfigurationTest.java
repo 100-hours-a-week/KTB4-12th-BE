@@ -54,7 +54,9 @@ class ProfilingResultConsumerConfigurationTest {
             var listener = configuration.profilingResultListener(connection, mock(RabbitAdmin.class),
                     mock(RestClient.class), new RabbitManagementProperties(URI.create("http://localhost:15672"),
                             "management-reader", "test-password"), new ProfilingResultMessageReader(),
-                    mock(ProfilingResultService.class), mock(ApplicationEventPublisher.class));
+                    mock(ProfilingResultService.class), mock(ApplicationEventPublisher.class),
+                    mock(javax.sql.DataSource.class), new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+                    java.time.Clock.systemUTC());
             var container = (SimpleMessageListenerContainer) ReflectionTestUtils.getField(listener, "container");
             assertThat(container.getConnectionFactory()).isSameAs(connection);
             assertThat(container.getAcknowledgeMode()).isEqualTo(AcknowledgeMode.MANUAL);
