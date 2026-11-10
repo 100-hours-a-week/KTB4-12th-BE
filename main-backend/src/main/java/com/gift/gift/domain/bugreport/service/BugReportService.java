@@ -1,197 +1,85 @@
 package com.gift.gift.domain.bugreport.service;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.Set;
+import java.sql.SQLException;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
+import org.slf4j.MDC;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionException;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
-import com.gift.gift.domain.bugreport.dto.BugReportPayload;
-import com.gift.gift.domain.bugreport.dto.BugReportSheetEntry;
+import com.gift.gift.domain.bugreport.dto.CreateBugReportRequest;
 import com.gift.gift.domain.bugreport.exception.BugReportErrorCode;
 import com.gift.gift.domain.bugreport.exception.BugReportException;
-import com.gift.gift.domain.bugreport.support.BugReportGoogleSheetsProperties;
-import com.gift.gift.domain.bugreport.support.BugReportPayloadValidator;
+import com.gift.gift.domain.bugreport.repository.BugReportReceiptRepository;
 import com.gift.gift.domain.bugreport.support.BugReportRateLimiter;
-import com.gift.gift.domain.bugreport.support.BugReportWebhookProperties;
-import com.gift.gift.infrastructure.discord.DiscordAttachment;
-import com.gift.gift.infrastructure.discord.DiscordWebhookClient;
-import com.gift.gift.infrastructure.google.GoogleBugReportClient;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.entity.UserStatus;
 import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.global.outbox.OutboxEventWriter;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BugReportService {
-
-    private static final Set<String> ALLOWED_SCREENSHOT_TYPES = Set.of(
-            MediaType.IMAGE_PNG_VALUE,
-            MediaType.IMAGE_JPEG_VALUE
-    );
-    private static final long MAX_SCREENSHOT_BYTES = 8L * 1024 * 1024;
-
     private final BugReportRateLimiter rateLimiter;
-    private final BugReportPayloadValidator payloadValidator;
-    private final BugReportWebhookProperties webhookProperties;
-    private final BugReportGoogleSheetsProperties googleSheetsProperties;
     private final UserRepository userRepository;
-    private final DiscordWebhookClient discordWebhookClient;
-    private final GoogleBugReportClient googleBugReportClient;
+    private final OutboxEventWriter writer;
+    private final BugReportReceiptRepository receipts;
+    private final PlatformTransactionManager transactionManager;
+    private final ObjectMapper mapper;
+    private final Clock clock;
 
-    public void submitBugReport(
-            Long userId,
-            String clientIp,
-            String payloadJson,
-            MultipartFile screenshot,
-            MultipartFile errorLog
-    ) {
+    public String submitBugReport(Long userId, String clientIp, CreateBugReportRequest request) {
         if (userId != null) {
             rateLimiter.checkUser(userId);
         }
-
         rateLimiter.checkIp(clientIp);
-
-        BugReportPayload payload = payloadValidator.validate(payloadJson);
-        validateScreenshot(screenshot);
-
-        if (!webhookProperties.isConfigured()) {
-            log.warn(
-                    "Discord Webhook이 설정되지 않아 버그 제보를 전송할 수 없습니다. userId={}",
-                    userId
-            );
-
-            throw new BugReportException(
-                    BugReportErrorCode.WEBHOOK_NOT_CONFIGURED
-            );
-        }
-        if (!googleSheetsProperties.isConfigured()) {
-            log.warn(
-                    "Google Sheets가 설정되지 않아 버그 제보를 저장할 수 없습니다. userId={}",
-                    userId
-            );
-
-            throw new BugReportException(
-                    BugReportErrorCode.GOOGLE_SHEETS_NOT_CONFIGURED
-            );
-        }
-
-        String email = resolveEmail(userId);
-        String discordPayloadJson = payloadValidator.addReporter(
-                payloadJson,
-                userId,
-                email
-        );
-        BugReportSheetEntry sheetEntry = BugReportSheetEntry.from(
-                payload,
-                readAsUtf8(errorLog),
-                userId,
-                email
-        );
-        boolean appended = googleBugReportClient.appendIfAbsent(sheetEntry);
-
-        discordWebhookClient.send(
-                webhookProperties.webhookUrl(),
-                discordPayloadJson,
-                toAttachment(screenshot, "files[0]"),
-                toAttachment(errorLog, "files[1]")
-        );
-
-        log.info(
-                "버그 제보를 전송했습니다. userId={}, hasScreenshot={}, "
-                        + "screenshotBytes={}, errorLogBytes={}, sheetAppended={}",
-                userId,
-                hasContent(screenshot),
-                size(screenshot),
-                size(errorLog),
-                appended
-        );
-    }
-
-    private void validateScreenshot(MultipartFile screenshot) {
-        if (!hasContent(screenshot)) {
-            return;
-        }
-
-        String contentType = screenshot.getContentType();
-
-        if (contentType == null
-                || !ALLOWED_SCREENSHOT_TYPES.contains(contentType)) {
-            throw new BugReportException(
-                    BugReportErrorCode.SCREENSHOT_INVALID_TYPE
-            );
-        }
-
-        if (screenshot.getSize() > MAX_SCREENSHOT_BYTES) {
-            throw new BugReportException(
-                    BugReportErrorCode.SCREENSHOT_TOO_LARGE
-            );
-        }
-    }
-
-    private String resolveEmail(Long userId) {
-        if (userId == null) {
-            return "";
-        }
-
-        return userRepository.findByIdAndStatusAndDeletedAtIsNull(
-                        userId,
-                        UserStatus.ACTIVE
-                )
-                .map(User::getEmail)
-                .orElse("");
-    }
-
-    private DiscordAttachment toAttachment(
-            MultipartFile file,
-            String partName
-    ) {
-        if (!hasContent(file)) {
-            return null;
-        }
-
+        String reportId = UUID.fromString(request.reportId()).toString();
         try {
-            String contentType = file.getContentType() != null
-                    ? file.getContentType()
-                    : MediaType.APPLICATION_OCTET_STREAM_VALUE;
-
-            return new DiscordAttachment(
-                    partName,
-                    file.getOriginalFilename(),
-                    MediaType.parseMediaType(contentType),
-                    file.getBytes()
-            );
-        } catch (IOException exception) {
-            throw new BugReportException(
-                    BugReportErrorCode.ATTACHMENT_READ_FAILED
-            );
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                ObjectNode payload = mapper.valueToTree(request);
+                payload.put("reportId", reportId);
+                payload.put("category", request.category() == null || request.category().isBlank()
+                        ? "버그" : request.category());
+                for (String field : new String[]{"pageUrl", "route", "viewport", "userAgent"}) {
+                    if (payload.path(field).isNull()) {
+                        payload.put(field, "");
+                    }
+                }
+                payload.put("reportedAt", (request.reportedAt() == null
+                        ? clock.instant() : request.reportedAt()).toString());
+                if (userId == null) {
+                    payload.putNull("userId");
+                } else {
+                    payload.put("userId", userId);
+                }
+                payload.put("email", userId == null ? "" : userRepository
+                        .findByIdAndStatusAndDeletedAtIsNull(userId, UserStatus.ACTIVE)
+                        .map(User::getEmail).orElse(""));
+                writer.enqueue(new OutboxEventWriter.Event("report.created.v1", 1, reportId,
+                        "REPORT", reportId, null, payload, LocalDateTime.now(clock), MDC.get("traceId")));
+            });
+        } catch (DuplicateKeyException exception) {
+            try {
+                Throwable cause = exception.getMostSpecificCause();
+                if (!(cause instanceof SQLException sql) || sql.getErrorCode() != 1062
+                        || !sql.getMessage().contains("uk_outbox_event_dedup") || !receipts.exists(reportId)) {
+                    throw new BugReportException(BugReportErrorCode.ACCEPTANCE_FAILED);
+                }
+            } catch (DataAccessException failure) {
+                throw new BugReportException(BugReportErrorCode.ACCEPTANCE_FAILED);
+            }
+        } catch (DataAccessException | TransactionException exception) {
+            throw new BugReportException(BugReportErrorCode.ACCEPTANCE_FAILED);
         }
-    }
-
-    private String readAsUtf8(MultipartFile file) {
-        if (!hasContent(file)) {
-            return "수집된 에러가 없습니다.";
-        }
-
-        try {
-            return new String(file.getBytes(), StandardCharsets.UTF_8);
-        } catch (IOException exception) {
-            throw new BugReportException(
-                    BugReportErrorCode.ATTACHMENT_READ_FAILED
-            );
-        }
-    }
-
-    private boolean hasContent(MultipartFile file) {
-        return file != null && !file.isEmpty();
-    }
-
-    private long size(MultipartFile file) {
-        return hasContent(file) ? file.getSize() : 0;
+        return reportId;
     }
 }

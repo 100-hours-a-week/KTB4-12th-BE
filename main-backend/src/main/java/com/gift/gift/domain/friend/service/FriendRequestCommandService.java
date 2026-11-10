@@ -13,6 +13,7 @@ import com.gift.gift.domain.friend.dto.response.FriendRequestResponse;
 import com.gift.gift.domain.friend.entity.FriendRequest;
 import com.gift.gift.domain.friend.entity.FriendRequestStatus;
 import com.gift.gift.domain.friend.entity.Friendship;
+import com.gift.gift.domain.friend.event.FriendshipChangedEvent;
 import com.gift.gift.domain.friend.event.FriendRequestCreatedEvent;
 import com.gift.gift.domain.friend.exception.FriendErrorCode;
 import com.gift.gift.domain.friend.exception.FriendException;
@@ -134,6 +135,10 @@ public class FriendRequestCommandService {
         }
 
         request.complete(next);
+
+        if (next == FriendRequestStatus.ACCEPTED) {
+            eventPublisher.publishEvent(new FriendshipChangedEvent(requesterId, receiverId));
+        }
 
         FriendRequestResponse response = FriendRequestResponse.from(request);
 

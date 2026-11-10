@@ -12,7 +12,10 @@ import com.gift.gift.domain.recommendation.profiling.service.ProfileDispatchServ
 @Component
 @RequiredArgsConstructor
 @ConditionalOnProperty(
-        name = "app.ai-profile.scheduling-enabled",
+        name = {
+                "app.ai-profile.scheduling-enabled",
+                "app.ai-profile.amqp.enabled"
+        },
         havingValue = "true"
 )
 public class ProfileDispatchScheduler {
@@ -28,7 +31,7 @@ public class ProfileDispatchScheduler {
             profileDispatchService.dispatchDueProfiles();
         } catch (RuntimeException exception) {
             log.error(
-                    "AI 프로파일링 Batch 실행에 실패했습니다.",
+                    "프로파일링 MQ 작업 준비·발행에 실패했습니다.",
                     exception
             );
         }

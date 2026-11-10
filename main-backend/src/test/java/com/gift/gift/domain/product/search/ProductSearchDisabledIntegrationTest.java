@@ -17,12 +17,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "app.product-search.enabled=false",
+        "management.server.port=0",
         "spring.elasticsearch.uris=http://127.0.0.1:1"
 })
 class ProductSearchDisabledIntegrationTest {
 
     @Value("${local.server.port}")
     private int port;
+
+    @Value("${local.management.port}")
+    private int managementPort;
 
     @Autowired
     private ApplicationContext context;
@@ -37,7 +41,7 @@ class ProductSearchDisabledIntegrationTest {
 
         try (HttpClient client = HttpClient.newHttpClient()) {
             HttpResponse<String> health = client.send(
-                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/actuator/health"))
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + managementPort + "/actuator/health"))
                             .GET().build(),
                     HttpResponse.BodyHandlers.ofString()
             );

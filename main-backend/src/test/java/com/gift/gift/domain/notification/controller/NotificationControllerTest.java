@@ -40,26 +40,14 @@ class NotificationControllerTest {
 
     private NotificationService notificationService;
     private NotificationSseHub notificationSseHub;
-    private com.gift.gift.domain.notification.service.NotificationSseDeliveryService deliveryService;
     private MockMvc mockMvc;
-
-    @Test
-    @DisplayName("SSE 수신 확인은 인증된 사용자의 전달 작업을 확인한다")
-    void acknowledge_usesAuthenticatedUser() throws Exception {
-        mockMvc.perform(patch("/notifications/events/45/ack"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("message").value("알림 수신을 확인했습니다."));
-        verify(deliveryService).acknowledge(USER_ID, 45L);
-    }
 
     @BeforeEach
     void setUp() {
         notificationService = mock(NotificationService.class);
         notificationSseHub = mock(NotificationSseHub.class);
-        deliveryService = mock(com.gift.gift.domain.notification.service.NotificationSseDeliveryService.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new NotificationController(notificationService, notificationSseHub,
-                        deliveryService))
+                .standaloneSetup(new NotificationController(notificationService, notificationSseHub))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(TestValidatorFactory.create())

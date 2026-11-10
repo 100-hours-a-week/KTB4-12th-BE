@@ -41,7 +41,7 @@ class GiftAcceptanceFlowIntegrationTest {
     private static final String PASSWORD_HASH = "$2a$10$" + "a".repeat(53);
     private static final String REQUEST_HASH = "a".repeat(64);
     private static final long INITIAL_BALANCE = 500_000L;
-    private static final long REWARD_AMOUNT = 100_000L;
+    private static final long REWARD_AMOUNT = 50_000L;
 
     @Autowired
     private GiftAcceptanceService giftAcceptanceService;
@@ -158,10 +158,15 @@ class GiftAcceptanceFlowIntegrationTest {
             orderRecordId = order.getId();
             giftId = gift.getId();
         });
+        jdbcTemplate.update("UPDATE orders SET status = 'COMPLETED' WHERE id = ?", orderRecordId);
     }
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update("DELETE FROM notification_outbox WHERE recipient_id = ?", senderId);
+        jdbcTemplate.update("DELETE FROM roulette_ticket_grants WHERE user_id = ?", senderId);
+        jdbcTemplate.update("DELETE FROM roulette_days WHERE user_id = ?", senderId);
+        jdbcTemplate.update("DELETE FROM roulette_accounts WHERE user_id = ?", senderId);
         jdbcTemplate.update(
                 """
                 delete from notifications
@@ -227,6 +232,19 @@ class GiftAcceptanceFlowIntegrationTest {
                 .orElseThrow();
 
         assertThat(first).isEqualTo(second);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_outbox WHERE recipient_id = ?"
+                        + " AND type = 'GIFT_COMPLETED_REWARD' AND status = 'PENDING'", Integer.class, senderId
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE recipient_id = ?", Integer.class, senderId
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, senderId
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, recipientId
+        )).isZero();
         assertThat(gift.getStatus()).isEqualTo(GiftStatus.COMPLETED);
         assertThat(gift.getCompletedAt()).isNotNull();
         assertThat(account.getBalance())
@@ -273,6 +291,9 @@ class GiftAcceptanceFlowIntegrationTest {
                 .isEqualTo(GiftStatus.WAITING_FOR_ACCEPTANCE);
         assertThat(gift.getCompletedAt()).isNull();
         assertThat(account.getBalance()).isEqualTo(INITIAL_BALANCE);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, senderId
+        )).isZero();
     }
 
     private String ledgerKey() {

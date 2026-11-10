@@ -46,6 +46,7 @@ import com.gift.gift.infrastructure.payment.client.PaymentClient;
 import com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse;
 import com.gift.gift.infrastructure.payment.dto.PaymentConfirmRequest;
 import com.gift.gift.infrastructure.payment.dto.PaymentResponse;
+import com.gift.gift.infrastructure.payment.dto.PaymentServerCancellationStatus;
 import com.gift.gift.infrastructure.payment.dto.PaymentServerStatus;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientException;
 import com.gift.gift.infrastructure.payment.exception.PaymentClientFailure;
@@ -177,6 +178,9 @@ class PaymentFlowIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update("DELETE FROM roulette_ticket_grants WHERE user_id = ?", payerId);
+        jdbcTemplate.update("DELETE FROM roulette_days WHERE user_id = ?", payerId);
+        jdbcTemplate.update("DELETE FROM roulette_accounts WHERE user_id = ?", payerId);
         jdbcTemplate.update(
                 "delete from notification_outbox where recipient_id in (?, ?)",
                 payerId,
@@ -279,6 +283,12 @@ class PaymentFlowIntegrationTest {
                 .orElseThrow();
 
         assertThat(first.created()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, payerId
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, recipientId
+        )).isZero();
         assertThat(second.created()).isFalse();
         assertThat(order.getStatus())
                 .isEqualTo(OrderStatus.COMPLETED);
@@ -318,6 +328,11 @@ class PaymentFlowIntegrationTest {
                             );
                 });
 
+        assertThat(notificationCount(payerId, "PAYMENT_COMPLETED")).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_outbox WHERE recipient_id = ?"
+                        + " AND type = 'PAYMENT_COMPLETED' AND status = 'PENDING'", Integer.class, payerId
+        )).isEqualTo(1);
         notificationOutboxDispatcher.dispatch();
 
         assertThat(notificationCount(recipientId, "GIFT_RECEIVED")).isEqualTo(1);
@@ -368,6 +383,13 @@ class PaymentFlowIntegrationTest {
                 )
         );
 
+        // 테스트가 직접 생성한 주문의 임대를 만료시켜 pay()가 승인 처리를 선점하게 한다.
+        jdbcTemplate.update("""
+                UPDATE payment_recovery_tasks
+                SET lease_until = DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 1 SECOND)
+                WHERE target_type = 'APPROVAL' AND target_id = ?
+                """, pendingOrder.getId());
+
         stubApproval();
         String cancellationKey = "LOCAL_PROCESSING_FAILURE:"
                 + pendingOrder.getOrderId();
@@ -380,7 +402,9 @@ class PaymentFlowIntegrationTest {
                 UUID.randomUUID().toString(),
                 PaymentServerStatus.CANCELED,
                 AMOUNT,
-                LocalDateTime.of(2026, 10, 15, 12, 0)
+                LocalDateTime.of(2026, 10, 15, 12, 0),
+                PaymentServerCancellationStatus.COMPLETED,
+                null
         ));
 
         assertThatThrownBy(() -> paymentService.pay(
@@ -470,8 +494,8 @@ class PaymentFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("미확정 주문 재요청은 같은 주문번호로 승인을 다시 요청한다")
-    void pay_retriesSameApprovalWhenUnknownOrderIsRetried() {
+    @DisplayName("복구 작업이 예약된 미확정 주문은 즉시 재요청해도 외부 결제 서버를 다시 호출하지 않는다")
+    void pay_keepsUnknownOrderProcessingUntilRecoveryTaskRuns() {
         String idempotencyKey = "PAYMENT-" + UUID.randomUUID();
         PaymentCreateRequest request = request();
 
@@ -480,33 +504,25 @@ class PaymentFlowIntegrationTest {
                 eq("TIMEOUT_AFTER_APPROVAL")
         )).thenThrow(clientFailure(
                 PaymentClientFailure.PAYMENT_RESULT_UNCONFIRMED
-        )).thenAnswer(invocation -> {
-            PaymentConfirmRequest confirmation = invocation.getArgument(0);
+        ));
 
-            return completedResponse(
-                    confirmation.orderId(),
-                    confirmation.amount()
-            );
+        java.util.concurrent.atomic.AtomicInteger queries = new java.util.concurrent.atomic.AtomicInteger();
+        when(paymentClient.getByOrderId(anyString())).thenAnswer(invocation -> {
+            if (queries.getAndIncrement() < 4) {
+                throw clientFailure(PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE);
+            }
+            return completedResponse(invocation.getArgument(0), AMOUNT);
         });
 
-        when(paymentClient.getByOrderId(anyString()))
-                .thenThrow(clientFailure(
-                        PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE
-                ));
-
-        assertThatThrownBy(() -> paymentService.pay(
+        PaymentResult unresolved = paymentService.pay(
                 payerId,
                 idempotencyKey,
                 "TIMEOUT_AFTER_APPROVAL",
                 request
-        )).isInstanceOfSatisfying(
-                OrderException.class,
-                exception -> assertThat(
-                        exception.getErrorCode()
-                ).isEqualTo(
-                        ErrorCode.PAYMENT_RESULT_UNCONFIRMED
-                )
         );
+        assertThat(unresolved.isProcessing()).isTrue();
+        assertThat(unresolved.processing().approvalResult())
+                .isEqualTo(PaymentApprovalResult.UNKNOWN);
 
         Order unknownOrder = orderRepository
                 .findByPayerIdAndIdempotencyKey(
@@ -517,30 +533,26 @@ class PaymentFlowIntegrationTest {
 
         assertThat(unknownOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(unknownOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.UNKNOWN);
-        assertThat(unknownOrder.getFailureCode()).isEqualTo(OrderFailureCode.PAYMENT_SERVER_UNAVAILABLE);
+        assertThat(unknownOrder.getFailureCode()).isEqualTo(OrderFailureCode.PAYMENT_RESULT_UNCONFIRMED);
 
-        PaymentResult recovered = paymentService.pay(
+        org.mockito.Mockito.clearInvocations(paymentClient);
+        PaymentResult repeated = paymentService.pay(
                 payerId,
                 idempotencyKey,
                 "TIMEOUT_AFTER_APPROVAL",
                 request
         );
 
-        Order completedOrder = orderRepository.findById(unknownOrder.getId()).orElseThrow();
+        Order stillUnknownOrder = orderRepository.findById(unknownOrder.getId()).orElseThrow();
 
-        assertThat(recovered.created()).isFalse();
-        assertThat(completedOrder.getStatus()).isEqualTo(OrderStatus.COMPLETED);
-        assertThat(completedOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.APPROVED);
-        assertThat(readProductQuantity()).isEqualTo(8);
-        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE - AMOUNT);
-
-        verify(paymentClient, times(2))
-                .confirm(
-                        any(PaymentConfirmRequest.class),
-                        eq("TIMEOUT_AFTER_APPROVAL")
-                );
-        verify(paymentClient, times(1))
-                .getByOrderId(unknownOrder.getOrderId());
+        assertThat(repeated.isProcessing()).isTrue();
+        assertThat(repeated.created()).isFalse();
+        assertThat(stillUnknownOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(stillUnknownOrder.getApprovalResult()).isEqualTo(PaymentApprovalResult.UNKNOWN);
+        assertThat(readProductQuantity()).isEqualTo(10);
+        assertThat(readBalance()).isEqualTo(INITIAL_BALANCE);
+        verify(paymentClient, org.mockito.Mockito.never()).confirm(any(), any());
+        verify(paymentClient, org.mockito.Mockito.never()).getByOrderId(anyString());
     }
 
     @Test
@@ -561,16 +573,15 @@ class PaymentFlowIntegrationTest {
                         PaymentClientFailure.PAYMENT_NOT_FOUND
                 ));
 
-        assertThatThrownBy(() -> paymentService.pay(
+        PaymentResult result = paymentService.pay(
                 payerId,
                 idempotencyKey,
                 "TIMEOUT_BEFORE_APPROVAL",
                 request
-        )).isInstanceOfSatisfying(
-                OrderException.class,
-                exception -> assertThat(exception.getErrorCode())
-                        .isEqualTo(ErrorCode.PAYMENT_RESULT_UNCONFIRMED)
         );
+        assertThat(result.isProcessing()).isTrue();
+        assertThat(result.processing().approvalResult())
+                .isEqualTo(PaymentApprovalResult.UNKNOWN);
 
         Order order = orderRepository
                 .findByPayerIdAndIdempotencyKey(payerId, idempotencyKey)
@@ -583,12 +594,12 @@ class PaymentFlowIntegrationTest {
         assertThat(readProductSales()).isZero();
         assertThat(readBalance()).isEqualTo(INITIAL_BALANCE);
 
-        verify(paymentClient, times(1))
+        verify(paymentClient, times(4))
                 .confirm(
                         any(PaymentConfirmRequest.class),
                         eq("TIMEOUT_BEFORE_APPROVAL")
                 );
-        verify(paymentClient, times(1))
+        verify(paymentClient, times(4))
                 .getByOrderId(order.getOrderId());
     }
 
@@ -737,6 +748,14 @@ class PaymentFlowIntegrationTest {
                 .extracting(cancellation -> cancellation.getStatus())
                 .isEqualTo(PaymentCancellationStatus.COMPLETED);
 
+        assertThat(notificationCount(payerId, "PAYMENT_CANCELED")).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_outbox WHERE recipient_id = ?"
+                        + " AND type = 'PAYMENT_CANCELED' AND status = 'PENDING'", Integer.class, payerId
+        )).isEqualTo(1);
+        notificationOutboxDispatcher.dispatch();
+        assertThat(notificationCount(payerId, "PAYMENT_CANCELED")).isEqualTo(1);
+
         verify(paymentClient, times(1)).cancel(
                 order.getPaymentKey(),
                 cancellationIdempotencyKey
@@ -869,7 +888,9 @@ class PaymentFlowIntegrationTest {
                 UUID.randomUUID().toString(),
                 PaymentServerStatus.CANCELED,
                 order.getAmount(),
-                canceledAt
+                canceledAt,
+                PaymentServerCancellationStatus.COMPLETED,
+                null
         ));
     }
 

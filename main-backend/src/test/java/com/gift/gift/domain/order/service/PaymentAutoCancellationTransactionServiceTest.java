@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.gift.gift.domain.coupon.service.OrderCouponService;
 import com.gift.gift.domain.order.entity.CancellationSource;
 import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
@@ -32,14 +33,17 @@ class PaymentAutoCancellationTransactionServiceTest {
     private OrderRepository orderRepository;
     private PaymentCancellationRepository cancellationRepository;
     private PaymentAutoCancellationTransactionService service;
+    private OrderCouponService orderCouponService;
 
     @BeforeEach
     void setUp() {
         orderRepository = mock(OrderRepository.class);
         cancellationRepository = mock(PaymentCancellationRepository.class);
+        orderCouponService = mock(OrderCouponService.class);
         service = new PaymentAutoCancellationTransactionService(
                 orderRepository,
                 cancellationRepository,
+                orderCouponService,
                 Clock.fixed(
                         Instant.parse("2026-10-17T12:00:00Z"),
                         ZoneOffset.UTC
@@ -48,8 +52,8 @@ class PaymentAutoCancellationTransactionServiceTest {
     }
 
     @Test
-    @DisplayName("자동 보상 취소는 주문과 취소 원장만 완료한다")
-    void complete_updatesOnlyOrderAndCancellation() {
+    @DisplayName("자동 보상 취소는 주문·취소 원장과 쿠폰 복구를 함께 처리한다")
+    void complete_updatesOrderCancellationAndRestoresCoupon() {
         Order order = mock(Order.class);
         PaymentCancellation cancellation = mock(PaymentCancellation.class);
         PaymentCancellationApproval approval = new PaymentCancellationApproval(
@@ -92,6 +96,7 @@ class PaymentAutoCancellationTransactionServiceTest {
         )).thenReturn(1);
 
         service.complete(approval);
+        verify(orderCouponService).restoreAfterFailure(1L);
 
         verify(orderRepository).cancelApproved(
                 1L,

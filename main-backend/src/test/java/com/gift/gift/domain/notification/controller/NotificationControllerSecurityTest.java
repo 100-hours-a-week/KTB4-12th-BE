@@ -19,15 +19,6 @@ class NotificationControllerSecurityTest {
     private MockMvc mockMvc;
 
     @Test
-    @DisplayName("Access Token 없이 SSE 수신 확인을 보내면 401을 반환한다")
-    void acknowledge_returnsUnauthorizedWithoutToken() throws Exception {
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .patch("/notifications/events/1/ack"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
-    }
-
-    @Test
     @DisplayName("Access Token 없이 알림 SSE 스트림을 구독하면 401을 반환한다")
     void subscribe_returnsUnauthorizedWithoutToken() throws Exception {
         mockMvc.perform(get("/notifications/events"))

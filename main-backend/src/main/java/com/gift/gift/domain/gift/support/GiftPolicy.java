@@ -6,6 +6,7 @@ public final class GiftPolicy {
 
     public static final int MAX_QUANTITY = 10;
     public static final int ACCEPTANCE_DAYS = 7;
+    public static final long BASE_REWARD_AMOUNT = 50_000L;
 
     private GiftPolicy() {
     }

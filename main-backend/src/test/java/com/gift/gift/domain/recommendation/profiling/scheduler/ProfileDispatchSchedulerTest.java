@@ -21,6 +21,26 @@ class ProfileDispatchSchedulerTest {
 
     private ProfileDispatchScheduler scheduler;
 
+    @Test
+    @DisplayName("스케줄링·AMQP 활성화 네 조합 중 둘 다 켠 경우만 MQ 스케줄러를 등록한다")
+    void registersOnlyWhenBothFlagsAreEnabled() {
+        for (boolean scheduling : new boolean[]{false, true}) {
+            for (boolean amqp : new boolean[]{false, true}) {
+                new org.springframework.boot.test.context.runner.ApplicationContextRunner()
+                        .withBean(ProfileDispatchService.class, () -> profileDispatchService)
+                        .withUserConfiguration(ProfileDispatchScheduler.class)
+                        .withPropertyValues("app.ai-profile.scheduling-enabled=" + scheduling,
+                                "app.ai-profile.amqp.enabled=" + amqp)
+                        .run(context -> {
+                            org.assertj.core.api.Assertions.assertThat(context).hasNotFailed();
+                            org.assertj.core.api.Assertions.assertThat(
+                                    context.getBeansOfType(ProfileDispatchScheduler.class))
+                                    .hasSize(scheduling && amqp ? 1 : 0);
+                        });
+            }
+        }
+    }
+
     @BeforeEach
     void setUp() {
         scheduler = new ProfileDispatchScheduler(profileDispatchService);

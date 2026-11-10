@@ -1,0 +1,279 @@
+{
+  "info": {
+    "name": "룰렛 및 독립 랜덤박스 API (#479/#480/#481)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "룰렛은 coupon-v3: 2배 35%, 3배 15%, 꽝 50% 고정이며 5번 칸은 꽝입니다. 랜덤박스는 룰렛과 독립적으로 유지합니다. 별도 지급 경로는 미구현이므로 박스 조회·개봉은 이미 본인에게 배정된 randomBoxId를 직접 설정한 경우만 실행합니다. 교환권 코드를 환경 변수나 로그에 저장하지 마세요."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 출석 참여권 확인 (반복 가능)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/roulette/attendance",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette",
+            "attendance"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('출석 확인 성공', () => pm.response.to.have.status(200));",
+              "const data = pm.response.json().data;",
+              "pm.test('출석 한도', () => pm.expect(data.attendanceGranted).to.be.within(0, 1));",
+              "pm.test('누적 잔액', () => pm.expect(data.remaining).to.be.at.least(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 참여 현황 조회",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/roulette",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('조회 성공', () => pm.response.to.have.status(200));",
+              "const data = pm.response.json().data;",
+              "pm.test('잔액은 음수가 아니다', () => pm.expect(data.remaining).to.be.at.least(0));",
+              "pm.test('일일 한도 필드 제거', () => pm.expect(data).not.to.have.property('dailyRemaining'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 룰렛 실행 (새 실행 시 환경의 키를 비우기)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{rouletteIdempotencyKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/roulette/spins",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette",
+            "spins"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.environment.get('rouletteIdempotencyKey')) {",
+              "  pm.environment.set('rouletteIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('실행 성공', () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) {",
+              "  const data = pm.response.json().data;",
+              "  pm.environment.set('rouletteSpinSnapshot', JSON.stringify(data));",
+              "  pm.test('서버 보상', () => pm.expect(data.rewardType).to.be.oneOf(['COUPON', 'MISS']));",
+              "  pm.test('서버 칸 ID', () => pm.expect(data.segmentId).to.be.within(0, 5));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 같은 키 재요청 (날짜 변경 후에도 최초 결과)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{rouletteIdempotencyKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/roulette/spins",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette",
+            "spins"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('재요청 성공', () => pm.response.to.have.status(200));",
+              "pm.test('최초 결과와 동일', () => {",
+              "  pm.expect(pm.environment.get('rouletteSpinSnapshot'), '03 실행 결과 필요').to.be.a('string').and.not.empty;",
+              "  pm.expect(pm.response.json().data).to.deep.equal(JSON.parse(pm.environment.get('rouletteSpinSnapshot')));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 키 누락 (400)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/roulette/spins",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "roulette",
+            "spins"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('잘못된 요청', () => pm.response.to.have.status(400));",
+              "pm.test('오류 코드', () => pm.expect(pm.response.json().error.code).to.equal('INVALID_REQUEST'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 본인 박스 조회 (개봉 전 보상 비공개)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/random-boxes/{{randomBoxId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "random-boxes",
+            "{{randomBoxId}}"
+          ]
+        },
+        "description": "별도 보유 박스의 randomBoxId를 직접 설정 후 실행합니다. 현재 지급 경로는 미구현이며 룰렛에서 박스를 받지 않습니다. ID가 없으면 건너뜁니다."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.environment.get('randomBoxId')) pm.execution.skipRequest();"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('성공', () => pm.response.to.have.status(200));",
+              "pm.test('캐시 금지', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));",
+              "const data = pm.response.json().data;",
+              "if (data && data.status === 'UNOPENED') pm.test('미개봉 보상 비공개', () => { pm.expect(data.prizeName).to.equal(null); pm.expect(data.voucherCode).to.equal(null); pm.expect(data.openedAt).to.equal(null); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 박스 개봉 (반복 가능)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/random-boxes/{{randomBoxId}}/open",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "random-boxes",
+            "{{randomBoxId}}",
+            "open"
+          ]
+        },
+        "description": "별도 보유 박스의 randomBoxId를 직접 설정 후 실행합니다. 현재 지급 경로는 미구현이며 룰렛에서 박스를 받지 않습니다. ID가 없으면 건너뜁니다."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.environment.get('randomBoxId')) pm.execution.skipRequest();"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('성공', () => pm.response.to.have.status(200));",
+              "pm.test('캐시 금지', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));",
+              "const data = pm.response.json().data;",
+              "if (data && data.status === 'UNOPENED') pm.test('미개봉 보상 비공개', () => { pm.expect(data.prizeName).to.equal(null); pm.expect(data.voucherCode).to.equal(null); pm.expect(data.openedAt).to.equal(null); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

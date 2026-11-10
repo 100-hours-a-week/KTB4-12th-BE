@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 
+import com.gift.gift.domain.product.cache.AiRecommendedProductCache;
 import com.gift.gift.domain.friend.service.FriendQueryService;
 import com.gift.gift.domain.product.cursor.ProductCursor;
 import com.gift.gift.domain.product.cursor.ProductCursorCodec;
@@ -30,6 +31,7 @@ import com.gift.gift.domain.product.search.ProductSearchRepository;
 import com.gift.gift.domain.product.support.ImageUrlProvider;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
+import com.gift.gift.domain.recommendation.profiling.repository.RecipientRecommendedProductRepository;
 import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.global.exception.ErrorCode;
 
@@ -47,6 +49,8 @@ public class ProductQueryService {
     private final UserQueryService userQueryService;
     private final FriendQueryService friendQueryService;
     private final RecipientProfileRepository recipientProfileRepository;
+    private final RecipientRecommendedProductRepository recommendationRepository;
+    private final AiRecommendedProductCache aiRecommendedProductCache;
     private final ObjectProvider<ProductSearchRepository> esSearchRepositoryProvider;
 
     @Transactional(
@@ -70,12 +74,21 @@ public class ProductQueryService {
         );
 
         Long analyzedSourceVersion = null;
+        List<Long> cachedRecommendationIds = null;
+        AiRecommendedProductCache.VersionLookup versionLookup = null;
 
         if (requestedSort == ProductSort.AI_RECOMMENDED) {
-            analyzedSourceVersion = recipientProfileRepository
-                    .findByRecipient_Id(request.recipientUserId())
-                    .map(RecipientProfile::getAnalyzedSourceVersion)
-                    .orElse(0L);
+            Long recipientUserId = request.recipientUserId();
+            versionLookup =
+                    aiRecommendedProductCache.resolveAnalyzedSourceVersion(
+                            recipientUserId,
+                            () -> recipientProfileRepository
+                                    .findByRecipient_Id(recipientUserId)
+                                    .map(RecipientProfile::getAnalyzedSourceVersion)
+                                    .orElse(0L)
+                    );
+
+            analyzedSourceVersion = versionLookup.version();
         }
 
         ProductSearchCondition condition = new ProductSearchCondition(
@@ -87,8 +100,47 @@ public class ProductQueryService {
                 analyzedSourceVersion
         );
 
-        if (condition.isAiRequested()
-                && !productRepository.hasMatchingRecommendedProducts(condition)) {
+        if (condition.isAiRequested()) {
+            Optional<ProductListResponse> cachedResponse =
+                    aiRecommendedProductCache.findCachedResponse(
+                            condition,
+                            request.cursor()
+                    );
+            if (cachedResponse.isPresent()) {
+                ProductListResponse response = cachedResponse.get();
+                cursorCodec.decode(
+                        request.cursor(),
+                        condition.withAppliedSort(response.appliedSort())
+                );
+                return response;
+            }
+
+            if (versionLookup != null && versionLookup.redisAvailable()) {
+                long activeVersion = analyzedSourceVersion;
+                AiRecommendedProductCache.ProductIdsLookup productIdsLookup =
+                        aiRecommendedProductCache.getOrLoadProductIds(
+                                request.recipientUserId(),
+                                activeVersion,
+                                () -> recommendationRepository.findRecommendedProductIds(
+                                        request.recipientUserId(),
+                                        activeVersion
+                                )
+                        );
+                if (productIdsLookup.usable()) {
+                    cachedRecommendationIds = productIdsLookup.productIds();
+                }
+            }
+        }
+
+        boolean hasMatchingRecommendedProducts = !condition.isAiRequested()
+                || (cachedRecommendationIds == null
+                ? productRepository.hasMatchingRecommendedProducts(condition)
+                : productRepository.hasMatchingRecommendedProducts(
+                        condition,
+                        cachedRecommendationIds
+                ));
+
+        if (condition.isAiRequested() && !hasMatchingRecommendedProducts) {
             condition = condition.withAppliedSort(ProductSort.POPULAR);
         }
 
@@ -98,7 +150,11 @@ public class ProductQueryService {
         );
 
         List<ProductSummaryProjection> fetched =
-                searchProducts(condition, cursor);
+                searchProducts(
+                        condition,
+                        cursor,
+                        cachedRecommendationIds
+                );
 
         ProductPage page = pageAssembler.assemble(
                 fetched,
@@ -118,11 +174,19 @@ public class ProductQueryService {
                 ))
                 .toList();
 
-        return ProductListResponse.from(
+        ProductListResponse response = ProductListResponse.from(
                 products,
                 condition.sort(),
                 page
         );
+        if (condition.isAiRequested()) {
+            aiRecommendedProductCache.cacheResponse(
+                    condition,
+                    request.cursor(),
+                    response
+            );
+        }
+        return response;
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -191,15 +255,19 @@ public class ProductQueryService {
             );
         }
 
-        if (userQueryService.findActiveUser(recipientUserId).isEmpty()) {
+        if (!aiRecommendedProductCache.isRecipientActive(
+                recipientUserId,
+                () -> userQueryService.findActiveUser(recipientUserId).isPresent()
+        )) {
             throw new ProductException(
                     ProductErrorCode.RECIPIENT_NOT_FOUND
             );
         }
 
-        if (!friendQueryService.areFriends(
+        if (!aiRecommendedProductCache.areFriends(
                 loginUserId,
-                recipientUserId
+                recipientUserId,
+                () -> friendQueryService.areFriends(loginUserId, recipientUserId)
         )) {
             throw new ProductException(
                     ProductErrorCode.RECIPIENT_NOT_FOUND
@@ -209,7 +277,8 @@ public class ProductQueryService {
 
     private List<ProductSummaryProjection> searchProducts(
             ProductSearchCondition condition,
-            ProductCursor cursor
+            ProductCursor cursor,
+            List<Long> cachedRecommendationIds
     ) {
         boolean supportsEs = !condition.isAiRequested()
                 && condition.hasQuery()
@@ -239,10 +308,19 @@ public class ProductQueryService {
             }
         }
 
+        if (cachedRecommendationIds == null) {
+            return productRepository.searchProducts(
+                    condition,
+                    cursor,
+                    ProductPageAssembler.FETCH_COUNT
+            );
+        }
+
         return productRepository.searchProducts(
                 condition,
                 cursor,
-                ProductPageAssembler.FETCH_COUNT
+                ProductPageAssembler.FETCH_COUNT,
+                cachedRecommendationIds
         );
     }
 }

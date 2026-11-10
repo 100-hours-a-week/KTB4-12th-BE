@@ -3,6 +3,19 @@ package com.gift.gift.domain.recommendation.profiling.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
+import com.gift.gift.infrastructure.ai.profiling.amqp.ProfilingAmqpConfiguration;
+import com.gift.gift.infrastructure.ai.profiling.amqp.ProfilingJobPublisher;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import static org.mockito.Mockito.*;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -26,8 +39,6 @@ import com.gift.gift.domain.preference.service.PreferenceSaveService;
 import com.gift.gift.domain.product.entity.Category;
 import com.gift.gift.domain.product.repository.CategoryRepository;
 import com.gift.gift.domain.recommendation.chat.repository.AiChatTurnUsageRepository;
-import com.gift.gift.domain.recommendation.profiling.dto.request.AiProfileRequest;
-import com.gift.gift.domain.recommendation.profiling.dto.response.AiProfileAcceptedResponse;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfileStatus;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
@@ -43,8 +54,34 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("integration")
-@SpringBootTest
+@SpringBootTest(properties = {
+        "app.scheduling.enabled=false",
+        "app.ai-profile.scheduling-enabled=false",
+        "app.ai-profile.amqp.enabled=true",
+        "app.outbox.enabled=false",
+        "app.ai-profile.quiet-period=1h",
+        "app.ai-profile.maximum-window=6h"
+})
 class ProfileDispatchServiceIntegrationTest {
+    private static final GenericContainer<?> BROKER = new GenericContainer<>("rabbitmq:4.4.0-management")
+            .withEnv("RABBITMQ_DEFAULT_USER", "test")
+            .withEnv("RABBITMQ_DEFAULT_PASS", "test-password")
+            .withExposedPorts(5672).waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(2)));
+    static { BROKER.start(); }
+
+    @DynamicPropertySource
+    static void rabbitProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.rabbitmq.host", BROKER::getHost);
+        registry.add("spring.rabbitmq.port", () -> BROKER.getMappedPort(5672));
+        registry.add("spring.rabbitmq.username", () -> "test");
+        registry.add("spring.rabbitmq.password", () -> "test-password");
+        registry.add("spring.rabbitmq.virtual-host", () -> "/");
+    }
+
+    @Autowired @Qualifier("profilingRabbitTemplate") RabbitTemplate template;
+    @Autowired JdbcTemplate jdbc;
+    @MockitoSpyBean ProfilingJobPublisher publisher;
+
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
     private static final Instant NOW =
@@ -91,17 +128,20 @@ class ProfileDispatchServiceIntegrationTest {
         clearTestData();
 
         reset(aiProfilingClient);
-        when(aiProfilingClient.isHealthy()).thenReturn(true);
+        reset(publisher);
 
         setCurrentTime(NOW);
     }
 
     @AfterEach
     void tearDown() {
+        verifyNoInteractions(aiProfilingClient);
         clearTestData();
     }
 
     private void clearTestData() {
+        while (template.receive(ProfilingAmqpConfiguration.REQUEST_QUEUE) != null) { }
+        jdbc.update("DELETE FROM profiling_jobs");
         aiChatTurnUsageRepository.deleteAll();
         profileRepository.deleteAll();
         dislikeRepository.deleteAll();
@@ -116,12 +156,11 @@ class ProfileDispatchServiceIntegrationTest {
     @DisplayName("마지막 변경 후 1시간이 지난 프로파일을 요청한다")
     void dispatchDueProfiles_requestsAfterQuietPeriod() {
         User user = saveChangedPreferenceAt(NOW.minusSeconds(3_601));
-        stubAcceptedResponse();
 
         setCurrentTime(NOW);
         profileDispatchService.dispatchDueProfiles();
 
-        verify(aiProfilingClient).requestProfiling(any());
+        assertPublished(user);
         assertThat(findProfile(user).getProfileStatus())
                 .isEqualTo(RecipientProfileStatus.PENDING);
     }
@@ -136,12 +175,11 @@ class ProfileDispatchServiceIntegrationTest {
                 user.getId(),
                 List.of(second.getId())
         );
-        stubAcceptedResponse();
 
         setCurrentTime(NOW);
         profileDispatchService.dispatchDueProfiles();
 
-        verify(aiProfilingClient).requestProfiling(any());
+        assertPublished(user);
         assertThat(findProfile(user).getProfileStatus())
                 .isEqualTo(RecipientProfileStatus.PENDING);
     }
@@ -154,29 +192,22 @@ class ProfileDispatchServiceIntegrationTest {
 
         profileDispatchService.dispatchDueProfiles();
 
-        verify(aiProfilingClient, never()).requestProfiling(any());
+        assertThat(template.receive(ProfilingAmqpConfiguration.REQUEST_QUEUE)).isNull();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM profiling_jobs", Integer.class)).isZero();
     }
 
     @Test
-    @DisplayName("AI 호출 전에 증가한 Source Version이 커밋되고 HTTP 호출에는 DB 트랜잭션이 없다")
+    @DisplayName("MQ 발행 전 작업·버전이 커밋되고 발행 호출에는 DB 트랜잭션이 없다")
     void dispatchDueProfiles_commitsVersionBeforeCallingAiOutsideTransaction() {
         User user = saveChangedPreferenceAt(NOW.minusSeconds(3_601));
         AtomicBoolean transactionActive = new AtomicBoolean(true);
         AtomicBoolean versionCommitted = new AtomicBoolean(false);
 
-        when(aiProfilingClient.requestProfiling(any()))
-                .thenAnswer(invocation -> {
-                    AiProfileRequest request = invocation.getArgument(0);
-                    transactionActive.set(
-                            TransactionSynchronizationManager
-                                    .isActualTransactionActive()
-                    );
-                    versionCommitted.set(
-                            findProfile(user).getSourceVersion()
-                                    == request.sourceVersion()
-                    );
-                    return accepted(request);
-                });
+        doAnswer(invocation -> {
+            transactionActive.set(TransactionSynchronizationManager.isActualTransactionActive());
+            versionCommitted.set(findProfile(user).getSourceVersion() == 1L);
+            return invocation.callRealMethod();
+        }).when(publisher).publishOne();
 
         setCurrentTime(NOW);
         profileDispatchService.dispatchDueProfiles();
@@ -187,10 +218,9 @@ class ProfileDispatchServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("202 응답 후 PENDING 상태와 접수 시각을 별도 트랜잭션에 저장한다")
+    @DisplayName("MQ 작업 준비 시 PENDING 상태와 시작 시각을 저장한다")
     void dispatchDueProfiles_savesAcceptedState() {
         User user = saveChangedPreferenceAt(NOW.minusSeconds(3_601));
-        stubAcceptedResponse();
 
         setCurrentTime(NOW);
         profileDispatchService.dispatchDueProfiles();
@@ -204,17 +234,53 @@ class ProfileDispatchServiceIntegrationTest {
         assertThat(profile.getWindowStartedAt()).isNull();
     }
 
-    private void stubAcceptedResponse() {
-        when(aiProfilingClient.requestProfiling(any()))
-                .thenAnswer(invocation -> accepted(invocation.getArgument(0)));
+    @Test
+    @DisplayName("신규 변경 없이 기한 도래 재시도와 만료 선점을 복구하고 BLOCKED·PUBLISHED는 재발행하지 않는다")
+    void recoversExistingJobsWithoutReplayingBlockedOrPublished() {
+        User user = saveChangedPreferenceAt(NOW.minusSeconds(3601));
+        setCurrentTime(NOW);
+        profileDispatchService.dispatchDueProfiles();
+        assertPublished(user);
+        String requestId = jdbc.queryForObject("SELECT request_id FROM profiling_jobs WHERE profile_id = ?",
+                String.class, findProfile(user).getId());
+        jdbc.update("""
+                UPDATE profiling_jobs SET publish_status = 'RETRY_WAIT', attempt_count = 1,
+                    first_failed_at = UTC_TIMESTAMP(6),
+                    next_attempt_at = TIMESTAMPADD(SECOND, -1, UTC_TIMESTAMP(6)) WHERE request_id = ?
+                """, requestId);
+        profileDispatchService.dispatchDueProfiles();
+        assertPublished(user);
+        assertThat(jdbc.queryForObject("SELECT attempt_count FROM profiling_jobs WHERE request_id = ?",
+                Integer.class, requestId)).isEqualTo(2);
+
+        jdbc.update("""
+                UPDATE profiling_jobs SET publish_status = 'CLAIMED', attempt_count = 1,
+                    claim_token = ?, claimed_at = TIMESTAMPADD(SECOND, -121, UTC_TIMESTAMP(6)),
+                    next_attempt_at = NULL WHERE request_id = ?
+                """, UUID.randomUUID().toString(), requestId);
+        profileDispatchService.dispatchDueProfiles();
+        assertThat(template.receive(ProfilingAmqpConfiguration.REQUEST_QUEUE)).isNull();
+        assertThat(jdbc.queryForObject("SELECT publish_status FROM profiling_jobs WHERE request_id = ?",
+                String.class, requestId)).isEqualTo("RETRY_WAIT");
+        jdbc.update("UPDATE profiling_jobs SET next_attempt_at = UTC_TIMESTAMP(6) WHERE request_id = ?", requestId);
+        profileDispatchService.dispatchDueProfiles();
+        assertPublished(user);
+        profileDispatchService.dispatchDueProfiles();
+        assertThat(template.receive(ProfilingAmqpConfiguration.REQUEST_QUEUE)).isNull();
+        jdbc.update("UPDATE profiling_jobs SET publish_status = 'BLOCKED' WHERE request_id = ?", requestId);
+        profileDispatchService.dispatchDueProfiles();
+        assertThat(template.receive(ProfilingAmqpConfiguration.REQUEST_QUEUE)).isNull();
+        assertThat(findProfile(user).getSourceVersion()).isEqualTo(1);
     }
 
-    private AiProfileAcceptedResponse accepted(AiProfileRequest request) {
-        return new AiProfileAcceptedResponse(
-                request.recipientUserId(),
-                request.sourceVersion(),
-                RecipientProfileStatus.PENDING
-        );
+    private void assertPublished(User user) {
+        var message = template.receive(ProfilingAmqpConfiguration.REQUEST_QUEUE, 5000);
+        assertThat(message).isNotNull();
+        String requestId = message.getMessageProperties().getMessageId();
+        var row = jdbc.queryForMap("SELECT * FROM profiling_jobs WHERE request_id = ?", requestId);
+        assertThat(row.get("profile_id")).isEqualTo(findProfile(user).getId());
+        assertThat(row.get("publish_status")).isEqualTo("PUBLISHED");
+        assertThat(new String(message.getBody(), StandardCharsets.UTF_8)).isEqualTo(row.get("request_body"));
     }
 
     private User saveChangedPreferenceAt(Instant changedAt) {

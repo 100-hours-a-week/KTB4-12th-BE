@@ -1,8 +1,48 @@
 # AI 프로파일링 일반 전송·실패 처리 — PR 5-1
 
+> 현재 발행 경로는 [PR 3-3 MQ 스케줄러·V50 전환 안내](ai-profiling-amqp.md#pr-3-3--mq-스케줄러-전환)를 따른다. 아래 HTTP 전송·복구·retry_count 설명은 과거 PR의 이력이다. HTTP 콜백 저장은 유지한다.
+
+
+RabbitMQ 연결·큐 선언과 로컬 실행은 [AMQP 기반 설정](ai-profiling-amqp.md)을 참고한다.
+
 코드 위치와 역할은 [추천 기능 패키지 구조](recommendation-package-structure.md)를 참고한다.
 
 기준일: 2026-10-07. 구현 이슈는 #170이며 현재 부모 이슈는 같은 BE 저장소의 #87(상품 탐색에 AI 추천순 적용)이다. 이 문서는 현재 구현의 운영 동작을 설명한다. 같은 번호 복구·상품 제외 저장도 PR 5-2 로컬 구현에 반영됐으며 `/ready`는 채택하지 않았다.
+
+## RabbitMQ 전환 준비 — 작업 테이블 추가 (V47)
+
+관련 이슈: #523 (상위 #522). V47은 `profiling_jobs`만 추가하며 기존 HTTP 요청·콜백 로직은 유지한다.
+
+- `recipient_profiles`: 수신자별 현재 상태·요청/분석 버전·디바운스를 관리한다.
+- `profiling_jobs`: 요청별 입력 스냅샷·발행/결과 상태·재시도·선점 정보를 보관하는 도메인 전용 Outbox다. 실제 작업 생성과 발행은 후속 PR에서 연결한다.
+- `request_id`는 PK, `(profile_id, source_version)`은 UNIQUE이며 `profile_id`는 `recipient_profiles.id`를 참조한다. 발행 후보·선점 만료·완료 기록 정리용 인덱스를 둔다.
+- 기존 프로파일·추천 행과 FK는 변경하지 않고 과거 작업 행도 생성하지 않는다. 기존 `retry_count`와 `dispatch_claim_*`는 HTTP 전환 PR까지 유지한다.
+- Flyway가 애플리케이션 시작 시 적용한다. 이미 적용된 V47 파일은 수정하지 않고 후속 변경은 새 마이그레이션으로 작성한다.
+
+로컬 MySQL 8.4.11에서 사용자가 V47 성공, 신규 작업 0건, 프로파일 16건(COMPLETED 2·NONE 14), 추천 60건 유지 및 기존 요청·콜백 정상 동작을 확인했다. 운영 DB 적용과 제약조건 거부 사례의 별도 테스트는 미확인이다.
+
+## 작업 모델·디바운스 준비 — PR 2-1·2-2 (#524)
+
+- `ProfilingRequestMessage`는 공통 정보와 기존 `AiProfileRequest`를 감싼다. 최초 직렬화한 JSON을 `ProfilingJob`에 고정 저장하고, 재발행은 저장된 UTF-8 바이트를 재사용한다.
+- 최종 JSON 256 KiB 초과는 원문을 절단하지 않고 `BLOCKED / INPUT_TOO_LARGE`로 보관한다. 직렬화 자체가 실패하면 준비 트랜잭션을 롤백한다.
+- `ProfilingJobPreparationService`는 사용자 → 프로파일 → 이전 작업 순으로 잠근 뒤 디바운스 확인·버전 증가·작업 저장·변경 대기 정리·PENDING을 한 트랜잭션에서 처리한다.
+- 잠금 전에는 수신자 ID만 조회한다. 엔티티를 미리 읽어 JPA 1차 캐시에 과거 상태가 남지 않도록 한다. 입력 조회는 READ_COMMITTED에서 수행한다.
+- READY·CLAIMED·RETRY_WAIT의 미확인 발행이 있으면 새 변경을 보존하고 기다린다. BLOCKED 중 새 변경은 새 ID·버전으로 준비하고 기존 작업은 오류·본문을 보존한 SUPERSEDED로 기록한다. PUBLISHED는 신규 작업 생성을 막지 않는다.
+- 비선호·취향·리뷰 생성/수정/삭제는 사용자 → 프로파일 잠금 규칙에 참여한다. 리뷰 수정·삭제가 새 분석을 예약하지 않는 기존 트리거 정책은 유지한다.
+- 입력 조립은 `ProfileRequestFactory`로 공통화하며 기존 HTTP 발송·복구도 이를 사용한다. 기존 중간 버전 콜백 정책은 유지한다.
+- 신규 준비 서비스는 스케줄러에서 호출하지 않는다. 실제 작업 생성 활성화·MQ 발행은 PR 3-3에서 HTTP 경로와 함께 전환한다. 결과 Consumer·ACK·결과 상태 반영은 후속 범위다.
+
+검증 코드는 `ProfilingMessageSerializerTest`, `ProfilingJobTest`, `ProfilingJobPreparationIntegrationTest`에 둔다. MySQL에서 중복 제약·원자적 롤백·동시 준비·입력 변경 경쟁을 검증한다.
+
+## 테스트 환경과 CI 검증
+
+작업 준비 통합 테스트는 서비스에 주입한 고정 Clock(Asia/Seoul)으로 입력 시각도 생성한다. 서버 기본 시간대의 `LocalDateTime.now()`와 섞지 않으며, UTC JVM에서도 동일하게 검증한다.
+
+프로파일링 시간 경계 테스트는 `@SpringBootTest(properties=...)`에서 quiet-period=1h·maximum-window=6h를 명시한다. 개발 셸의 APP_AIPROFILE_QUIETPERIOD·APP_AIPROFILE_MAXIMUMWINDOW가 application.yaml보다 우선하므로, 개발용 10초·60초 설정이 테스트의 시간 가정을 바꾸지 않도록 한다.
+
+상품 검색 비활성화 테스트는 실제 관리 포트의 health를 조회한다. 모니터링 보안 테스트는 외부 ES health를 비활성화해 인증·포트 검증을 외부 ES 가용성과 분리한다. 운영 health 설정은 변경하지 않는다.
+
+GitHub Actions는 Gradle 의존성 다운로드가 Maven Central 429로 실패했을 때만 최대 3회(20초·40초 대기) 재시도한다. 컴파일·테스트 실패와 그 외 오류는 즉시 전파한다.
 
 ## 전송 흐름
 

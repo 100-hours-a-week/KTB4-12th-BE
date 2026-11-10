@@ -20,6 +20,14 @@ public class MySqlTestContainerInitializer
         MYSQL.start();
     }
 
+    public static void setOffline(boolean offline) throws Exception {
+        var result = MYSQL.execInContainer("mysql", "--user=root", "--password=" + MYSQL.getPassword(),
+                "--execute=SET GLOBAL offline_mode=" + (offline ? "ON" : "OFF"));
+        if (result.getExitCode() != 0) {
+            throw new IllegalStateException("테스트 MySQL offline_mode 변경 실패: " + result.getExitCode());
+        }
+    }
+
     @Override
     public void initialize(ConfigurableApplicationContext context) {
         TestPropertyValues.of(

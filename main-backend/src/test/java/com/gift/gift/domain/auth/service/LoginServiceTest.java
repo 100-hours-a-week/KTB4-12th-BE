@@ -199,6 +199,17 @@ class LoginServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("출석 보상 장애가 발생해도 저장된 로그인 세션과 토큰을 반환한다")
+    void login_preservesAuthenticationWhenAttendanceFails() {
+        stubSuccessfulLogin();
+        doThrow(new DataAccessResourceFailureException("출석 DB 장애"))
+                .when(dailyAttendanceCreditService).grant(1L);
+        LoginResult result = loginService.login(request(), null);
+        assertEquals(ACCESS_TOKEN, result.accessToken());
+        verify(dailyAttendanceCreditService).grant(1L);
+    }
+
     private void stubSuccessfulLogin() {
         when(userRepository
                 .findByEmailAndStatusAndDeletedAtIsNull(

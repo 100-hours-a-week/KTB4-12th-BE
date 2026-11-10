@@ -33,7 +33,6 @@ public class PaymentRequestService {
     public PaymentStartResult start(Long payerId, String idempotencyKey, PaymentCreateRequest request) {
 
         validateInput(payerId, idempotencyKey, request);
-
         String requestHash = requestHasher.hash(request);
 
         Optional<Order> existing = orderRepository
@@ -46,15 +45,7 @@ public class PaymentRequestService {
         PaymentValidation validation = paymentValidator.validate(payerId, request);
 
         try {
-            Order order = transactionService.create(
-                    payerId,
-                    idempotencyKey,
-                    requestHash,
-                    request,
-                    validation
-            );
-
-            return PaymentStartResult.created(order);
+            return transactionService.create(payerId, idempotencyKey, requestHash, request, validation);
         } catch (DataIntegrityViolationException exception) {
             if (!isIdempotencyDuplicate(exception)) {
                 throw exception;
@@ -63,58 +54,45 @@ public class PaymentRequestService {
             Order order = orderRepository
                     .findByPayerIdAndIdempotencyKey(payerId, idempotencyKey)
                     .orElseThrow(() -> exception);
-
             return existing(order, requestHash);
         }
     }
 
     private PaymentStartResult existing(Order order, String requestHash) {
-
         if (!order.getRequestHash().equals(requestHash)) {
             throw new BusinessException(ErrorCode.IDEMPOTENCY_KEY_CONFLICT);
         }
-
-        return PaymentStartResult.existing(order);
+        return PaymentStartResult.existing(
+                order,
+                transactionService.claimSyncOwner(order.getId())
+        );
     }
 
     private boolean isIdempotencyDuplicate(Throwable throwable) {
-
         Throwable cause = throwable;
-
         while (cause != null) {
-            if (cause instanceof SQLException sqlException
-                    && INTEGRITY_SQL_STATE.equals(sqlException.getSQLState())
-                    && sqlException.getErrorCode() == DUPLICATE_ENTRY_CODE
-                    && containsIdempotencyConstraint(sqlException.getMessage())) {
-
+            if (cause instanceof SQLException sql
+                    && INTEGRITY_SQL_STATE.equals(sql.getSQLState())
+                    && sql.getErrorCode() == DUPLICATE_ENTRY_CODE
+                    && sql.getMessage() != null
+                    && sql.getMessage().toLowerCase(Locale.ROOT)
+                    .contains(IDEMPOTENCY_CONSTRAINT)) {
                 return true;
             }
-
             cause = cause.getCause();
         }
-
         return false;
     }
 
-    private boolean containsIdempotencyConstraint(String message) {
-
-        return message != null
-                && message.toLowerCase(Locale.ROOT).contains(IDEMPOTENCY_CONSTRAINT);
-    }
-
-    private void validateInput(Long payerId, String idempotencyKey, PaymentCreateRequest request) {
-
-        if (payerId == null || payerId <= 0) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-
-        if (idempotencyKey == null
-                || !IDEMPOTENCY_KEY_PATTERN.matcher(idempotencyKey).matches()) {
-
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-
-        if (request == null) {
+    private void validateInput(
+            Long payerId,
+            String idempotencyKey,
+            PaymentCreateRequest request
+    ) {
+        if (payerId == null || payerId <= 0
+                || idempotencyKey == null
+                || !IDEMPOTENCY_KEY_PATTERN.matcher(idempotencyKey).matches()
+                || request == null) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
     }

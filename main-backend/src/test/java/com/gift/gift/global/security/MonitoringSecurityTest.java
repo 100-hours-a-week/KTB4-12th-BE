@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @AutoConfigureMetrics
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "management.server.port=0",
+        "management.health.elasticsearch.enabled=false",
         "MONITORING_PASSWORD=monitoring-test-password-32-characters",
         "spring.datasource.hikari.maximum-pool-size=4",
         "spring.datasource.hikari.minimum-idle=0"

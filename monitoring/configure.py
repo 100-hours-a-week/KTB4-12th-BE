@@ -3,6 +3,23 @@ import json
 import os
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
+
+
+def alertmanager_config(webhook):
+    if any(char in webhook for char in "\r\n\0"):
+        raise ValueError("Local webhook must contain no line breaks")
+    url = urlsplit(webhook)
+    if (url.scheme != "http" or url.hostname not in {
+            "localhost", "127.0.0.1", "host.docker.internal", "host.testcontainers.internal"}
+            or url.username or url.password or url.query or url.fragment):
+        raise ValueError("Local verification requires an HTTP webhook on a local host without credentials")
+    return {
+        "route": {"receiver": "local-verification", "group_by": ["alertname"],
+                  "group_wait": "10s", "group_interval": "10s", "repeat_interval": "4h"},
+        "receivers": [{"name": "local-verification", "webhook_configs": [
+            {"url": webhook, "send_resolved": True}]}],
+    }
 
 
 def required(name):
@@ -44,6 +61,24 @@ def configure():
     amount, unit = re.fullmatch(r"([1-9][0-9]*)(ms|s|m)", interval).groups()
     timeout_ms = min(int(amount) * {"ms": 1, "s": 1000, "m": 60000}[unit], 5000)
     config = {"global": {"scrape_interval": interval, "scrape_timeout": f"{timeout_ms}ms"}, "scrape_configs": jobs}
+    if os.environ.get("PROFILING_MONITORING_ENABLED", "false") == "true":
+        rabbit = required("RABBITMQ_METRICS_TARGET")
+        if any(char in rabbit for char in "/@?# "):
+            raise ValueError("RABBITMQ_METRICS_TARGET must be host:port without URL or credentials")
+        jobs.extend([
+            {"job_name": "rabbitmq", "static_configs": [{"targets": [rabbit]}]},
+            {"job_name": "rabbitmq-queues", "metrics_path": "/metrics/detailed",
+             "params": {"family": ["queue_coarse_metrics", "queue_consumer_count"],
+                        "vhost": [os.environ.get("SPRING_RABBITMQ_VIRTUAL_HOST",
+                                                 os.environ.get("RABBITMQ_VHOST", "gift"))],
+                        "queue": ["^profiling[.](request|result)$"]},
+             "static_configs": [{"targets": [rabbit]}]},
+        ])
+        config["global"]["evaluation_interval"] = "15s"
+        config["rule_files"] = ["/etc/prometheus/profiling-alerts.yml"]
+        config["alerting"] = {"alertmanagers": [{"static_configs": [{"targets": ["alertmanager:9093"]}]}]}
+        webhook = os.environ.get("LOCAL_ALERT_WEBHOOK_URL", "http://host.docker.internal:19093/alerts")
+        (runtime / "alertmanager.yml").write_text(json.dumps(alertmanager_config(webhook), indent=2) + "\n")
     (runtime / "prometheus.yml").write_text(json.dumps(config, indent=2) + "\n")
     (runtime / "monitoring-password").write_text(password)
     # MySQL option-file quoting: backslashes and double quotes must be escaped.
@@ -54,6 +89,8 @@ def configure():
     # Individual read-only bind mounts must be readable by exporter container UIDs.
     for name in ("prometheus.yml", "monitoring-password", "exporter.cnf"):
         (runtime / name).chmod(0o644)
+    if "alerting" in config:
+        (runtime / "alertmanager.yml").chmod(0o644)
     print("Generated monitoring/runtime.tmp configuration; passwords were not printed.")
 
 

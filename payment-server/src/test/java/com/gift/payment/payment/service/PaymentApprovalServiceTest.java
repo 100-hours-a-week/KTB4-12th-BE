@@ -11,6 +11,8 @@ import org.mockito.InOrder;
 import com.gift.payment.global.exception.BusinessException;
 import com.gift.payment.global.exception.ErrorCode;
 import com.gift.payment.payment.entity.Payment;
+import com.gift.payment.payment.entity.PaymentFailureCode;
+import com.gift.payment.payment.entity.PaymentStatus;
 import com.gift.payment.payment.support.PaymentScenario;
 import com.gift.payment.payment.support.PaymentScenarioDelayer;
 
@@ -20,6 +22,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class PaymentApprovalServiceTest {
@@ -53,9 +56,7 @@ class PaymentApprovalServiceTest {
         Payment completed = completedPayment(orderId);
 
         when(idempotencyService.start(orderId, AMOUNT))
-                .thenReturn(
-                        PaymentStartResult.created(pending)
-                );
+                .thenReturn(PaymentStartResult.created(pending));
         when(transactionService.approve(pending.getId()))
                 .thenReturn(completed);
 
@@ -68,22 +69,87 @@ class PaymentApprovalServiceTest {
     }
 
     @Test
+    @DisplayName("기존 PENDING 결제는 같은 paymentKey와 상태를 반환하고 다시 처리하지 않는다")
+    void confirm_returnsExistingPendingPaymentWithoutReprocessing() {
+        String orderId = UUID.randomUUID().toString();
+        Payment pending = payment(orderId);
+
+        when(idempotencyService.start(orderId, AMOUNT))
+                .thenReturn(PaymentStartResult.existing(pending));
+
+        Payment result = service.confirm(orderId, AMOUNT, PaymentScenario.APPROVE);
+
+        assertThat(result).isSameAs(pending);
+        assertThat(result.getPaymentKey()).isEqualTo(pending.getPaymentKey());
+        assertThat(result.getStatus()).isEqualTo(PaymentStatus.PENDING);
+
+        verifyNoInteractions(transactionService, scenarioDelayer);
+    }
+
+    @Test
+    @DisplayName("기존 COMPLETED 결제는 저장된 승인 결과를 반환하고 재승인하지 않는다")
+    void confirm_returnsExistingCompletedPaymentWithoutReprocessing() {
+        String orderId = UUID.randomUUID().toString();
+        Payment completed = completedPayment(orderId);
+
+        when(idempotencyService.start(orderId, AMOUNT))
+                .thenReturn(PaymentStartResult.existing(completed));
+
+        Payment result = service.confirm(orderId, AMOUNT, PaymentScenario.APPROVE);
+
+        assertThat(result).isSameAs(completed);
+        assertThat(result.getStatus()).isEqualTo(PaymentStatus.COMPLETED);
+
+        verifyNoInteractions(transactionService, scenarioDelayer);
+    }
+
+    @Test
+    @DisplayName("기존 CANCELED 결제는 현재 결과를 반환하고 다시 처리하지 않는다")
+    void confirm_returnsExistingCanceledPaymentWithoutReprocessing() {
+        String orderId = UUID.randomUUID().toString();
+        Payment canceled = mock(Payment.class);
+
+        when(canceled.getStatus()).thenReturn(PaymentStatus.CANCELED);
+        when(idempotencyService.start(orderId, AMOUNT))
+                .thenReturn(PaymentStartResult.existing(canceled));
+
+        Payment result = service.confirm(orderId, AMOUNT, PaymentScenario.APPROVE);
+
+        assertThat(result).isSameAs(canceled);
+        assertThat(result.getStatus()).isEqualTo(PaymentStatus.CANCELED);
+
+        verifyNoInteractions(transactionService, scenarioDelayer);
+    }
+
+    @Test
+    @DisplayName("기존 DECLINED 결제는 PAYMENT_DECLINED를 반환하고 재처리하지 않는다")
+    void confirm_rejectsExistingDeclinedPayment() {
+        String orderId = UUID.randomUUID().toString();
+        Payment declined = payment(orderId);
+        declined.decline(PaymentFailureCode.PAYMENT_DECLINED);
+
+        when(idempotencyService.start(orderId, AMOUNT))
+                .thenReturn(PaymentStartResult.existing(declined));
+
+        assertBusinessError(
+                () -> service.confirm(orderId, AMOUNT, PaymentScenario.APPROVE),
+                ErrorCode.PAYMENT_DECLINED
+        );
+
+        verifyNoInteractions(transactionService, scenarioDelayer);
+    }
+
+    @Test
     @DisplayName("거절 시나리오는 결제를 거절 상태로 확정한다")
     void confirm_declinesPayment() {
         String orderId = UUID.randomUUID().toString();
         Payment pending = payment(orderId);
 
         when(idempotencyService.start(orderId, AMOUNT))
-                .thenReturn(
-                        PaymentStartResult.created(pending)
-                );
+                .thenReturn(PaymentStartResult.created(pending));
 
         assertBusinessError(
-                () -> service.confirm(
-                        orderId,
-                        AMOUNT,
-                        PaymentScenario.DECLINE
-                ),
+                () -> service.confirm(orderId, AMOUNT, PaymentScenario.DECLINE),
                 ErrorCode.PAYMENT_DECLINED
         );
 
@@ -98,16 +164,10 @@ class PaymentApprovalServiceTest {
         Payment pending = payment(orderId);
 
         when(idempotencyService.start(orderId, AMOUNT))
-                .thenReturn(
-                        PaymentStartResult.created(pending)
-                );
+                .thenReturn(PaymentStartResult.created(pending));
 
         assertBusinessError(
-                () -> service.confirm(
-                        orderId,
-                        AMOUNT,
-                        PaymentScenario.TEMPORARY_ERROR
-                ),
+                () -> service.confirm(orderId, AMOUNT, PaymentScenario.TEMPORARY_ERROR),
                 ErrorCode.TEMPORARY_PROCESSING_ERROR
         );
 
@@ -123,16 +183,10 @@ class PaymentApprovalServiceTest {
         Payment pending = payment(orderId);
 
         when(idempotencyService.start(orderId, AMOUNT))
-                .thenReturn(
-                        PaymentStartResult.created(pending)
-                );
+                .thenReturn(PaymentStartResult.created(pending));
 
         assertBusinessError(
-                () -> service.confirm(
-                        orderId,
-                        AMOUNT,
-                        PaymentScenario.TIMEOUT_BEFORE_APPROVAL
-                ),
+                () -> service.confirm(orderId, AMOUNT, PaymentScenario.TIMEOUT_BEFORE_APPROVAL),
                 ErrorCode.TEMPORARY_PROCESSING_ERROR
         );
 
@@ -149,9 +203,7 @@ class PaymentApprovalServiceTest {
         Payment completed = completedPayment(orderId);
 
         when(idempotencyService.start(orderId, AMOUNT))
-                .thenReturn(
-                        PaymentStartResult.created(pending)
-                );
+                .thenReturn(PaymentStartResult.created(pending));
         when(transactionService.approve(pending.getId()))
                 .thenReturn(completed);
 
@@ -170,16 +222,13 @@ class PaymentApprovalServiceTest {
     }
 
     private void assertBusinessError(
-            org.assertj.core.api.ThrowableAssert
-                    .ThrowingCallable callable,
+            org.assertj.core.api.ThrowableAssert.ThrowingCallable callable,
             ErrorCode errorCode
     ) {
         assertThatThrownBy(callable)
                 .isInstanceOfSatisfying(
                         BusinessException.class,
-                        exception -> assertThat(
-                                exception.errorCode()
-                        ).isEqualTo(errorCode)
+                        exception -> assertThat(exception.errorCode()).isEqualTo(errorCode)
                 );
     }
 
@@ -197,13 +246,7 @@ class PaymentApprovalServiceTest {
 
         payment.approve(
                 UUID.randomUUID().toString(),
-                LocalDateTime.of(
-                        2026,
-                        10,
-                        12,
-                        12,
-                        0
-                )
+                LocalDateTime.of(2026, 10, 12, 12, 0)
         );
 
         return payment;

@@ -12,6 +12,10 @@ public enum ErrorCode {
             HttpStatus.INTERNAL_SERVER_ERROR,
             "일시적인 오류가 발생했습니다. 다시 시도해 주세요."
     ),
+    RANDOM_BOX_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "랜덤박스를 찾을 수 없습니다."
+    ),
     NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "요청한 리소스를 찾을 수 없습니다."
@@ -184,6 +188,10 @@ public enum ErrorCode {
             HttpStatus.SERVICE_UNAVAILABLE,
             "결제 결과를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요."
     ),
+    ROULETTE_TICKET_NOT_AVAILABLE(
+            HttpStatus.CONFLICT,
+            "사용 가능한 룰렛 참여권이 없습니다."
+    ),
     GIFT_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "선물 내역을 찾을 수 없습니다."
@@ -239,6 +247,10 @@ public enum ErrorCode {
     RECIPIENT_ID_MISMATCH(
             HttpStatus.BAD_REQUEST,
             "요청 경로와 본문의 수신자 ID가 일치하지 않습니다."
+    ),
+    COUPON_NOT_AVAILABLE(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+        "선택한 쿠폰의 사용 가능 수량이 부족합니다."
     );
 
     private final HttpStatus status;

@@ -1,96 +1,25 @@
 package com.gift.gift.domain.bugreport.dto;
 
-import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
-public record BugReportSheetEntry(
-        String reportId,
-        String userId,
-        String email,
-        String category,
-        String reportedAt,
-        String message,
-        String pageAndRoute,
-        String errorsText,
-        String viewport,
-        String userAgent
-) {
+import tools.jackson.databind.JsonNode;
 
-    private static final String DEFAULT_CATEGORY = "버그";
-
-    public static BugReportSheetEntry from(
-            BugReportPayload payload,
-            String errorsText,
-            Long userId,
-            String email
-    ) {
-        BugReportPayload.Embed embed = payload.embeds().getFirst();
-
-        return new BugReportSheetEntry(
-                normalizeReportId(embed.fieldValue("제보 ID")),
-                userId == null ? "" : userId.toString(),
-                valueOrEmpty(email),
-                valueOrDefault(
-                        embed.fieldValue("카테고리"),
-                        DEFAULT_CATEGORY
-                ),
-                valueOrDefault(embed.timestamp(), Instant.now().toString()),
-                valueOrEmpty(embed.description()),
-                joinPageAndRoute(
-                        embed.fieldValue("페이지 URL"),
-                        embed.fieldValue("라우트")
-                ),
-                valueOrEmpty(errorsText),
-                embed.fieldValue("뷰포트"),
-                embed.fieldValue("User-Agent")
-        );
+public record BugReportSheetEntry(String reportId, String userId, String email, String category,
+                                  String reportedAt, String message, String pageAndRoute,
+                                  String viewport, String userAgent) {
+    public static BugReportSheetEntry from(JsonNode report) {
+        String page = report.path("pageUrl").asText();
+        String route = report.path("route").asText();
+        String location = page.isBlank() ? route : route.isBlank() ? page : page + "\n" + route;
+        return new BugReportSheetEntry(report.path("reportId").asText(),
+                report.path("userId").isNull() ? "" : report.path("userId").asText(), report.path("email").asText(),
+                report.path("category").asText(), report.path("reportedAt").asText(),
+                report.path("description").asText(), location, report.path("viewport").asText(),
+                report.path("userAgent").asText());
     }
 
     public List<String> toRow() {
-        return List.of(
-                reportId,
-                category,
-                reportedAt,
-                message,
-                pageAndRoute,
-                errorsText,
-                viewport,
-                userAgent,
-                "신규",
-                "",
-                "",
-                userId,
-                email
-        );
-    }
-
-    private static String normalizeReportId(String reportId) {
-        try {
-            return UUID.fromString(reportId).toString();
-        } catch (IllegalArgumentException exception) {
-            return UUID.randomUUID().toString();
-        }
-    }
-
-    private static String joinPageAndRoute(String pageUrl, String route) {
-        String normalizedPageUrl = valueOrEmpty(pageUrl);
-        String normalizedRoute = valueOrEmpty(route);
-
-        if (normalizedPageUrl.isBlank()) {
-            return normalizedRoute;
-        }
-        if (normalizedRoute.isBlank()) {
-            return normalizedPageUrl;
-        }
-        return normalizedPageUrl + "\n" + normalizedRoute;
-    }
-
-    private static String valueOrDefault(String value, String defaultValue) {
-        return value == null || value.isBlank() ? defaultValue : value;
-    }
-
-    private static String valueOrEmpty(String value) {
-        return value == null ? "" : value;
+        return List.of(reportId, category, reportedAt, message, pageAndRoute, "", viewport, userAgent,
+                "신규", "", "", userId, email);
     }
 }

@@ -1,0 +1,38 @@
+name: gift-rabbitmq
+
+services:
+  rabbitmq:
+    build: ./infrastructure/rabbitmq
+    image: gift-rabbitmq:4.4.0
+    hostname: ${RABBITMQ_HOSTNAME:-gift-rabbitmq}
+
+    environment:
+      RABBITMQ_NODENAME: rabbit@${RABBITMQ_HOSTNAME:-gift-rabbitmq}
+
+    secrets:
+      - source: rabbitmq-access
+        target: /etc/rabbitmq/definitions/10-access.json
+
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+      - "127.0.0.1:${RABBITMQ_METRICS_PORT:-15692}:15692"
+
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+    restart: unless-stopped
+
+volumes:
+  rabbitmq-data:
+
+secrets:
+  rabbitmq-access:
+    file: ${RABBITMQ_ACCESS_DEFINITIONS_FILE:?Set RABBITMQ_ACCESS_DEFINITIONS_FILE to the access definitions secret}

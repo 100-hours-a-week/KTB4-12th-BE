@@ -77,11 +77,10 @@ class RecipientProfileCallbackTest {
     }
 
     @Test
-    @DisplayName("최신 결과 저장은 Pending 시각과 재시도 횟수를 초기화한다")
-    void markCompleted_resetsPendingAndRetryCount() {
+    @DisplayName("최신 결과 저장은 Pending 시각을 초기화한다")
+    void markCompleted_resetsPendingTime() {
         profile.createNextSourceVersion();
         profile.markPending(NOW);
-        profile.increaseRetryCount();
 
         profile.markCompleted(1);
 
@@ -89,18 +88,16 @@ class RecipientProfileCallbackTest {
         assertThat(profile.getProfileStatus())
                 .isEqualTo(RecipientProfileStatus.COMPLETED);
         assertThat(profile.getPendingSince()).isNull();
-        assertThat(profile.getRetryCount()).isZero();
     }
 
     @Test
-    @DisplayName("202 반영 전 빠른 콜백도 완료할 수 있다")
-    void markCompleted_acceptsCallbackBeforeAcceptedResponse() {
+    @DisplayName("작업 준비 직후 빠른 콜백도 완료할 수 있다")
+    void markCompleted_acceptsCallbackAfterPreparation() {
         LocalDateTime changedAt = NOW.minusHours(2);
         profile.recordPreferenceChange(changedAt);
         profile.createNextSourceVersion();
 
         profile.markCompleted(1);
-        profile.applyAcceptedResponse(1, changedAt, NOW);
 
         assertThat(profile.getProfileStatus())
                 .isEqualTo(RecipientProfileStatus.COMPLETED);
@@ -128,7 +125,6 @@ class RecipientProfileCallbackTest {
         profile.markCompleted(1);
         profile.createNextSourceVersion();
         profile.markPending(NOW);
-        profile.increaseRetryCount();
 
         profile.markCompleted(1);
 
@@ -136,7 +132,6 @@ class RecipientProfileCallbackTest {
         assertThat(profile.getProfileStatus())
                 .isEqualTo(RecipientProfileStatus.PENDING);
         assertThat(profile.getPendingSince()).isEqualTo(NOW);
-        assertThat(profile.getRetryCount()).isEqualTo(1);
     }
 
     @Test
@@ -145,7 +140,6 @@ class RecipientProfileCallbackTest {
         profile.createNextSourceVersion();
         profile.createNextSourceVersion();
         profile.markPending(NOW);
-        profile.increaseRetryCount();
 
         profile.markCompleted(1);
 
@@ -154,7 +148,6 @@ class RecipientProfileCallbackTest {
         assertThat(profile.getProfileStatus())
                 .isEqualTo(RecipientProfileStatus.PENDING);
         assertThat(profile.getPendingSince()).isEqualTo(NOW);
-        assertThat(profile.getRetryCount()).isEqualTo(1);
     }
 
     @Test

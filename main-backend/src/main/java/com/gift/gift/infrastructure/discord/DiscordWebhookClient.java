@@ -1,162 +1,83 @@
 package com.gift.gift.infrastructure.discord;
 
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpStatusCode;
-import org.springframework.http.MediaType;
-import org.springframework.http.client.MultipartBodyBuilder;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
-import com.gift.gift.domain.bugreport.exception.BugReportErrorCode;
-import com.gift.gift.domain.bugreport.exception.BugReportException;
+import com.gift.gift.domain.bugreport.messaging.ReportDeliveryResult;
 
 @Component
-@RequiredArgsConstructor
 public class DiscordWebhookClient {
+    private final HttpClient client;
+    private final ObjectMapper mapper;
 
-    private static final long MAX_RETRY_WAIT_SECONDS = 5;
+    public DiscordWebhookClient(@Qualifier("discordWebhookHttpClient") HttpClient discordWebhookHttpClient,
+                                ObjectMapper mapper) {
+        this.client = discordWebhookHttpClient;
+        this.mapper = mapper;
+    }
 
-    private final RestClient discordWebhookRestClient;
-
-    public void send(
-            String webhookUrl,
-            String payloadJson,
-            DiscordAttachment screenshot,
-            DiscordAttachment errorLog
-    ) {
-        MultiValueMap<String, HttpEntity<?>> body =
-                buildBody(payloadJson, screenshot, errorLog);
-
+    public ReportDeliveryResult send(String webhookUrl, String payloadJson) {
+        URI uri = UriComponentsBuilder.fromUriString(webhookUrl).replaceQueryParam("wait", "true")
+            .build(true).toUri();
+        HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(payloadJson)).build();
+        var pending = client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
         try {
-            attempt(webhookUrl, body);
-        } catch (DiscordRateLimitedException exception) {
-            sleep(Math.min(
-                    exception.retryAfterSeconds(),
-                    MAX_RETRY_WAIT_SECONDS
-            ));
-
-            try {
-                attempt(webhookUrl, body);
-            } catch (DiscordRateLimitedException retryException) {
-                throw deliveryFailed(429);
-            }
-        }
-    }
-
-    private void attempt(
-            String webhookUrl,
-            MultiValueMap<String, HttpEntity<?>> body
-    ) {
-        try {
-            discordWebhookRestClient.post()
-                    .uri(webhookUrl)
-                    .contentType(MediaType.MULTIPART_FORM_DATA)
-                    .body(body)
-                    .retrieve()
-                    .onStatus(
-                            status -> status.value() == 429,
-                            (request, response) -> {
-                                throw new DiscordRateLimitedException(
-                                        parseRetryAfterSeconds(
-                                                response.getHeaders()
-                                                        .getFirst("Retry-After")
-                                        )
-                                );
-                            }
-                    )
-                    .onStatus(
-                            HttpStatusCode::isError,
-                            (request, response) -> {
-                                throw deliveryFailed(
-                                        response.getStatusCode().value()
-                                );
-                            }
-                    )
-                    .toBodilessEntity();
-        } catch (ResourceAccessException exception) {
-            throw deliveryFailed(exception);
-        } catch (RestClientException exception) {
-            throw deliveryFailed(exception);
-        }
-    }
-
-    private MultiValueMap<String, HttpEntity<?>> buildBody(
-            String payloadJson,
-            DiscordAttachment screenshot,
-            DiscordAttachment errorLog
-    ) {
-        MultipartBodyBuilder builder = new MultipartBodyBuilder();
-
-        builder.part("payload_json", payloadJson, MediaType.APPLICATION_JSON);
-
-        if (screenshot != null) {
-            addFilePart(builder, screenshot);
-        }
-
-        if (errorLog != null) {
-            addFilePart(builder, errorLog);
-        }
-
-        return builder.build();
-    }
-
-    private void addFilePart(
-            MultipartBodyBuilder builder,
-            DiscordAttachment attachment
-    ) {
-        ByteArrayResource resource = new ByteArrayResource(
-                attachment.content()
-        ) {
-            @Override
-            public String getFilename() {
-                return attachment.filename();
-            }
-        };
-
-        builder.part(attachment.partName(), resource, attachment.contentType());
-    }
-
-    private long parseRetryAfterSeconds(String headerValue) {
-        if (headerValue == null || headerValue.isBlank()) {
-            return MAX_RETRY_WAIT_SECONDS;
-        }
-
-        try {
-            return Math.round(Double.parseDouble(headerValue));
-        } catch (NumberFormatException exception) {
-            return MAX_RETRY_WAIT_SECONDS;
-        }
-    }
-
-    private void sleep(long seconds) {
-        if (seconds <= 0) {
-            return;
-        }
-
-        try {
-            Thread.sleep(seconds * 1000L);
+            // The future includes body consumption; a slow response body cannot extend the attempt indefinitely.
+            var response = pending.get(20, TimeUnit.SECONDS);
+            return classify(response.statusCode(), response.headers().firstValue("Retry-After").orElse(null),
+                response.body());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            return new ReportDeliveryResult(false, false, 0, false, "Interrupted");
+        } catch (Exception exception) {
+            return new ReportDeliveryResult(false, false, 0, false, "NetworkOrTimeout");
+        } finally {
+            if (!pending.isDone()) pending.cancel(true);
         }
     }
 
-    private BugReportException deliveryFailed(int statusCode) {
-        return new BugReportException(
-                BugReportErrorCode.DELIVERY_FAILED,
-                "Discord 전송 실패 (HTTP " + statusCode + ")"
-        );
+    ReportDeliveryResult classify(int status, String retryAfter, String body) {
+        JsonNode response = null;
+        try {
+            if (body != null && body.length() <= 65536) response = mapper.readTree(body);
+        } catch (RuntimeException ignored) {
+            // An invalid success response is uncertain delivery, so it must remain retryable.
+        }
+        if (status >= 200 && status < 300 && response != null
+            && response.path("id").asText("").matches("[0-9]+")) {
+            return new ReportDeliveryResult(true, false, 0, false, "Success");
+        }
+        if (status == 429) {
+            long delay = Math.max(parseSeconds(retryAfter),
+                response == null ? 0 : parseSeconds(response.path("retry_after").asText("")));
+            return new ReportDeliveryResult(false, false, Math.max(30000, delay),
+                response != null && response.path("global").asBoolean(false), "RateLimited");
+        }
+        boolean permanent = status == 400 || status == 401 || status == 403 || status == 404 || status == 405;
+        return new ReportDeliveryResult(false, permanent, 0, false,
+            permanent ? "InvalidRequestOrCredentials" : "HttpOrInvalidResponse");
     }
 
-    private BugReportException deliveryFailed(Exception cause) {
-        return new BugReportException(
-                BugReportErrorCode.DELIVERY_FAILED,
-                "Discord 전송 실패 (" + cause.getClass().getSimpleName() + ")"
-        );
+    private long parseSeconds(String seconds) {
+        try {
+            double millis = Double.parseDouble(seconds) * 1000;
+            return Double.isFinite(millis) && millis > 0 && millis < Long.MAX_VALUE / 2.0
+                ? (long) Math.ceil(millis) : 0;
+        } catch (RuntimeException exception) {
+            return 0;
+        }
     }
+
 }

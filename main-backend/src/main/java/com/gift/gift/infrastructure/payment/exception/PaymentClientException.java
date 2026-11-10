@@ -4,15 +4,14 @@ public class PaymentClientException extends RuntimeException {
 
     private final PaymentClientFailure failure;
     private final String upstreamTraceId;
+    private final boolean outcomeUncertain;
 
     public PaymentClientException(
             PaymentClientFailure failure,
             String message,
             String upstreamTraceId
     ) {
-        super(message);
-        this.failure = failure;
-        this.upstreamTraceId = upstreamTraceId;
+        this(failure, message, upstreamTraceId, null, false);
     }
 
     public PaymentClientException(
@@ -20,9 +19,20 @@ public class PaymentClientException extends RuntimeException {
             String message,
             Throwable cause
     ) {
+        this(failure, message, null, cause, false);
+    }
+
+    private PaymentClientException(
+            PaymentClientFailure failure,
+            String message,
+            String upstreamTraceId,
+            Throwable cause,
+            boolean outcomeUncertain
+    ) {
         super(message, cause);
         this.failure = failure;
-        this.upstreamTraceId = null;
+        this.upstreamTraceId = upstreamTraceId;
+        this.outcomeUncertain = outcomeUncertain;
     }
 
     public PaymentClientFailure failure() {
@@ -31,5 +41,15 @@ public class PaymentClientException extends RuntimeException {
 
     public String upstreamTraceId() {
         return upstreamTraceId;
+    }
+
+    public boolean outcomeUncertain() {
+        return outcomeUncertain;
+    }
+
+    public PaymentClientException withUncertainOutcome() {
+        return new PaymentClientException(
+                failure, getMessage(), upstreamTraceId, this, true
+        );
     }
 }

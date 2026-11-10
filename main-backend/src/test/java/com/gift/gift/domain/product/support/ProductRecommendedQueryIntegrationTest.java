@@ -17,6 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ import com.gift.gift.domain.product.repository.ProductSummaryProjection;
 import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientRecommendedProduct;
+import com.gift.gift.domain.recommendation.profiling.event.RecommendationAnalysisCompletedEvent;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.global.exception.ErrorCode;
 
@@ -64,6 +66,8 @@ class ProductRecommendedQueryIntegrationTest {
     private ProductCursorCodec codec;
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
 
     private final List<Long> productIds = new ArrayList<>();
     private final List<Long> categoryIds = new ArrayList<>();
@@ -159,8 +163,8 @@ class ProductRecommendedQueryIntegrationTest {
     }
 
     @Test
-    @DisplayName("삭제와 품절 상품은 추천 및 인기 영역 모두에서 제외한다")
-    void excludesDeletedAndSoldOutProducts() {
+    @DisplayName("삭제 상품은 제외하고 품절 상품은 추천 및 인기 영역에 포함한다")
+    void excludesDeletedButIncludesSoldOutProducts() {
         Product valid = product(category, "크림", 1, 0, BASE_TIME);
         Product deleted = product(category, "크림", 2, 0, BASE_TIME);
         Product soldOut = product(category, "크림", 3, 0, BASE_TIME);
@@ -176,7 +180,8 @@ class ProductRecommendedQueryIntegrationTest {
                 .setParameter("ids", List.of(soldOut.getId(), generalSoldOut.getId())).executeUpdate();
 
         assertThat(query(null, List.of(category.getId())))
-                .extracting(ProductSummaryProjection::productId).containsExactly(valid.getId());
+                .extracting(ProductSummaryProjection::productId)
+                .containsExactly(soldOut.getId(), valid.getId(), generalSoldOut.getId());
     }
 
     @ParameterizedTest
@@ -286,6 +291,7 @@ class ProductRecommendedQueryIntegrationTest {
         String cursor = response(null, List.of(category.getId()), null).pagination().nextCursor();
         profile.createNextSourceVersion();
         profile.markCompleted(2L);
+        publishCompletedVersion(2L);
         assertInvalidCursor(cursor);
     }
 
@@ -302,6 +308,7 @@ class ProductRecommendedQueryIntegrationTest {
         assertThat(first.appliedSort()).isEqualTo(ProductSort.POPULAR);
         profile.createNextSourceVersion();
         profile.markCompleted(1L);
+        publishCompletedVersion(1L);
         assertInvalidCursor(first.pagination().nextCursor());
     }
 
@@ -420,5 +427,14 @@ class ProductRecommendedQueryIntegrationTest {
         assertThatThrownBy(() -> response(null, List.of(category.getId()), cursor))
                 .isInstanceOfSatisfying(ProductException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_CURSOR));
+    }
+
+    private void publishCompletedVersion(long version) {
+        eventPublisher.publishEvent(new RecommendationAnalysisCompletedEvent(recipient.getId(), version));
+        entityManager.flush();
+        committedFixtures = true;
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
     }
 }

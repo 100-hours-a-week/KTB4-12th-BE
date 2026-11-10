@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.gift.gift.domain.auth.service.EmailVerificationService;
 import com.gift.gift.domain.user.dto.request.SignupRequest;
 import com.gift.gift.domain.user.dto.request.SignupTermConsentRequest;
 import com.gift.gift.domain.user.dto.response.SignupResponse;
@@ -28,6 +29,7 @@ public class SignupService {
     private final UserRepository userRepository;
     private final TermRepository termRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailVerificationService emailVerificationService;
     private final SignupTransactionService transactionService;
 
     public SignupResponse signup(SignupRequest request) {
@@ -57,6 +59,11 @@ public class SignupService {
         if (userRepository.existsByEmail(request.email())) {
             throw new UserException(UserErrorCode.EMAIL_ALREADY_IN_USE);
         }
+
+        emailVerificationService.consumeRegistrationToken(
+                request.email(),
+                request.emailVerificationToken()
+        );
 
         String passwordHash = passwordEncoder.encode(request.password());
 

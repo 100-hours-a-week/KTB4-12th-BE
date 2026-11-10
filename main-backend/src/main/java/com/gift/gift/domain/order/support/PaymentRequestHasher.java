@@ -14,7 +14,6 @@ import com.gift.gift.domain.order.dto.request.PaymentCreateRequest;
 public class PaymentRequestHasher {
 
     public String hash(PaymentCreateRequest request) {
-
         Objects.requireNonNull(request, "결제 요청은 null일 수 없습니다.");
 
         String source = "v1"
@@ -23,6 +22,10 @@ public class PaymentRequestHasher {
                 + "|quantity=" + request.quantity()
                 + "|expectedUnitPrice=" + request.expectedUnitPrice();
 
+        if (request.couponMultiplier() != null) {
+            source += "|couponMultiplier=" + request.couponMultiplier();
+        }
+
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
@@ -30,7 +33,10 @@ public class PaymentRequestHasher {
                     digest.digest(source.getBytes(StandardCharsets.UTF_8))
             );
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 해시 알고리즘을 사용할 수 없습니다.", exception);
+            throw new IllegalStateException(
+                    "SHA-256 해시 알고리즘을 사용할 수 없습니다.",
+                    exception
+            );
         }
     }
 }

@@ -88,7 +88,6 @@ class ProfileCallbackIntegrationTest {
         RecipientProfile profile = new RecipientProfile(user);
         profile.createNextSourceVersion();
         profile.markPending(PENDING_AT);
-        profile.increaseRetryCount();
 
         profileRepository.saveAndFlush(profile);
 
@@ -162,7 +161,6 @@ class ProfileCallbackIntegrationTest {
                 .isEqualTo(RecipientProfileStatus.COMPLETED);
         assertThat(profile.getAnalyzedSourceVersion()).isEqualTo(1);
         assertThat(profile.getPendingSince()).isNull();
-        assertThat(profile.getRetryCount()).isZero();
     }
 
     @Test
@@ -274,7 +272,6 @@ class ProfileCallbackIntegrationTest {
         assertThat(profile.getProfileStatus()).isEqualTo(RecipientProfileStatus.COMPLETED);
         assertThat(profile.getAnalyzedSourceVersion()).isEqualTo(1);
         assertThat(profile.getPendingSince()).isNull();
-        assertThat(profile.getRetryCount()).isZero();
     }
 
     @Test
@@ -293,7 +290,6 @@ class ProfileCallbackIntegrationTest {
                 .isEqualTo(RecipientProfileStatus.COMPLETED);
         assertThat(profile.getAnalyzedSourceVersion()).isEqualTo(1);
         assertThat(profile.getPendingSince()).isNull();
-        assertThat(profile.getRetryCount()).isZero();
     }
 
     @Test

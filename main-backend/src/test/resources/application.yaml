@@ -3,8 +3,19 @@
 # (src/test/resources의 application.yaml은 메인 파일을 파일 단위로 대체하므로
 #  datasource 등 나머지 설정도 모두 여기에 있어야 한다.)
 spring:
+  rabbitmq:
+    dynamic: false
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    connection-timeout: 3s
+    requested-heartbeat: 20s
+
   application:
     name: gift
+
+  mail:
+    host: localhost
+    port: 1025
 
   data:
     elasticsearch:
@@ -46,6 +57,12 @@ storage:
 
 management:
   health:
+    rabbit:
+      enabled: false
+    mail:
+      enabled: false
+    redis:
+      enabled: false
     elasticsearch:
       enabled: ${app.product-search.enabled:false}
   endpoints:
@@ -64,6 +81,26 @@ logging:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
 
 app:
+  redis:
+    auth:
+      host: ${REDIS_TEST_HOST:localhost}
+      port: ${REDIS_TEST_PORT:6379}
+      password: ${REDIS_TEST_PASSWORD:}
+      connect-timeout: 2s
+      command-timeout: 2s
+
+    product:
+      host: ${REDIS_TEST_HOST:localhost}
+      port: ${REDIS_TEST_PORT:6379}
+      password: ${REDIS_TEST_PASSWORD:}
+      connect-timeout: 2s
+      command-timeout: 2s
+      ai-recommended-cache:
+        ttl: 30m
+
+  email:
+    from-address: no-reply@example.com
+
   product-search:
     enabled: ${PRODUCT_SEARCH_ENABLED:false}
     index-name: ${PRODUCT_SEARCH_INDEX:gift-products-local-v1}
@@ -85,7 +122,6 @@ app:
     quiet-period: 1h
     maximum-window: 6h
     batch-size: 100
-    recovery-batch-size: 50
     dispatch-interval: 1h
 
   payment:

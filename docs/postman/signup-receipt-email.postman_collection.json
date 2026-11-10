@@ -1,0 +1,727 @@
+{
+  "info": {
+    "name": "Signup to Credit Receipt Email (Local)",
+    "description": "회원가입 이메일 중복 확인·이메일 인증부터 선물 결제와 결제 취소 영수증 확인까지 진행하는 로컬 통합 테스트 컬렉션입니다. 환경 `Signup Receipt Local`을 선택하고 senderEmail, recipientEmail, recipientPassword를 입력하세요. recipient 계정은 기존 활성 계정이어야 합니다. 먼저 발신자를 이메일 인증으로 가입하고, 두 계정을 친구로 연결한 뒤 결제합니다. 인증번호 수신과 결제 영수증 수신 단계는 실제 이메일을 확인해야 하므로 Collection Runner 대신 요청을 위에서부터 개별 실행하세요. 결제 및 취소 영수증은 발신자의 인증 이메일로 전송됩니다. 이메일 발송 실패는 현재 자동 재시도하지 않습니다. 로그인 전에 Redis 로그인 제한 스크립트의 숫자 인자 직렬화 오류를 수정한 백엔드를 실행해야 합니다.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00. 발신자 이메일 인증 및 회원가입",
+      "description": "이메일 인증번호를 받은 뒤 Environment 변수 `senderVerificationCode`에 직접 입력하고, 다음 요청을 수동으로 실행하세요.",
+      "item": [
+        {
+          "name": "1. 발신자 이메일 중복 확인 (가입 전)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/email-availability",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{senderEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "가입에 사용할 발신자 이메일이 사용 가능한지 확인합니다. `senderEmail`에 아직 가입하지 않은 실제 수신 가능 이메일을 설정하세요."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('이메일 확인 요청은 200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('가입 전 이메일은 사용 가능', () => pm.expect(data.available).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. 발신자 인증번호 발송",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/email-verification-codes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{senderEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "인증번호를 발신자 이메일로 보냅니다. 응답을 확인한 뒤 실제 메일에서 6자리 코드를 확인하고 Environment의 `senderVerificationCode`에 입력하세요. 입력 후 다음 검증 요청을 직접 실행해야 합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('인증번호 발송 요청은 200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. 발신자 인증번호 검증",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/email-verifications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{senderEmail}}\",\n  \"code\": \"{{senderVerificationCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "메일에서 확인한 코드를 Environment의 `senderVerificationCode`에 넣은 뒤 실행하세요. 성공하면 가입용 인증 토큰을 Environment에 자동 저장합니다. 인증번호 유효 시간은 5분입니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('인증번호 검증은 200 OK', () => pm.response.to.have.status(200));",
+                  "const token = pm.response.json().data.emailVerificationToken;",
+                  "pm.expect(token).to.be.a('string').and.not.empty;",
+                  "pm.environment.set('emailVerificationToken', token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. 회원가입 약관 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/auth/terms",
+            "description": "현재 약관을 조회하고 모든 약관에 동의한 `termConsents`를 Environment에 자동 저장합니다. 회원가입 요청 전에 실행하세요."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('약관 조회는 200 OK', () => pm.response.to.have.status(200));",
+                  "const terms = pm.response.json().data.terms;",
+                  "pm.expect(terms).to.be.an('array').that.is.not.empty;",
+                  "const consents = terms.map(term => ({ termId: term.termId, version: term.version, isAgreed: true }));",
+                  "pm.environment.set('termConsents', JSON.stringify(consents));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. 발신자 회원가입",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/signup",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{senderName}}\",\n  \"birth\": \"{{senderBirth}}\",\n  \"email\": \"{{senderEmail}}\",\n  \"emailVerificationToken\": \"{{emailVerificationToken}}\",\n  \"password\": \"{{senderPassword}}\",\n  \"termConsents\": {{termConsents}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "인증번호 검증에서 발급된 토큰과 약관 조회에서 저장한 동의 정보를 사용합니다. 성공하면 `senderUserId`를 Environment에 저장합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('회원가입은 201 Created', () => pm.response.to.have.status(201));",
+                  "const userId = pm.response.json().data.userId;",
+                  "pm.expect(userId).to.be.a('number');",
+                  "pm.environment.set('senderUserId', String(userId));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. 발신자 이메일 중복 확인 (가입 후)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/email-availability",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{senderEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "같은 이메일이 이미 가입된 상태인지 확인합니다. 이 단계에서는 `available`이 `false`여야 합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('중복 확인 요청은 200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('가입 후 이메일은 사용 불가', () => pm.expect(data.available).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. 발신자 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{senderEmail}}\",\n  \"password\": \"{{senderPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "방금 가입한 발신자 계정으로 로그인합니다. 토큰을 결제 요청에 사용합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('발신자 로그인은 200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.accessToken).to.be.a('string').and.not.empty;",
+                  "pm.environment.set('senderAccessToken', data.accessToken);",
+                  "pm.environment.set('senderUserId', String(data.user.userId));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01. 수신자 로그인 및 친구 연결",
+      "description": "기존 활성 계정인 수신자가 발신자의 친구 요청을 수락해야 선물을 보낼 수 있습니다.",
+      "item": [
+        {
+          "name": "8. 수신자 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{recipientEmail}}\",\n  \"password\": \"{{recipientPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "이미 가입된 활성 수신자 계정으로 로그인합니다. `recipientEmail`과 `recipientPassword`를 실제 계정 정보로 설정하세요. 로그인 응답에서 수신자 ID와 토큰을 저장합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('수신자 로그인은 200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.accessToken).to.be.a('string').and.not.empty;",
+                  "pm.expect(data.user.userId).to.be.a('number');",
+                  "pm.environment.set('recipientAccessToken', data.accessToken);",
+                  "pm.environment.set('recipientUserId', String(data.user.userId));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. 발신자가 수신자에게 친구 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/friend-requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverId\": {{recipientUserId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "새로 가입한 발신자와 기존 수신자를 친구로 연결합니다. 요청 ID를 저장해 다음 요청에서 수신자가 수락하도록 합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('친구 요청은 201 Created', () => pm.response.to.have.status(201));",
+                  "const requestId = pm.response.json().data.requestId;",
+                  "pm.expect(requestId).to.be.a('number');",
+                  "pm.environment.set('friendRequestId', String(requestId));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. 수신자가 친구 요청 수락",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{mainBaseUrl}}/friend-requests/{{friendRequestId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{recipientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "수신자 토큰으로 친구 요청을 수락합니다. 선물 사전 검증 전에 실행해야 합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('친구 요청 수락은 200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02. 선물 결제 및 영수증 확인",
+      "description": "결제와 취소 요청은 순서대로 진행하고, 각 요청 뒤 실제 메일함에서 해당 영수증을 확인하세요.",
+      "item": [
+        {
+          "name": "11. 결제 전 크레딧 잔액 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "결제 전 발신자의 크레딧 잔액을 저장합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('잔액 조회는 200 OK', () => pm.response.to.have.status(200));",
+                  "const balance = pm.response.json().data.balance;",
+                  "pm.expect(balance).to.be.a('number');",
+                  "pm.environment.set('balanceBeforePayment', String(balance));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. 선물 사전 검증 및 가격 저장",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/gifts/preflight",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "친구 관계, 상품, 재고를 확인하고 결제 요청에 쓸 단가와 총액을 저장합니다. `productId`는 판매 중인 상품 ID로 설정하세요."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('선물 사전 검증은 200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.product.productId).to.eql(Number(pm.environment.get('productId')));",
+                  "pm.expect(data.product.quantity).to.eql(Number(pm.environment.get('quantity')));",
+                  "pm.environment.set('expectedUnitPrice', String(data.product.unitPrice));",
+                  "pm.environment.set('paymentTotalAmount', String(data.product.totalPrice));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13. 모의 결제 승인 및 선물 완료",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentIdempotencyKey}}"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": {{productId}},\n  \"recipientUserId\": {{recipientUserId}},\n  \"quantity\": {{quantity}},\n  \"expectedUnitPrice\": {{expectedUnitPrice}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "모의 결제를 승인하고 크레딧 사용을 완료합니다. 테스트 시나리오 헤더는 보내지 않습니다. Payment Server는 헤더가 없으면 기본 승인(APPROVE)을 사용합니다. 성공 응답을 받은 뒤 발신자 이메일에서 **크레딧 사용 영수증**을 확인하고, 확인한 뒤에만 다음 결제 잔액 조회·취소 단계로 진행하세요. 영수증은 실제 카드 결제 영수증이 아닙니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('paymentIdempotencyKey', pm.variables.replaceIn('PAYMENT-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('결제 생성은 201 Created', () => pm.response.to.have.status(201));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.paymentStatus).to.eql('COMPLETED');",
+                  "pm.expect(data.giftStatus).to.eql('WAITING_FOR_ACCEPTANCE');",
+                  "pm.environment.set('orderId', data.orderId);",
+                  "pm.environment.set('giftId', String(data.giftId));",
+                  "pm.environment.set('paymentKey', data.paymentKey);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14. 결제 완료 상태 및 영수증 확인 지점",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "결제 완료 상태를 확인합니다. 이 요청 자체는 이메일 도착을 검증하지 않습니다. 발신자 이메일 받은 편지함에서 크레딧 사용 영수증을 확인한 뒤 취소를 진행하세요."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('결제 상태 조회는 200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.paymentStatus).to.eql('COMPLETED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15. 결제 후 크레딧 잔액 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "결제 후 잔액이 사전 검증 총액만큼 감소했는지 확인합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('결제 후 잔액 조회는 200 OK', () => pm.response.to.have.status(200));",
+                  "const balance = pm.response.json().data.balance;",
+                  "const expected = Number(pm.environment.get('balanceBeforePayment')) - Number(pm.environment.get('paymentTotalAmount'));",
+                  "pm.expect(balance).to.eql(expected);",
+                  "pm.environment.set('balanceAfterPayment', String(balance));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16. 결제 취소 및 크레딧 복구",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{cancellationIdempotencyKey}}"
+              }
+            ],
+            "url": "{{mainBaseUrl}}/payments/{{orderId}}/cancellations",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "사용자 취소를 요청해 결제를 취소하고 크레딧을 복구합니다. 성공 응답을 받은 뒤 발신자 이메일에서 **크레딧 복구 영수증**을 확인하세요. 취소 영수증도 실제 카드 취소 영수증이 아닙니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('cancellationIdempotencyKey', pm.variables.replaceIn('CANCEL-{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('결제 취소는 201 Created', () => pm.response.to.have.status(201));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.orderId).to.eql(pm.environment.get('orderId'));",
+                  "pm.expect(data.paymentStatus).to.eql('CANCELED');",
+                  "pm.expect(data.giftStatus).to.eql('CANCELED');",
+                  "pm.expect(data.canceledAt).to.be.a('string').and.not.empty;"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17. 취소 완료 상태 및 복구 영수증 확인 지점",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/payments/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "취소 완료 상태를 확인합니다. 발신자 이메일 받은 편지함에서 크레딧 복구 영수증도 확인하세요. 이메일이 도착하지 않으면 백엔드 로그의 `크레딧 영수증 이메일 발송에 실패했습니다`를 확인합니다. 현재 정책상 이메일 발송은 자동 재시도하지 않습니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('취소 상태 조회는 200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.expect(data.paymentStatus).to.eql('CANCELED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18. 취소 후 크레딧 잔액 복구 확인",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mainBaseUrl}}/credits/balance",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{senderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "취소 후 크레딧 잔액이 결제 전 잔액으로 복구됐는지 확인합니다."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('취소 후 잔액 조회는 200 OK', () => pm.response.to.have.status(200));",
+                  "const balance = pm.response.json().data.balance;",
+                  "pm.expect(balance).to.eql(Number(pm.environment.get('balanceBeforePayment')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

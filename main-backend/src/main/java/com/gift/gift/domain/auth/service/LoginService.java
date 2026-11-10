@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +21,7 @@ import com.gift.gift.global.security.AccessTokenProvider;
 import com.gift.gift.global.security.IssuedAccessToken;
 import com.gift.gift.global.security.RefreshTokenProvider;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class LoginService {
@@ -76,7 +78,12 @@ public class LoginService {
                 expiresAt
         );
 
-        dailyAttendanceCreditService.grant(user.getId());
+        try {
+            dailyAttendanceCreditService.grant(user.getId());
+        } catch (RuntimeException exception) {
+            // 인증 세션은 이미 저장됐다. 보상 장애는 첫 접속 출석 API에서 재시도한다.
+            log.error("로그인 후 출석 보상 지급에 실패했습니다.", exception);
+        }
 
         long expiresIn = Duration.between(accessToken.issuedAt(), accessToken.expiresAt()).toSeconds();
 

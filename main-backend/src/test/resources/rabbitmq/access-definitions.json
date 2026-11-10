@@ -1,0 +1,26 @@
+{
+  "vhosts": [
+    {
+      "name": "gift"
+    }
+  ],
+  "users": [
+    {
+      "name": "test",
+      "password_hash": "dGVzdNqGuYdpfzdCiNMTAVGVvhsQQtklkg1J+unbzNKJG68G",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": [
+        "administrator"
+      ]
+    }
+  ],
+  "permissions": [
+    {
+      "user": "test",
+      "vhost": "gift",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ]
+}

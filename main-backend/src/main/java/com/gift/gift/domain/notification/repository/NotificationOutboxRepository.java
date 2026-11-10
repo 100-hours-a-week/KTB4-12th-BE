@@ -49,6 +49,11 @@ public class NotificationOutboxRepository {
                 """, Long.class, batchSize);
     }
 
+    public long countByStatus(String status) {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM notification_outbox WHERE status = ?",
+                Long.class, status);
+    }
+
     public List<Job> lockDue(Long id) {
         return jdbcTemplate.query("""
                 SELECT * FROM notification_outbox

@@ -41,6 +41,7 @@ class PaymentReconciliationServiceTest {
     private PaymentLocalCompletionRetry localCompletionRetry;
     private PaymentAutoCancellationService autoCancellationService;
     private PaymentReconciliationTransactionService transactionService;
+    private PaymentCancellationReconciliationService cancellationReconciliationService;
     private PaymentReconciliationService service;
 
     @BeforeEach
@@ -52,6 +53,8 @@ class PaymentReconciliationServiceTest {
         localCompletionRetry = mock(PaymentLocalCompletionRetry.class);
         autoCancellationService = mock(PaymentAutoCancellationService.class);
         transactionService = mock(PaymentReconciliationTransactionService.class);
+        cancellationReconciliationService =
+                mock(PaymentCancellationReconciliationService.class);
 
         Clock clock = Clock.fixed(
                 Instant.parse("2026-10-17T12:00:00Z"),
@@ -65,6 +68,7 @@ class PaymentReconciliationServiceTest {
                 localCompletionRetry,
                 autoCancellationService,
                 transactionService,
+                cancellationReconciliationService,
                 clock,
                 100,
                 Duration.ofMinutes(1),
@@ -76,9 +80,13 @@ class PaymentReconciliationServiceTest {
     @DisplayName("10분 지난 미확정 주문은 최종 조회도 처리 중이면 운영 확인 대상으로 전환한다")
     void reconcile_marksExpiredUnknownOrderAsRequired() {
         Order order = order(PaymentApprovalResult.UNKNOWN, NOW.minusMinutes(10));
-        when(orderRepository.findReconciliationCandidates(
-                any(), any(), any(), any(), any(), any(), any(Pageable.class)
+        when(orderRepository.findDueUnknownPayments(
+                any(LocalDateTime.class), any(LocalDateTime.class), any(Pageable.class)
         )).thenReturn(List.of(order));
+
+        when(orderRepository.findStaleApprovedPayments(
+                any(), any(), any(), any(), any(LocalDateTime.class), any(Pageable.class)
+        )).thenReturn(List.of());
         when(paymentClient.getByOrderId(ORDER_ID)).thenReturn(pendingResponse());
 
         service.reconcilePendingPayments();
@@ -92,9 +100,15 @@ class PaymentReconciliationServiceTest {
     void reconcile_completesUnknownOrderWhenPaymentIsCompleted() {
         Order order = order(PaymentApprovalResult.UNKNOWN, NOW.minusMinutes(2));
         PaymentResponse response = completedResponse();
-        when(orderRepository.findReconciliationCandidates(
-                any(), any(), any(), any(), any(), any(), any(Pageable.class)
+        when(orderRepository.findDueUnknownPayments(
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                any(Pageable.class)
         )).thenReturn(List.of(order));
+
+        when(orderRepository.findStaleApprovedPayments(
+                any(), any(), any(), any(), any(LocalDateTime.class), any(Pageable.class)
+        )).thenReturn(List.of());
         when(paymentClient.getByOrderId(ORDER_ID)).thenReturn(response);
 
         service.reconcilePendingPayments();
@@ -113,8 +127,12 @@ class PaymentReconciliationServiceTest {
     void reconcile_resumesApprovedOrderLocally() {
         Order order = order(PaymentApprovalResult.APPROVED, NOW.minusMinutes(2));
         when(order.getApprovedAt()).thenReturn(NOW.minusMinutes(2));
-        when(orderRepository.findReconciliationCandidates(
-                any(), any(), any(), any(), any(), any(), any(Pageable.class)
+        when(orderRepository.findDueUnknownPayments(
+                any(LocalDateTime.class), any(LocalDateTime.class), any(Pageable.class)
+        )).thenReturn(List.of());
+
+        when(orderRepository.findStaleApprovedPayments(
+                any(), any(), any(), any(), any(LocalDateTime.class), any(Pageable.class)
         )).thenReturn(List.of(order));
 
         service.reconcilePendingPayments();
@@ -128,8 +146,12 @@ class PaymentReconciliationServiceTest {
     void reconcile_autoCancelsExpiredApprovedOrder() {
         Order order = order(PaymentApprovalResult.APPROVED, NOW.minusMinutes(11));
         when(order.getApprovedAt()).thenReturn(NOW.minusMinutes(10));
-        when(orderRepository.findReconciliationCandidates(
-                any(), any(), any(), any(), any(), any(), any(Pageable.class)
+        when(orderRepository.findDueUnknownPayments(
+                any(LocalDateTime.class), any(LocalDateTime.class), any(Pageable.class)
+        )).thenReturn(List.of());
+
+        when(orderRepository.findStaleApprovedPayments(
+                any(), any(), any(), any(), any(LocalDateTime.class), any(Pageable.class)
         )).thenReturn(List.of(order));
 
         service.reconcilePendingPayments();
@@ -144,8 +166,12 @@ class PaymentReconciliationServiceTest {
         Order order = order(PaymentApprovalResult.APPROVED, NOW.minusMinutes(2));
         when(order.getFailureCode())
                 .thenReturn(OrderFailureCode.AUTO_CANCELLATION_PROCESSING);
-        when(orderRepository.findReconciliationCandidates(
-                any(), any(), any(), any(), any(), any(), any(Pageable.class)
+        when(orderRepository.findDueUnknownPayments(
+                any(LocalDateTime.class), any(LocalDateTime.class), any(Pageable.class)
+        )).thenReturn(List.of());
+
+        when(orderRepository.findStaleApprovedPayments(
+                any(), any(), any(), any(), any(LocalDateTime.class), any(Pageable.class)
         )).thenReturn(List.of(order));
 
         service.reconcilePendingPayments();

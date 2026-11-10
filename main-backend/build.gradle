@@ -19,6 +19,7 @@ repositories {
 }
 
 dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -27,6 +28,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
     implementation 'org.springframework.boot:spring-boot-starter-data-elasticsearch'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
     implementation 'net.javacrumbs.shedlock:shedlock-spring:7.10.1'
     implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:7.10.1'
@@ -36,6 +39,7 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-mysql'
+    implementation 'org.eclipse.angus:angus-mail'
 
     compileOnly 'org.projectlombok:lombok'
     runtimeOnly 'com.mysql:mysql-connector-j'
@@ -54,6 +58,7 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    systemProperty('spring.test.context.cache.maxSize', '8')
 
     // 테스트에서는 목 데이터(db/seed)를 제외하고
     // 스키마 마이그레이션만 적용한다.
@@ -73,4 +78,28 @@ sentry {
     org = 'seonjalal'
     projectName = 'ktb4-12th-be'
     authToken = sentryAuthToken
+}
+
+tasks.register('profilingRecovery', JavaExec) {
+    group = 'operations'
+    description = '프로파일링 BLOCKED 조회 및 수동 재개'
+
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.gift.gift.domain.recommendation.profiling.support.ProfilingRecoveryCommand'
+
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+tasks.register('outboxReplay', JavaExec) {
+    group = 'operations'
+    description = '리포트 DLQ 및 알림 FAILED 제한 재처리 (기본 dry-run)'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.gift.gift.domain.bugreport.messaging.OutboxReplayCommand'
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
 }

@@ -1,4 +1,16 @@
 spring:
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:127.0.0.1}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:}
+    password: ${SPRING_RABBITMQ_PASSWORD:}
+    virtual-host: ${SPRING_RABBITMQ_VIRTUAL_HOST:gift}
+    connection-timeout: 3s
+    requested-heartbeat: 20s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    dynamic: false
+
   application:
     name: gift
 
@@ -45,14 +57,77 @@ spring:
       repositories:
         enabled: false
 
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:false}
+          starttls:
+            enable: ${SMTP_STARTTLS_ENABLE:false}
+          connectiontimeout: ${SMTP_CONNECTION_TIMEOUT_MS:3000}
+          timeout: ${SMTP_READ_TIMEOUT_MS:5000}
+          writetimeout: ${SMTP_WRITE_TIMEOUT_MS:5000}
+
 storage:
   s3:
     region: ${AWS_REGION}
     bucket: ${PRODUCT_IMAGE_BUCKET}
 
 app:
+  rabbitmq:
+    management:
+      url: ${RABBITMQ_MANAGEMENT_URL:}
+      username: ${RABBITMQ_MANAGEMENT_USERNAME:}
+      password: ${RABBITMQ_MANAGEMENT_PASSWORD:}
+  report:
+    sheets:
+      enabled: ${REPORT_SHEETS_CONSUMER_ENABLED:false}
+    discord:
+      enabled: ${REPORT_DISCORD_CONSUMER_ENABLED:false}
+    mq:
+      enabled: ${REPORT_MQ_ENABLED:false}
+      batch-size: ${REPORT_MQ_BATCH_SIZE:10}
+  outbox:
+    enabled: ${OUTBOX_ENABLED:false}
+    rabbit:
+      exchange: ${OUTBOX_RABBIT_EXCHANGE:}
+      search-routing-key: ${OUTBOX_SEARCH_ROUTING_KEY:}
+    search-batch-size: ${OUTBOX_SEARCH_BATCH_SIZE:10}
+    confirm-timeout-ms: ${OUTBOX_CONFIRM_TIMEOUT_MS:5000}
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:1000}
+    cleanup-interval-ms: ${OUTBOX_CLEANUP_INTERVAL_MS:3600000}
+    lease-seconds: ${OUTBOX_LEASE_SECONDS:60}
+    max-failures: ${OUTBOX_MAX_FAILURES:10}
+    retry-base-seconds: ${OUTBOX_RETRY_BASE_SECONDS:2}
+    retry-max-seconds: ${OUTBOX_RETRY_MAX_SECONDS:300}
+  redis:
+    auth:
+      host: ${REDIS_AUTH_HOST:${REDIS_HOST:localhost}}
+      port: ${REDIS_AUTH_PORT:${REDIS_PORT:6379}}
+      password: ${REDIS_AUTH_PASSWORD:${REDIS_PASSWORD:}}
+      connect-timeout: ${REDIS_AUTH_CONNECT_TIMEOUT:2s}
+      command-timeout: ${REDIS_AUTH_COMMAND_TIMEOUT:2s}
+
+    product:
+      host: ${REDIS_PRODUCT_HOST:${REDIS_HOST:localhost}}
+      port: ${REDIS_PRODUCT_PORT:${REDIS_PORT:6379}}
+      password: ${REDIS_PRODUCT_PASSWORD:${REDIS_PASSWORD:}}
+      connect-timeout: ${REDIS_PRODUCT_CONNECT_TIMEOUT:2s}
+      command-timeout: ${REDIS_PRODUCT_COMMAND_TIMEOUT:2s}
+      ai-recommended-cache:
+        ttl: 30m
+
+      detail-cache:
+        ttl: ${PRODUCT_DETAIL_CACHE_TTL:2h}
+
   scheduling:
     enabled: ${SCHEDULING_ENABLED:true}
+  email:
+    from-address: ${SMTP_FROM_ADDRESS:no-reply@seonjalal.com}
 
   security:
     jwt:
@@ -96,6 +171,10 @@ app:
       max-connections: ${AI_CHAT_SSE_MAX_CONNECTIONS}
 
   ai-profile:
+    result-consumer:
+      enabled:
+        ${AI_PROFILE_RESULT_CONSUMER_ENABLED:false}
+    cleanup-enabled: ${AI_PROFILE_CLEANUP_ENABLED:false}
     scheduling-enabled: ${AI_PROFILE_SCHEDULING_ENABLED:false}
     base-url: ${AI_PROFILE_BASE_URL}
     service-token: ${PROFILING_SERVICE_TOKEN}
@@ -104,11 +183,24 @@ app:
     quiet-period: 60s
     maximum-window: 300s
     batch-size: ${AI_PROFILE_BATCH_SIZE:100}
-    recovery-batch-size: ${AI_PROFILE_RECOVERY_BATCH_SIZE:50}
     dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
-    dispatch-claim-timeout: ${AI_PROFILE_DISPATCH_CLAIM_TIMEOUT:2m}
+    amqp:
+      enabled: ${AI_PROFILE_AMQP_ENABLED:false}
+
+      confirm-timeout-seconds: 30
+
+      initial-group-size: ${AI_PROFILE_QUORUM_INITIAL_GROUP_SIZE:1}
 
   payment:
+    mq:
+      topology:
+        enabled: ${PAYMENT_MQ_TOPOLOGY_ENABLED:false}
+      recovery:
+        dispatch:
+          enabled: ${PAYMENT_RECOVERY_DISPATCH_ENABLED:false}
+          batch-size: ${PAYMENT_RECOVERY_DISPATCH_BATCH_SIZE:100}
+          lease-seconds: ${PAYMENT_RECOVERY_DISPATCH_LEASE_SECONDS:60}
+          poll-interval-ms: ${PAYMENT_RECOVERY_DISPATCH_POLL_INTERVAL_MS:5000}
     client:
       base-url: ${PAYMENT_SERVER_BASE_URL}
       api-key: ${PAYMENT_SERVER_API_KEY}
@@ -121,6 +213,10 @@ app:
       stale-age: ${PAYMENT_RECONCILIATION_STALE_AGE:1m}
       timeout: ${PAYMENT_RECONCILIATION_TIMEOUT:10m}
 
+  notification:
+    common-outbox:
+      enabled: ${NOTIFICATION_COMMON_OUTBOX_ENABLED:false}
+
   bug-report:
     webhook-url: ${DISCORD_WEBHOOK_URL:}
     google-sheets:
@@ -130,6 +226,9 @@ app:
 
 management:
   health:
+    # 활성화 OR 조건은 RabbitConnectionConfiguration에서 관리한다.
+    rabbit:
+      enabled: false
     elasticsearch:
       enabled: ${app.product-search.enabled:false}
   endpoints:

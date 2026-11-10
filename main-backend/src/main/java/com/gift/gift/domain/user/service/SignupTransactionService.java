@@ -1,6 +1,7 @@
 package com.gift.gift.domain.user.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
@@ -8,6 +9,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gift.gift.domain.coupon.service.CouponInitializationService;
 import com.gift.gift.domain.credit.service.SignupCreditService;
 import com.gift.gift.domain.recommendation.profiling.entity.RecipientProfile;
 import com.gift.gift.domain.recommendation.profiling.repository.RecipientProfileRepository;
@@ -29,16 +31,17 @@ public class SignupTransactionService {
     private final TermConsentRepository termConsentRepository;
     private final SignupCreditService signupCreditService;
     private final RecipientProfileRepository recipientProfileRepository;
+    private final CouponInitializationService couponInitializationService;
 
     @Transactional
     public User create(SignupRequest request, LocalDate birth, String passwordHash) {
-
         User user = new User(
                 request.email(),
                 passwordHash,
                 request.name(),
                 birth
         );
+        user.markEmailVerified(LocalDateTime.now());
 
         User savedUser = saveUser(user);
 
@@ -57,6 +60,7 @@ public class SignupTransactionService {
 
         termConsentRepository.saveAllAndFlush(consents);
         signupCreditService.grant(savedUser.getId());
+        couponInitializationService.initialize(savedUser.getId());
 
         return savedUser;
     }
@@ -76,24 +80,19 @@ public class SignupTransactionService {
     }
 
     private boolean isEmailUniqueViolation(Throwable exception) {
-
         Throwable current = exception;
 
         while (current != null) {
             if (current instanceof
                     org.hibernate.exception.ConstraintViolationException violation) {
-                String constraintName =
-                        violation.getConstraintName();
+                String constraintName = violation.getConstraintName();
 
                 if (constraintName == null) {
                     return false;
                 }
 
-                String normalizedName =
-                        constraintName.replace("`", "");
-
-                int separatorIndex =
-                        normalizedName.lastIndexOf('.');
+                String normalizedName = constraintName.replace("`", "");
+                int separatorIndex = normalizedName.lastIndexOf('.');
 
                 if (separatorIndex >= 0) {
                     normalizedName = normalizedName.substring(
@@ -101,10 +100,8 @@ public class SignupTransactionService {
                     );
                 }
 
-                return "uk_users_email"
-                        .equalsIgnoreCase(normalizedName)
-                        && violation.getSQLException()
-                        .getErrorCode() == 1062;
+                return "uk_users_email".equalsIgnoreCase(normalizedName)
+                        && violation.getSQLException().getErrorCode() == 1062;
             }
 
             current = current.getCause();
