@@ -1,0 +1,94 @@
+{
+  "policies": [
+    {
+      "vhost": "gift",
+      "name": "payment-receipt-email-retry",
+      "pattern": "^gift[.]receipt[.]email[.]q$",
+      "apply-to": "quorum_queues",
+      "priority": 100,
+      "definition": {
+        "dead-letter-exchange": "gift.receipt.email.dlx",
+        "dead-letter-strategy": "at-least-once",
+        "overflow": "reject-publish",
+        "delivery-limit": 3,
+        "delayed-retry-type": "failed",
+        "delayed-retry-min": 30000,
+        "delayed-retry-max": 300000
+      }
+    },
+    {
+      "vhost": "gift",
+      "name": "payment-approval-recovery-retry",
+      "pattern": "^gift[.]payment[.]approval[.]recovery[.]q$",
+      "apply-to": "quorum_queues",
+      "priority": 100,
+      "definition": {
+        "dead-letter-exchange": "gift.payment.approval.recovery.dlx",
+        "dead-letter-strategy": "at-least-once",
+        "overflow": "reject-publish",
+        "delivery-limit": 3,
+        "delayed-retry-type": "failed",
+        "delayed-retry-min": 30000,
+        "delayed-retry-max": 300000
+      }
+    },
+    {
+      "vhost": "gift",
+      "name": "payment-cancellation-recovery-retry",
+      "pattern": "^gift[.]payment[.]cancellation[.]recovery[.]q$",
+      "apply-to": "quorum_queues",
+      "priority": 100,
+      "definition": {
+        "dead-letter-exchange": "gift.payment.cancellation.recovery.dlx",
+        "dead-letter-strategy": "at-least-once",
+        "overflow": "reject-publish",
+        "delivery-limit": 3,
+        "delayed-retry-type": "failed",
+        "delayed-retry-min": 30000,
+        "delayed-retry-max": 300000
+      }
+    },
+    {
+      "vhost": "gift",
+      "name": "payment-roulette-retry",
+      "pattern": "^gift[.]roulette[.]q$",
+      "apply-to": "quorum_queues",
+      "priority": 100,
+      "definition": {
+        "dead-letter-exchange": "gift.roulette.dlx",
+        "dead-letter-strategy": "at-least-once",
+        "overflow": "reject-publish",
+        "delivery-limit": 3,
+        "delayed-retry-type": "failed",
+        "delayed-retry-min": 5000,
+        "delayed-retry-max": 60000
+      }
+    },
+    {
+      "vhost": "gift",
+      "name": "payment-coupon-restore-retry",
+      "pattern": "^gift[.]coupon[.]restore[.]q$",
+      "apply-to": "quorum_queues",
+      "priority": 100,
+      "definition": {
+        "dead-letter-exchange": "gift.coupon.restore.dlx",
+        "dead-letter-strategy": "at-least-once",
+        "overflow": "reject-publish",
+        "delivery-limit": 3,
+        "delayed-retry-type": "failed",
+        "delayed-retry-min": 5000,
+        "delayed-retry-max": 60000
+      }
+    },
+    {
+      "vhost": "gift",
+      "name": "payment-dead-letter-retention",
+      "pattern": "^gift[.](receipt[.]email|payment[.]approval[.]recovery|payment[.]cancellation[.]recovery|roulette|coupon[.]restore)[.]dlq$",
+      "apply-to": "quorum_queues",
+      "priority": 100,
+      "definition": {
+        "message-ttl": 2592000000
+      }
+    }
+  ]
+}

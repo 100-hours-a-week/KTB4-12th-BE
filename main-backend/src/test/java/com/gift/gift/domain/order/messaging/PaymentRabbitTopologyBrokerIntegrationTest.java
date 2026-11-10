@@ -1,5 +1,6 @@
 package com.gift.gift.domain.order.messaging;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -17,8 +18,12 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.web.client.RestClient;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.images.builder.ImageFromDockerfile;
+import org.testcontainers.utility.MountableFile;
+import tools.jackson.databind.JsonNode;
 
 import com.gift.gift.global.messaging.RabbitConnectionConfiguration;
 
@@ -44,18 +49,25 @@ class PaymentRabbitTopologyBrokerIntegrationTest {
     );
 
     @Test
-    @DisplayName("RabbitMQ 4.4에서 이벤트와 작업별 DLX 라우팅을 격리하고 부분 바인딩의 Confirm 동작을 확인한다")
+    @DisplayName("RabbitMQ 4.4에서 결제 Policy와 작업별 DLX 라우팅 및 Confirm 동작을 확인한다")
     void declaresAndRoutesPaymentTopology() {
-        try (var broker = new GenericContainer<>("rabbitmq:4.4.0-management")
-                .withEnv("RABBITMQ_DEFAULT_USER", "test")
-                .withEnv("RABBITMQ_DEFAULT_PASS", "test-password")
-                .withEnv("RABBITMQ_DEFAULT_VHOST", "gift")
+        try (var broker = new GenericContainer<>(new ImageFromDockerfile()
+                .withFileFromPath("Dockerfile", Path.of("../infrastructure/rabbitmq/Dockerfile"))
+                .withFileFromPath("rabbitmq.conf", Path.of("../infrastructure/rabbitmq/rabbitmq.conf"))
+                .withFileFromPath("report-definitions.json", Path.of("../infrastructure/rabbitmq/report-definitions.json"))
+                .withFileFromPath("profiling-definitions.json", Path.of("../infrastructure/rabbitmq/profiling-definitions.json"))
+                .withFileFromPath("payment-definitions.json", Path.of("../infrastructure/rabbitmq/payment-definitions.json")))
+                .withCopyFileToContainer(
+                        MountableFile.forClasspathResource("rabbitmq/access-definitions.json"),
+                        "/etc/rabbitmq/definitions/10-access.json"
+                )
                 .withExposedPorts(5672, 15672)
                 .waitingFor(Wait.forHttp("/api/overview")
                         .forPort(15672)
                         .withBasicCredentials("test", "test-password")
                         .withStartupTimeout(Duration.ofMinutes(2)))) {
             broker.start();
+            assertPaymentPolicies(broker);
 
             new ApplicationContextRunner()
                     .withConfiguration(AutoConfigurations.of(RabbitAutoConfiguration.class))
@@ -154,6 +166,100 @@ class PaymentRabbitTopologyBrokerIntegrationTest {
                         }
                     });
         }
+    }
+
+    private static void assertPaymentPolicies(GenericContainer<?> broker) {
+        JsonNode policies = RestClient.builder()
+                .defaultHeaders(headers -> headers.setBasicAuth("test", "test-password"))
+                .build()
+                .get()
+                .uri("http://" + broker.getHost() + ":" + broker.getMappedPort(15672) + "/api/policies/gift")
+                .retrieve()
+                .body(JsonNode.class);
+
+        assertThat(policies).isNotNull();
+
+        assertRetryPolicy(
+                policies,
+                "payment-receipt-email-retry",
+                "^gift[.]receipt[.]email[.]q$",
+                RECEIPT_DLX,
+                30_000,
+                300_000
+        );
+        assertRetryPolicy(
+                policies,
+                "payment-approval-recovery-retry",
+                "^gift[.]payment[.]approval[.]recovery[.]q$",
+                APPROVAL_RECOVERY_DLX,
+                30_000,
+                300_000
+        );
+        assertRetryPolicy(
+                policies,
+                "payment-cancellation-recovery-retry",
+                "^gift[.]payment[.]cancellation[.]recovery[.]q$",
+                CANCELLATION_RECOVERY_DLX,
+                30_000,
+                300_000
+        );
+        assertRetryPolicy(
+                policies,
+                "payment-roulette-retry",
+                "^gift[.]roulette[.]q$",
+                ROULETTE_DLX,
+                5_000,
+                60_000
+        );
+        assertRetryPolicy(
+                policies,
+                "payment-coupon-restore-retry",
+                "^gift[.]coupon[.]restore[.]q$",
+                COUPON_RESTORE_DLX,
+                5_000,
+                60_000
+        );
+
+        JsonNode retentionPolicy = findPolicy(policies, "payment-dead-letter-retention");
+        assertThat(retentionPolicy.path("pattern").asText()).isEqualTo(
+                "^gift[.](receipt[.]email|payment[.]approval[.]recovery|payment[.]cancellation[.]recovery|roulette|coupon[.]restore)[.]dlq$"
+        );
+        assertThat(retentionPolicy.path("apply-to").asText()).isEqualTo("quorum_queues");
+        assertThat(retentionPolicy.path("definition").path("message-ttl").asLong())
+                .isEqualTo(2_592_000_000L);
+        assertThat(retentionPolicy.path("definition").has("dead-letter-exchange")).isFalse();
+    }
+
+    private static void assertRetryPolicy(
+            JsonNode policies,
+            String name,
+            String pattern,
+            String deadLetterExchange,
+            long minimumDelay,
+            long maximumDelay
+    ) {
+        JsonNode policy = findPolicy(policies, name);
+        JsonNode definition = policy.path("definition");
+
+        assertThat(policy.path("pattern").asText()).isEqualTo(pattern);
+        assertThat(policy.path("apply-to").asText()).isEqualTo("quorum_queues");
+        assertThat(definition.path("dead-letter-exchange").asText()).isEqualTo(deadLetterExchange);
+        assertThat(definition.path("dead-letter-strategy").asText()).isEqualTo("at-least-once");
+        assertThat(definition.path("overflow").asText()).isEqualTo("reject-publish");
+        assertThat(definition.path("delivery-limit").asInt()).isEqualTo(3);
+        assertThat(definition.path("delayed-retry-type").asText()).isEqualTo("failed");
+        assertThat(definition.path("delayed-retry-min").asLong()).isEqualTo(minimumDelay);
+        assertThat(definition.path("delayed-retry-max").asLong()).isEqualTo(maximumDelay);
+        assertThat(definition.has("dead-letter-routing-key")).isFalse();
+    }
+
+    private static JsonNode findPolicy(JsonNode policies, String name) {
+        for (JsonNode policy : policies) {
+            if (name.equals(policy.path("name").asText())) {
+                return policy;
+            }
+        }
+        throw new AssertionError("RabbitMQ Policy를 찾을 수 없습니다: " + name);
     }
 
     private static void assertRouting(

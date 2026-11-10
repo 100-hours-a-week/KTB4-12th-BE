@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!rabbitmq.conf
+!report-definitions.json
+!profiling-definitions.json
+!payment-definitions.json

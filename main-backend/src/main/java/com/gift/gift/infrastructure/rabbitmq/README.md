@@ -1,0 +1,100 @@
+# 공통 RabbitMQ 이미지와 도메인 토폴로지
+
+관련: [BE #546](https://github.com/100-hours-a-week/KTB4-12th-BE/issues/546).
+
+RabbitMQ 4.4.0-management 기반 이미지가 시작할 때 `gift` vhost와 리포트 토폴로지를 가져온다.
+Python·curl·별도 시작 스크립트는 사용하지 않는다. 기본 이미지의 entrypoint와 CMD를 그대로 사용한다.
+
+프로파일링·리포트 등 여러 도메인이 함께 사용하는 공통 브로커다. 개인별 Dockerfile은 만들지 않는다.
+기본 hostname은 `gift-rabbitmq`, nodename은 `rabbit@gift-rabbitmq`이며 `RABBITMQ_HOSTNAME`으로 함께 변경한다.
+호스트에서 실행하는 앱은 `127.0.0.1`과 공개 포트를, 같은 Docker 네트워크의 앱은 서비스 이름 `rabbitmq`와 포트 `5672`를 사용한다.
+
+## 파일 역할
+
+- `Dockerfile`: 비밀정보가 없는 설정과 `*-definitions.json` 파일을 이미지에 복사한다.
+- `rabbitmq.conf`: `/etc/rabbitmq/definitions` 디렉터리를 부팅 시 import한다.
+- `report-definitions.json`: `gift` vhost, Topic Exchange 3개, Classic 큐 4개, binding 7개, policy 3개.
+- `profiling-definitions.json`: 결과 큐의 at-least-once DLX와 요청/결과 실패 큐의 reject-publish Policy. TTL은 설정하지 않는다.
+- `payment-definitions.json`: 결제 작업 큐 다섯 개의 DLX·재시도 Policy와 DLQ 30일 보관 Policy.
+- `access-definitions.example.json`: 계정·권한 Secret의 형식 예시다. 실제로 적용할 비밀번호 해시는 없다.
+- `.dockerignore`: 이미지 빌드 컨텍스트를 Dockerfile·설정·도메인 정의로 제한한다.
+
+리포트 큐는 `Report.discord`, `Report.sheets`, `Report.retry`, `Report.dlq`다.
+최초 `Report.created`는 두 처리 큐로 분배한다. 재시도는 채널별 routing key를 보존하여
+공용 대기 큐에서 30초 후 `report.events`로 돌아간다. DLQ 보관 기간은 7일이다.
+TTL/DLX/overflow는 policy이며 처리 큐의 크기 상한은 아직 설정하지 않았다.
+프로파일링의 Direct/Quorum 선언은 기존 전용 RabbitAdmin이 담당한다.
+프로파일링 큐는 `profiling.request`, `profiling.result`, `profiling.request.failed`, `profiling.result.failed`다.
+결과 Consumer는 [PR3 구현 기록](../../docs/ai-profiling-result-listener.md)을 따른다.
+요청 큐의 DLX·AI ACK 정책은 이 이미지에서 정하지 않는다.
+
+이미지는 `rabbitmq_prometheus`도 활성화한다. 메트릭 포트 15692는 로컬 Compose에서 loopback으로만 공개한다.
+수집·로컬 경보는 [프로파일링 관측 문서](../../docs/ai-profiling-observability.md)를 따른다.
+
+## 최초 실행
+
+1. 예시를 저장소 밖의 비공개 위치로 복사하고, `password_hash`를 실제 RabbitMQ salted SHA-256 해시로
+   바꾼다. 계정 이름은 배포 환경에 맞게 설정하되 `permissions.user`도 일치시킨다.
+   RabbitMQ의 `rabbitmqctl hash_password` 또는 공식 관리 도구로 해시를 생성한다.
+   실제 비밀번호와 해시는 커밋·이미지 빌드 인자로 전달하지 않는다.
+2. `RABBITMQ_ACCESS_DEFINITIONS_FILE`에 완성된 Secret JSON의 절대 경로를 설정한다.
+   Compose가 이를 `/etc/rabbitmq/definitions/10-access.json`에 읽기 전용으로 마운트한다.
+   컨테이너의 RabbitMQ 사용자가 파일을 읽을 수 있어야 한다. 예시의 administrator 계정은
+   개발 초기화용이며 운영에서는 서비스 권한과 관리 권한을 분리하여 준비한다.
+3. 다음 명령을 실행한다.
+
+```bash
+docker compose -f compose.rabbitmq.yaml up -d --build --wait
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_queues -p gift name type durable
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_bindings -p gift
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_users
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_policies -p gift
+docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl list_feature_flags
+```
+
+부팅 import를 사용하면 빈 노드의 기본 사용자 자동 생성에 의존할 수 없다.
+기존 Compose의 `RABBITMQ_USERNAME/PASSWORD/VHOST` 대신 Secret 정의를 사용한다.
+JSON은 환경변수를 치환하지 않는다. 토폴로지 vhost는 `gift`로 고정되어 있다.
+BE의 `SPRING_RABBITMQ_VIRTUAL_HOST=gift`와 계정·비밀번호를 Secret 정의에 맞춘다.
+Management API는 공통 `RABBITMQ_MANAGEMENT_URL/USERNAME/PASSWORD`로 설정한다.
+BE의 AMQP/Management 계정 설정은 브로커에 사용자를 생성하지 않는다.
+
+## 기존 환경 전환과 업데이트
+
+- 기존 `profiling` vhost의 큐·메시지를 `gift`로 자동 이동하지 않는다. 처리 중 작업을 drain하거나
+  별도 이관 계획을 적용한 뒤 producer/consumer의 vhost를 함께 전환한다. 기존 vhost·볼륨은 삭제하지 않는다.
+- 기존 볼륨을 재사용하는 환경은 **재기동 전에** `.env` 또는 실행 쉘에 `RABBITMQ_HOSTNAME=profiling-rabbitmq`를 지정한다.
+  기존 hostname·nodename을 유지해야 하며, 새 기본값으로 재기동하면 기존 데이터 경로를 인식하지 못할 수 있다.
+  Compose 프로젝트 이름과 데이터 볼륨 이름은 유지한다. 이름 정리를 위해 볼륨을 삭제하거나 `down -v`를 실행하지 않는다.
+  신규 설치는 별도 지정 없이 공통 기본 이름을 사용한다. 기존 메시지를 새 노드로 자동 이관하지 않는다.
+- 새 브로커는 이미지의 Definitions를 부팅 import한다. **기존 브로커의 Policy는 부팅 import만으로 갱신된다고 가정하지 않는다.**
+  결제 Policy를 바꿀 때는 Management API 또는 rabbitmqadmin으로 정책을 갱신한 뒤, 큐에 적용된 정책과 DLX binding을 확인한다.
+  `stream_queue` 기능 플래그가 활성화됐는지도 확인하고 Consumer를 켠다.
+- import는 누락된 기존 리소스를 자동 삭제하지 않는다. 큐 타입 같은 불변 속성 충돌도 자동 마이그레이션하지 않는다.
+  앱의 `ReportTopologyPreflight`가 실제 큐·binding·policy를 DB 선점 전에 확인한다.
+- Compose healthcheck의 ping은 토폴로지·권한 검증이 아니다. 앱 preflight 통과를 별도로 확인한다.
+- 개발 CI는 외부 SSM reconcile 문서를 호출한다. 이 이미지 빌드·배포와 Secret 마운트를 해당 인프라에도
+  연결해야 실제 개발 서버에 반영된다. 이 저장소 변경만으로 원격 배포가 완료되는 것은 아니다.
+
+리포트 API는 JSON 접수 계약을 사용한다. Discord·Sheets Consumer는 각각 기본 OFF이며, 토폴로지·두 채널 전달·복구 준비 전에는 `REPORT_MQ_ENABLED=false`를 유지한다. 활성화 조건과 실패 계약은 [리포트 Consumer 구현·검증 기록](https://app.notion.com/p/412ce59041ef81b39559d8079c7a4d0f)를 따른다.
+`OUTBOX_ENABLED`와 `AI_PROFILE_AMQP_ENABLED`도 기본 false이며 기존 알림 DB Worker 경로는 그대로다.
+`AI_PROFILE_RESULT_CONSUMER_ENABLED`도 기본 false다. PR4의 복구·운영 제어 준비 전에는 테스트에서만 활성화한다.
+
+## 검증
+
+`ReportMqBrokerIntegrationTest`는 실제 Dockerfile을 빌드하고 테스트 전용 계정 정의를 런타임에 주입한다.
+빈 브로커의 자동 import, 인증, 두 큐 분배, 30초 복귀, DLQ, binding 누락, 부분 reject·return을 검증한다.
+다른 도메인의 Direct/Quorum 리소스를 선언한 뒤 재import해 보존 여부도 확인한다.
+
+`PaymentRabbitTopologyBrokerIntegrationTest`는 Dockerfile에서 결제 Policy를 가져온 RabbitMQ 4.4 브로커를 사용해
+정책 값, 큐 유형, 결제 이벤트 라우팅을 함께 확인한다.
+
+```bash
+./gradlew :main-backend:test --tests '*ReportMqBrokerIntegrationTest'
+./gradlew :main-backend:test --tests '*ProfilingResultBrokerIntegrationTest'
+./gradlew :main-backend:test --tests 'com.gift.gift.domain.order.messaging.PaymentRabbitTopologyBrokerIntegrationTest'
+```
+
+공식 근거: [부팅 시 정의 import](https://www.rabbitmq.com/docs/definitions),
+[초기 사용자·권한](https://www.rabbitmq.com/docs/access-control),
+[Feature Flags](https://www.rabbitmq.com/docs/feature-flags).
