@@ -422,6 +422,39 @@ class ProfilingResultServiceIntegrationTest {
         assertThat(output).doesNotContain("PROFILING_RESULT_DECISION");
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("실제 트랜잭션의 커밋 후 오류만 커밋 관측자에 전달하고 롤백은 전달하지 않는다")
+    void commitObserverReflectsActualTransactionCompletion(boolean afterCommit) {
+        var committed = new java.util.concurrent.atomic.AtomicReference<Result>();
+        var before = snapshot();
+        doAnswer(invocation -> {
+            Object answer = callDefault(invocation);
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void beforeCommit(boolean readOnly) {
+                    if (!afterCommit) throw new IllegalStateException("before commit");
+                }
+
+                @Override
+                public void afterCommit() {
+                    if (afterCommit) throw new IllegalStateException("after commit");
+                }
+            });
+            return answer;
+        }).when(jobs).flush();
+        assertThatThrownBy(() -> service.saveWithCommitObserver(success(8, reversed()), committed::set))
+                .isInstanceOf(IllegalStateException.class);
+        if (afterCommit) {
+            assertThat(committed.get()).isNotNull();
+            assertThat(committed.get().decision()).isEqualTo(Decision.RECORDED);
+            assertThat(job(8)).containsEntry("result_status", "COMPLETED");
+        } else {
+            assertThat(committed.get()).isNull();
+            assertThat(snapshot()).isEqualTo(before);
+        }
+    }
+
     @Test
     @DisplayName("커밋 후 Redis 장애는 DB 커밋을 실패로 바꾸거나 동일 결과를 다시 저장하지 않는다")
     void cacheFailureDoesNotUndoCommittedResult() {

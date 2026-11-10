@@ -93,7 +93,8 @@ import static org.mockito.Mockito.*;
 
 @SpringBootTest(properties = {
         "app.ai-profile.amqp.enabled=true", "app.ai-profile.result-consumer.enabled=true",
-        "app.ai-profile.scheduling-enabled=false", "app.scheduling.enabled=false", "app.outbox.enabled=false"
+        "app.ai-profile.scheduling-enabled=false", "app.scheduling.enabled=false", "app.outbox.enabled=false",
+        "spring.datasource.hikari.connection-timeout=1000"
 })
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class ProfilingResultBrokerIntegrationTest {
@@ -304,7 +305,7 @@ class ProfilingResultBrokerIntegrationTest {
         Thread.sleep(300);
         assertThat(consumers()).isZero();
         assertThat(ready(RESULT_QUEUE)).isEqualTo(1);
-        verify(jobs, times(1)).flush();
+        verify(jobs, times(2)).flush();
         reset(jobs);
         newListener().start();
         await("복구 인스턴스 결과 반영", () -> "COMPLETED".equals(job().get("result_status")), 10);
@@ -421,8 +422,9 @@ class ProfilingResultBrokerIntegrationTest {
                 assertThat(candidate.isHalted()).isFalse();
                 preflight().verify();
             } else {
-                assertThatThrownBy(candidate::start).isInstanceOf(RuntimeException.class);
-                assertThat(candidate.isHalted()).isTrue();
+                candidate.start();
+                await("비동기 구성 검증 실패 중지", candidate::isHalted, 10);
+                assertThat(candidate.status()).contains("reason=CONFIGURATION");
                 assertThat(consumers()).isZero();
             }
         } finally {
@@ -435,9 +437,60 @@ class ProfilingResultBrokerIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("실제 MySQL 연결 차단 중 결과를 보존하고 DB 복구 후 같은 Consumer가 자동 재개한다")
+    void recoversAfterActualDatabaseOutage() throws Exception {
+        var before = job();
+        try {
+            com.gift.gift.support.MySqlTestContainerInitializer.setOffline(true);
+            send(success());
+            await("실제 DB 장애 중지", () -> listener.status().contains("reason=TRANSIENT_DB"), 20);
+            await("DB 장애 메시지 보존", () -> consumers() == 0 && ready(RESULT_QUEUE) == 1, 10);
+            assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
+        } finally {
+            com.gift.gift.support.MySqlTestContainerInitializer.setOffline(false);
+        }
+        assertThat(job()).isEqualTo(before);
+        await("DB 회복 후 자동 재개", () -> "COMPLETED".equals(job().get("result_status")), 100);
+        await("복구 결과 ACK", () -> ready(RESULT_QUEUE) == 0 && consumers() == 1, 10);
+        assertThat(recommendationCount()).isEqualTo(1);
+        assertThat(job().get("result_fingerprint")).isNotNull();
+        assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
+    }
+
+    @Test
+    @DisplayName("실제 RabbitMQ 중단·재시작 후 같은 Consumer가 재구독하고 결과를 한 번 반영한다")
+    void recoversAfterActualBrokerRestart() throws Exception {
+        try {
+            var stopped = BROKER.execInContainer("rabbitmqctl", "stop_app");
+            assertThat(stopped.getExitCode()).as("RabbitMQ 실제 중단").isZero();
+            await("브로커 장애 중지", listener::isHalted, 20);
+            assertThat(listener.status()).contains("reason=BROKER");
+            assertThat(job()).containsEntry("result_status", "WAITING");
+        } finally {
+            var started = BROKER.execInContainer("rabbitmqctl", "start_app");
+            assertThat(started.getExitCode()).as("RabbitMQ 복구").isZero();
+            await("RabbitMQ 관리 API·Quorum 복구", () -> {
+                try {
+                    preflight().verify();
+                    return true;
+                } catch (RuntimeException notReady) {
+                    return false;
+                }
+            }, 20);
+        }
+        admin.initialize();
+        send(success());
+        await("브로커 복구 후 자동 처리", () -> "COMPLETED".equals(job().get("result_status")), 100);
+        await("브로커 복구 결과 ACK", () -> ready(RESULT_QUEUE) == 0 && consumers() == 1, 10);
+        assertThat(recommendationCount()).isEqualTo(1);
+        assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
+    }
+
     private ProfilingResultListener newListener() {
         var next = configuration.profilingResultListener(connection, admin, managementClient, management,
-                reader, service, events);
+                reader, service, events, jdbc.getDataSource(),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), java.time.Clock.systemUTC());
         multicaster.addApplicationListener(next);
         extraListeners.add(next);
         return next;
