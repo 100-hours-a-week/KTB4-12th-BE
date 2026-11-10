@@ -186,19 +186,32 @@ public class PaymentReconciliationService {
                     return;
                 }
 
-                approvalService.record(
-                        order.getId(),
-                        token,
-                        response.paymentKey(),
-                        response.transactionKey(),
-                        response.approvedAt()
-                );
+                if (token == null) {
+                    approvalService.record(
+                            order.getId(),
+                            response.paymentKey(),
+                            response.transactionKey(),
+                            response.approvedAt()
+                    );
+                } else {
+                    approvalService.record(
+                            order.getId(),
+                            token,
+                            response.paymentKey(),
+                            response.transactionKey(),
+                            response.approvedAt()
+                    );
+                }
                 completeLocal(order, token);
                 return;
             }
 
             if (response.status() == PaymentServerStatus.DECLINED) {
-                approvalService.decline(order.getId(), token);
+                if (token == null) {
+                    approvalService.decline(order.getId());
+                } else {
+                    approvalService.decline(order.getId(), token);
+                }
                 return;
             }
 
@@ -265,12 +278,15 @@ public class PaymentReconciliationService {
             OrderFailureCode failureCode,
             String token
     ) {
-        transactionService.scheduleNext(
-                order.getId(),
-                failureCode,
-                now.plus(nextDelay(order.getReconciliationAttempts())),
-                token
-        );
+        LocalDateTime nextAt =
+                now.plus(nextDelay(order.getReconciliationAttempts()));
+        if (token == null) {
+            transactionService.scheduleNext(order.getId(), failureCode, nextAt);
+        } else {
+            transactionService.scheduleNext(
+                    order.getId(), failureCode, nextAt, token
+            );
+        }
     }
 
     private Duration nextDelay(int completedReconciliationAttempts) {

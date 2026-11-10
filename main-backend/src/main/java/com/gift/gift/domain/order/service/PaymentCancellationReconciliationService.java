@@ -331,7 +331,7 @@ public class PaymentCancellationReconciliationService {
 
             if (response.cancellationStatus()
                     == PaymentServerCancellationStatus.DECLINED) {
-                transactionService.markDeclined(cancellation.getId(), token);
+                markDeclined(cancellation.getId(), token);
                 return;
             }
 
@@ -346,7 +346,7 @@ public class PaymentCancellationReconciliationService {
         } catch (PaymentClientException exception) {
             if (exception.failure()
                     == PaymentClientFailure.CANCELLATION_DECLINED) {
-                transactionService.markDeclined(cancellation.getId(), token);
+                markDeclined(cancellation.getId(), token);
                 return;
             }
 
@@ -377,13 +377,22 @@ public class PaymentCancellationReconciliationService {
             return;
         }
 
-        transactionService.recordPaymentServerCancellationResult(
-                cancellation.getId(),
-                token,
-                response.transactionKey(),
-                response.cancelAmount(),
-                response.canceledAt()
-        );
+        if (token == null) {
+            transactionService.recordPaymentServerCancellationResult(
+                    cancellation.getId(),
+                    response.transactionKey(),
+                    response.cancelAmount(),
+                    response.canceledAt()
+            );
+        } else {
+            transactionService.recordPaymentServerCancellationResult(
+                    cancellation.getId(),
+                    token,
+                    response.transactionKey(),
+                    response.cancelAmount(),
+                    response.canceledAt()
+            );
+        }
 
         PaymentCancellation saved = cancellationRepository
                 .findById(cancellation.getId())
@@ -509,12 +518,18 @@ public class PaymentCancellationReconciliationService {
             PaymentCancellationFailureCode failureCode,
             String token
     ) {
-        transactionService.scheduleNext(
-                cancellation.getId(),
-                failureCode,
-                now.plus(nextDelay(cancellation.getReconciliationAttempts())),
-                token
+        LocalDateTime nextAt = now.plus(
+                nextDelay(cancellation.getReconciliationAttempts())
         );
+        if (token == null) {
+            transactionService.scheduleNext(
+                    cancellation.getId(), failureCode, nextAt
+            );
+        } else {
+            transactionService.scheduleNext(
+                    cancellation.getId(), failureCode, nextAt, token
+            );
+        }
     }
 
     private Duration nextDelay(int completedReconciliationAttempts) {
@@ -530,11 +545,22 @@ public class PaymentCancellationReconciliationService {
             String reason,
             String token
     ) {
-        transactionService.markReconciliationRequired(
-                cancellation.getId(),
-                token
-        );
+        if (token == null) {
+            transactionService.markReconciliationRequired(cancellation.getId());
+        } else {
+            transactionService.markReconciliationRequired(
+                    cancellation.getId(), token
+            );
+        }
         log.error("{} cancellationId={}", reason, cancellation.getId());
+    }
+
+    private void markDeclined(Long cancellationId, String token) {
+        if (token == null) {
+            transactionService.markDeclined(cancellationId);
+        } else {
+            transactionService.markDeclined(cancellationId, token);
+        }
     }
 
     private boolean hasText(String value) {
