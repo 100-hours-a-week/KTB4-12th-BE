@@ -111,6 +111,11 @@ app:
       password: ${REDIS_AUTH_PASSWORD:${REDIS_PASSWORD:}}
       connect-timeout: ${REDIS_AUTH_CONNECT_TIMEOUT:2s}
       command-timeout: ${REDIS_AUTH_COMMAND_TIMEOUT:2s}
+      sentinel:
+        enabled: ${REDIS_AUTH_SENTINEL_ENABLED:false}
+        master: ${REDIS_AUTH_SENTINEL_MASTER:}
+        nodes: ${REDIS_AUTH_SENTINEL_NODES:}
+        password: ${REDIS_AUTH_SENTINEL_PASSWORD:}
 
     product:
       host: ${REDIS_PRODUCT_HOST:${REDIS_HOST:localhost}}
@@ -118,6 +123,11 @@ app:
       password: ${REDIS_PRODUCT_PASSWORD:${REDIS_PASSWORD:}}
       connect-timeout: ${REDIS_PRODUCT_CONNECT_TIMEOUT:2s}
       command-timeout: ${REDIS_PRODUCT_COMMAND_TIMEOUT:2s}
+      sentinel:
+        enabled: ${REDIS_PRODUCT_SENTINEL_ENABLED:false}
+        master: ${REDIS_PRODUCT_SENTINEL_MASTER:}
+        nodes: ${REDIS_PRODUCT_SENTINEL_NODES:}
+        password: ${REDIS_PRODUCT_SENTINEL_PASSWORD:}
       ai-recommended-cache:
         ttl: 30m
 
