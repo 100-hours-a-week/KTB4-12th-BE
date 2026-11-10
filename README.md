@@ -54,6 +54,31 @@ docker build \
 Health Check 경로는 두 애플리케이션 모두 `/actuator/health`입니다. Payment Server는 외부에
 공개하지 않고 Main Backend가 접근할 수 있는 내부 네트워크에서 실행합니다.
 
+## Redis 연결 모드
+
+인증 Redis와 상품 Redis는 기본적으로 기존 Standalone 연결을 사용합니다.
+각 그룹의 `REDIS_AUTH_SENTINEL_ENABLED` 또는 `REDIS_PRODUCT_SENTINEL_ENABLED`를 `true`로 설정하면
+해당 그룹만 Sentinel 연결로 전환합니다. 필요한 변수는 `.env.example`을 참고합니다.
+
+- `*_SENTINEL_MASTER`: Sentinel에 등록된 Primary 이름. 인증 `redis-auth`, 상품 `redis-product`.
+- `*_SENTINEL_NODES`: `host:port`를 쉼표로 구분한 Sentinel 멤버 목록. URL이나 비밀번호를 넣지 않습니다.
+- `*_SENTINEL_PASSWORD`: Sentinel 접속 비밀번호. 데이터 노드용 `REDIS_AUTH_PASSWORD`·
+  `REDIS_PRODUCT_PASSWORD`와 구분하여 Secret으로 주입합니다.
+- Sentinel 모드에서는 고정 Redis `host/port`를 사용하지 않으며, 필수 설정 누락·잘못된 주소는 기동 시 거부합니다.
+- Sentinel 모드의 데이터 읽기·쓰기는 Primary를 사용합니다. Lettuce가 Sentinel 토폴로지를 추적하지만,
+  장애 감지·승격·재연결 동안 요청 실패가 발생할 수 있으며 실패한 업무 요청을 자동 재실행하지는 않습니다.
+- 배포 환경에서 Sentinel 멤버와 Sentinel이 알려주는 Redis 주소에 모두 접근할 수 있어야 합니다.
+  기존 Headless Service를 Primary 전용 주소로 사용하지 않습니다.
+
+설정 회귀 테스트는 외부 Redis 없이 실행합니다.
+
+```bash
+./gradlew :main-backend:test --tests com.gift.gift.infrastructure.redis.RedisConfigTest
+```
+
+이 테스트는 연결 모드·인증 분리·Bean 호환·입력 검증을 확인합니다. 실제 장애 전환 후 BE 재연결은
+격리된 Redis 환경에서 별도로 확인해야 합니다.
+
 ## 상품 검색 배포 설정
 
 현재 배포는 `PRODUCT_SEARCH_ENABLED=false`로 기존 MySQL 검색을 사용합니다.
