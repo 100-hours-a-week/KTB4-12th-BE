@@ -39,7 +39,8 @@ class ReportMqBrokerIntegrationTest {
             .withFileFromPath("Dockerfile", Path.of("../infrastructure/rabbitmq/Dockerfile"))
             .withFileFromPath("rabbitmq.conf", Path.of("../infrastructure/rabbitmq/rabbitmq.conf"))
             .withFileFromPath("report-definitions.json", Path.of("../infrastructure/rabbitmq/report-definitions.json"))
-            .withFileFromPath("profiling-definitions.json", Path.of("../infrastructure/rabbitmq/profiling-definitions.json")))
+            .withFileFromPath("profiling-definitions.json", Path.of("../infrastructure/rabbitmq/profiling-definitions.json"))
+            .withFileFromPath("payment-definitions.json", Path.of("../infrastructure/rabbitmq/payment-definitions.json")))
             .withCopyFileToContainer(MountableFile.forClasspathResource("rabbitmq/access-definitions.json"),
                     "/etc/rabbitmq/definitions/10-access.json")
             .withExposedPorts(5672, 15672)
