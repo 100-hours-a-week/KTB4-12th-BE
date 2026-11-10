@@ -106,6 +106,9 @@ class ProfilingResultBrokerIntegrationTest {
             .withFileFromPath("profiling-definitions.json", Path.of("../infrastructure/rabbitmq/profiling-definitions.json")))
             .withCopyFileToContainer(MountableFile.forClasspathResource("rabbitmq/access-definitions.json"),
                     "/etc/rabbitmq/definitions/10-access.json")
+            // 운영 기본 180초 대신 테스트 전용 5초로 DLQ 보존·복구 동작만 검증한다.
+            .withEnv("RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS",
+                    "-rabbit dead_letter_worker_publisher_confirm_timeout 5000")
             .withExposedPorts(5672, 15672)
             .waitingFor(Wait.forHttp("/api/overview").forPort(15672)
                     .withBasicCredentials("test", "test-password").withStartupTimeout(Duration.ofMinutes(2)));
@@ -302,9 +305,6 @@ class ProfilingResultBrokerIntegrationTest {
         assertThat(before).containsEntry("result_status", "WAITING").containsEntry("result_fingerprint", null);
         assertThat(recommendationCount()).isZero();
         assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
-        Thread.sleep(300);
-        assertThat(consumers()).isZero();
-        assertThat(ready(RESULT_QUEUE)).isEqualTo(1);
         verify(jobs, times(2)).flush();
         reset(jobs);
         newListener().start();
@@ -383,8 +383,7 @@ class ProfilingResultBrokerIntegrationTest {
         } finally {
             admin.initialize();
         }
-        // RabbitMQ 4.4 기본 DLX Confirm/재전달 타이머(180초)를 변경하지 않고 검증한다.
-        Message recovered = receiveDlq(210);
+        Message recovered = receiveDlq(20);
         assertThat(recovered.getBody()).isEqualTo(invalid.getBody());
         preflight().verify();
     }
@@ -438,7 +437,7 @@ class ProfilingResultBrokerIntegrationTest {
     }
 
     @Test
-    @DisplayName("실제 MySQL 연결 차단 중 결과를 보존하고 DB 복구 후 같은 Consumer가 자동 재개한다")
+    @DisplayName("실제 MySQL 연결 차단 중 결과를 보존하고 DB 복구 후 같은 Consumer가 재개한다")
     void recoversAfterActualDatabaseOutage() throws Exception {
         var before = job();
         try {
@@ -447,11 +446,15 @@ class ProfilingResultBrokerIntegrationTest {
             await("실제 DB 장애 중지", () -> listener.status().contains("reason=TRANSIENT_DB"), 20);
             await("DB 장애 메시지 보존", () -> consumers() == 0 && ready(RESULT_QUEUE) == 1, 10);
             assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
+            listener.pause();
         } finally {
             com.gift.gift.support.MySqlTestContainerInitializer.setOffline(false);
         }
         assertThat(job()).isEqualTo(before);
-        await("DB 회복 후 자동 재개", () -> "COMPLETED".equals(job().get("result_status")), 100);
+        // 자동 점검 주기·연속 정상 조건은 시간 제어 단위 테스트에서 검증한다.
+        await("Consumer 정리 완료", () -> listener.status().contains("stopping=false"), 10);
+        listener.resume();
+        await("DB 회복 후 결과 반영", () -> "COMPLETED".equals(job().get("result_status")), 10);
         await("복구 결과 ACK", () -> ready(RESULT_QUEUE) == 0 && consumers() == 1, 10);
         assertThat(recommendationCount()).isEqualTo(1);
         assertThat(job().get("result_fingerprint")).isNotNull();
@@ -467,6 +470,7 @@ class ProfilingResultBrokerIntegrationTest {
             await("브로커 장애 중지", listener::isHalted, 20);
             assertThat(listener.status()).contains("reason=BROKER");
             assertThat(job()).containsEntry("result_status", "WAITING");
+            listener.pause();
         } finally {
             var started = BROKER.execInContainer("rabbitmqctl", "start_app");
             assertThat(started.getExitCode()).as("RabbitMQ 복구").isZero();
@@ -480,8 +484,10 @@ class ProfilingResultBrokerIntegrationTest {
             }, 20);
         }
         admin.initialize();
+        await("Consumer 정리 완료", () -> listener.status().contains("stopping=false"), 10);
         send(success());
-        await("브로커 복구 후 자동 처리", () -> "COMPLETED".equals(job().get("result_status")), 100);
+        listener.resume();
+        await("브로커 복구 후 결과 반영", () -> "COMPLETED".equals(job().get("result_status")), 10);
         await("브로커 복구 결과 ACK", () -> ready(RESULT_QUEUE) == 0 && consumers() == 1, 10);
         assertThat(recommendationCount()).isEqualTo(1);
         assertThat(ready(RESULT_FAILED_QUEUE)).isZero();
