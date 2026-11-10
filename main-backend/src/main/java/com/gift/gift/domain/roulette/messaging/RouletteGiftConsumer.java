@@ -38,7 +38,7 @@ public class RouletteGiftConsumer implements ChannelAwareMessageListener {
                     deliveryTag,
                     exception.getClass().getSimpleName()
             );
-            channel.basicNack(deliveryTag, false, false);
+            channel.basicReject(deliveryTag, false);
             return;
         } catch (RuntimeException exception) {
             log.warn(
@@ -46,7 +46,7 @@ public class RouletteGiftConsumer implements ChannelAwareMessageListener {
                     deliveryTag,
                     exception.getClass().getSimpleName()
             );
-            channel.basicNack(deliveryTag, false, true);
+            channel.basicReject(deliveryTag, true);
             return;
         }
 
