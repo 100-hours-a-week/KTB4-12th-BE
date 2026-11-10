@@ -7,7 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
@@ -19,9 +19,9 @@ import com.gift.gift.global.messaging.RabbitPublisher;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@ConditionalOnProperty(
-        name = "app.payment.recovery.dispatch.enabled",
-        havingValue = "true"
+@ConditionalOnExpression(
+        "${app.payment.mq.topology.enabled:false} and "
+                + "${app.payment.recovery.dispatch.enabled:false}"
 )
 public class PaymentRecoveryDispatchService {
 
@@ -33,9 +33,11 @@ public class PaymentRecoveryDispatchService {
     @Scheduled(fixedDelayString = "${app.payment.recovery.dispatch.poll-interval-ms:5000}")
     public void dispatchReadyTasks() {
         List<DispatchJob> jobs;
+
         try {
             jobs = taskService.claimDue(
-                    properties.batchSize(), properties.leaseSeconds()
+                    properties.batchSize(),
+                    properties.leaseSeconds()
             );
         } catch (RuntimeException exception) {
             log.error(
@@ -47,12 +49,10 @@ public class PaymentRecoveryDispatchService {
         }
 
         for (DispatchJob job : jobs) {
-            CompletableFuture<RabbitPublisher.Result> attempt = publish(job);
             RabbitPublisher.Result result;
             try {
-                result = attempt.join();
+                result = publish(job).join();
             } catch (RuntimeException exception) {
-                // 발행이 브로커에 도달했는지 불명확하면 임대 만료로 회수한다.
                 log.warn(
                         "결제 복구 발행 결과가 불명확합니다. taskId={}, errorType={}",
                         job.id(),
@@ -61,10 +61,8 @@ public class PaymentRecoveryDispatchService {
                 continue;
             }
 
-            if (result.confirmed()) {
-                continue;
-            }
-            if ("ConfirmTimeout".equals(result.errorType())
+            if (result.confirmed()
+                    || "ConfirmTimeout".equals(result.errorType())
                     || "ConfirmUnknown".equals(result.errorType())) {
                 continue;
             }
@@ -72,7 +70,8 @@ public class PaymentRecoveryDispatchService {
             taskService.retryDispatch(job, result.errorType());
             log.warn(
                     "결제 복구 메시지 발행 실패: taskId={}, errorType={}",
-                    job.id(), result.errorType()
+                    job.id(),
+                    result.errorType()
             );
         }
     }
