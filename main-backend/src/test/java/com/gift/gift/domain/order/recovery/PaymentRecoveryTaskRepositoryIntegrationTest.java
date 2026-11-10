@@ -10,7 +10,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest(properties = "app.scheduling.enabled=false")
+@SpringBootTest(properties = {
+        "app.scheduling.enabled=false",
+        "app.payment.mq.topology.enabled=false",
+        "app.payment.recovery.dispatch.enabled=false"
+})
 class PaymentRecoveryTaskRepositoryIntegrationTest {
 
     @Autowired
@@ -19,68 +23,89 @@ class PaymentRecoveryTaskRepositoryIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    private long targetId;
     private long taskId;
 
     @AfterEach
     void cleanUp() {
-        if (taskId > 0) {
-            jdbc.update(
-                    "DELETE FROM payment_recovery_tasks WHERE id = ?",
-                    taskId
-            );
+        if (targetId > 0) {
+            jdbc.update("""
+                    DELETE FROM payment_recovery_tasks
+                    WHERE target_type = 'APPROVAL' AND target_id = ?
+                    """, targetId);
         }
     }
 
     @Test
-    @DisplayName("만료된 동기 토큰을 회수하고 이전 소유자의 쓰기를 거부한다")
-    void expiredSyncOwnerIsFenced() {
-        String original = repository.createSyncTask(
-                PaymentRecoveryTaskType.APPROVAL, 900001L
-        );
-        taskId = jdbc.queryForObject(
-                """
-                SELECT id FROM payment_recovery_tasks
-                WHERE target_type = 'APPROVAL' AND target_id = ?
-                """,
-                Long.class,
-                900001L
-        );
+    @DisplayName("중복 전달은 한 Worker만 선점하고 재전달은 새 토큰을 사용한다")
+    void workerClaimFencesDuplicateAndOldOwner() {
+        targetId = 9_100_000L + System.nanoTime() % 100_000L;
+        repository.createSyncTask(PaymentRecoveryTaskType.APPROVAL, targetId);
 
-        var active = repository.claimSyncOwner(
-                PaymentRecoveryTaskType.APPROVAL, 900001L
-        );
-        assertThat(active.managed()).isTrue();
-        assertThat(active.token()).isNull();
+        taskId = jdbc.queryForObject("""
+                SELECT id
+                FROM payment_recovery_tasks
+                WHERE target_type = 'APPROVAL' AND target_id = ?
+                """, Long.class, targetId);
 
         jdbc.update("""
                 UPDATE payment_recovery_tasks
-                SET lease_until = TIMESTAMPADD(SECOND, -1, CURRENT_TIMESTAMP(6))
+                SET status = 'DISPATCHED',
+                    generation = 1,
+                    next_run_at = NULL,
+                    lease_until = TIMESTAMPADD(SECOND, 60, CURRENT_TIMESTAMP(6))
                 WHERE id = ?
                 """, taskId);
 
-        var claimed = repository.claimSyncOwner(
-                PaymentRecoveryTaskType.APPROVAL, 900001L
-        );
-        assertThat(claimed.managed()).isTrue();
-        assertThat(claimed.token()).isNotBlank().isNotEqualTo(original);
-
-        assertThatThrownBy(() -> repository.markSyncReady(
+        var first = repository.claimWorker(
+                taskId,
                 PaymentRecoveryTaskType.APPROVAL,
-                900001L,
-                original,
-                "PAYMENT_RESULT_UNCONFIRMED"
+                1L,
+                60
+        );
+
+        assertThat(first).isNotNull();
+        assertThat(repository.claimWorker(
+                taskId,
+                PaymentRecoveryTaskType.APPROVAL,
+                1L,
+                60
+        )).isNull();
+
+        repository.requireSyncOwner(
+                PaymentRecoveryTaskType.APPROVAL,
+                targetId,
+                first.claimToken()
+        );
+
+        repository.retryWorkerDelivery(first);
+
+        var redelivery = repository.claimWorker(
+                taskId,
+                PaymentRecoveryTaskType.APPROVAL,
+                1L,
+                60
+        );
+
+        assertThat(redelivery).isNotNull();
+        assertThat(redelivery.claimToken()).isNotEqualTo(first.claimToken());
+
+        assertThatThrownBy(() -> repository.completeSync(
+                PaymentRecoveryTaskType.APPROVAL,
+                targetId,
+                first.claimToken()
         )).isInstanceOf(StalePaymentRecoveryOwnerException.class);
 
-        repository.markSyncReady(
+        repository.completeSync(
                 PaymentRecoveryTaskType.APPROVAL,
-                900001L,
-                claimed.token(),
-                "PAYMENT_RESULT_UNCONFIRMED"
+                targetId,
+                redelivery.claimToken()
         );
-        assertThat(jdbc.queryForObject(
-                "SELECT status FROM payment_recovery_tasks WHERE id = ?",
-                String.class,
-                taskId
-        )).isEqualTo("READY");
+
+        assertThat(jdbc.queryForObject("""
+                SELECT status
+                FROM payment_recovery_tasks
+                WHERE id = ?
+                """, String.class, taskId)).isEqualTo("COMPLETED");
     }
 }

@@ -15,8 +15,6 @@ import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
 import com.gift.gift.domain.order.entity.PaymentCancellationFailureCode;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
-import com.gift.gift.domain.order.exception.OrderErrorCode;
-import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 import com.gift.gift.infrastructure.payment.client.PaymentClient;
@@ -75,7 +73,7 @@ public class PaymentCancellationReconciliationService {
 
         for (PaymentCancellation cancellation : candidates) {
             try {
-                reconcile(cancellation, now);
+                reconcile(cancellation, now, null);
             } catch (RuntimeException exception) {
                 log.error(
                         "취소 결과 재조정에 실패했습니다. cancellationId={}",
@@ -86,19 +84,53 @@ public class PaymentCancellationReconciliationService {
         }
     }
 
-    private void reconcile(PaymentCancellation cancellation, LocalDateTime now) {
+    public void reconcileTask(Long cancellationId, String token) {
+        PaymentCancellation cancellation = cancellationRepository
+                .findById(cancellationId)
+                .orElseThrow(() -> new IllegalStateException("취소 복구 원장을 찾을 수 없습니다."));
+
+        if (cancellation.getCancellationSource() != CancellationSource.USER) {
+            throw new IllegalStateException("사용자 취소 복구 Worker 대상이 아닙니다.");
+        }
+
+        if (cancellation.getStatus() != PaymentCancellationStatus.PENDING) {
+            transactionService.completeTask(cancellationId, token);
+            return;
+        }
+
+        if (cancellation.getFailureCode()
+                == PaymentCancellationFailureCode.CANCELLATION_RECONCILIATION_REQUIRED) {
+            transactionService.markReconciliationRequired(
+                    cancellationId,
+                    token
+            );
+            return;
+        }
+
+        reconcile(cancellation, LocalDateTime.now(clock), token);
+    }
+
+    private void reconcile(
+            PaymentCancellation cancellation,
+            LocalDateTime now,
+            String token
+    ) {
         Order order = orderRepository.findById(cancellation.getOrderRecordId())
                 .orElseThrow(() -> new IllegalStateException(
                         "취소 대상 주문을 찾을 수 없습니다."
                 ));
 
         if (hasPartialRemoteResult(cancellation)) {
-            requireReview(cancellation, "저장된 원격 취소 결과가 불완전합니다.");
+            requireReview(
+                    cancellation,
+                    "저장된 원격 취소 결과가 불완전합니다.",
+                    token
+            );
             return;
         }
 
         if (hasRemoteResult(cancellation)) {
-            resumeLocalCompensation(cancellation, order, now);
+            resumeLocalCompensation(cancellation, order, now, token);
             return;
         }
 
@@ -112,7 +144,9 @@ public class PaymentCancellationReconciliationService {
             );
         } catch (PaymentClientException exception) {
             if (exception.failure() == PaymentClientFailure.PAYMENT_NOT_FOUND) {
-                handleMissingCancellation(cancellation, order, now, expired);
+                handleMissingCancellation(
+                        cancellation, order, now, expired, token
+                );
                 return;
             }
 
@@ -120,40 +154,56 @@ public class PaymentCancellationReconciliationService {
                     cancellation,
                     now,
                     expired,
-                    exception.failure() == PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE
+                    exception.failure()
+                            == PaymentClientFailure.PAYMENT_SERVER_UNAVAILABLE
                             ? PaymentCancellationFailureCode.PAYMENT_SERVER_UNAVAILABLE
-                            : PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+                            : PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED,
+                    token
             );
             return;
         }
 
         if (response == null || !matchesCancellationIdentity(order, response)) {
-            requireReview(cancellation, "취소 상태 조회 응답의 주문 정보가 일치하지 않습니다.");
+            requireReview(
+                    cancellation,
+                    "취소 상태 조회 응답의 주문 정보가 일치하지 않습니다.",
+                    token
+            );
             return;
         }
 
         if (isCompletedCancellation(order, response)) {
-            saveAndCompensate(cancellation, order, response, now);
+            saveAndCompensate(cancellation, order, response, now, token);
             return;
         }
 
-        if (response.cancellationStatus() == PaymentServerCancellationStatus.DECLINED) {
-            transactionService.markDeclined(cancellation.getId());
+        if (response.cancellationStatus()
+                == PaymentServerCancellationStatus.DECLINED) {
+            transactionService.markDeclined(cancellation.getId(), token);
             return;
         }
 
-        if (response.cancellationStatus() == PaymentServerCancellationStatus.PENDING) {
+        if (response.cancellationStatus()
+                == PaymentServerCancellationStatus.PENDING) {
             if (response.status() != PaymentServerStatus.COMPLETED) {
-                requireReview(cancellation, "취소 원장과 원결제 상태가 일치하지 않습니다.");
+                requireReview(
+                        cancellation,
+                        "취소 원장과 원결제 상태가 일치하지 않습니다.",
+                        token
+                );
                 return;
             }
 
             if (expired) {
-                requireReview(cancellation, "복구 기한 만료 후에도 취소 결과가 미확정입니다.");
+                requireReview(
+                        cancellation,
+                        "복구 기한 만료 후에도 취소 결과가 미확정입니다.",
+                        token
+                );
                 return;
             }
 
-            postCancellationIfAvailable(cancellation, order, now);
+            postCancellationIfAvailable(cancellation, order, now, token);
             return;
         }
 
@@ -161,7 +211,8 @@ public class PaymentCancellationReconciliationService {
                 cancellation,
                 now,
                 expired,
-                PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+                PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED,
+                token
         );
     }
 
@@ -169,7 +220,8 @@ public class PaymentCancellationReconciliationService {
             PaymentCancellation cancellation,
             Order order,
             LocalDateTime now,
-            boolean expired
+            boolean expired,
+            String token
     ) {
         PaymentResponse originalPayment;
 
@@ -180,15 +232,21 @@ public class PaymentCancellationReconciliationService {
                     cancellation,
                     now,
                     expired,
-                    PaymentCancellationFailureCode.PAYMENT_SERVER_UNAVAILABLE
+                    PaymentCancellationFailureCode.PAYMENT_SERVER_UNAVAILABLE,
+                    token
             );
             return;
         }
 
         if (originalPayment == null
                 || !order.getOrderId().equals(originalPayment.orderId())
+                || !order.getPaymentKey().equals(originalPayment.paymentKey())
                 || !order.getAmount().equals(originalPayment.amount())) {
-            requireReview(cancellation, "원결제 상태 조회 결과의 주문 정보가 일치하지 않습니다.");
+            requireReview(
+                    cancellation,
+                    "원결제 상태 조회 결과의 주문 정보가 일치하지 않습니다.",
+                    token
+            );
             return;
         }
 
@@ -197,31 +255,47 @@ public class PaymentCancellationReconciliationService {
                     cancellation,
                     now,
                     expired,
-                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED,
+                    token
             );
             return;
         }
 
         if (expired) {
-            requireReview(cancellation, "복구 기한 만료 후 취소 원장이 확인되지 않았습니다.");
+            requireReview(
+                    cancellation,
+                    "복구 기한 만료 후 취소 원장이 확인되지 않았습니다.",
+                    token
+            );
             return;
         }
 
-        postCancellationIfAvailable(cancellation, order, now);
+        postCancellationIfAvailable(cancellation, order, now, token);
     }
 
     private void postCancellationIfAvailable(
             PaymentCancellation cancellation,
             Order order,
-            LocalDateTime now
+            LocalDateTime now,
+            String token
     ) {
         if (isExpired(cancellation, LocalDateTime.now(clock))) {
-            requireReview(cancellation, "취소 복구 기한이 만료되어 POST를 중단했습니다.");
+            requireReview(
+                    cancellation,
+                    "취소 복구 기한이 만료되어 POST를 중단했습니다.",
+                    token
+            );
             return;
         }
 
-        boolean reserved = transactionService.reserveRecoveryCancelPost(
+        boolean reserved = token == null
+                ? transactionService.reserveRecoveryCancelPost(
                 cancellation.getId(),
+                MAX_RECOVERY_CANCEL_POSTS
+        )
+                : transactionService.reserveRecoveryCancelPost(
+                cancellation.getId(),
+                token,
                 MAX_RECOVERY_CANCEL_POSTS
         );
 
@@ -229,7 +303,8 @@ public class PaymentCancellationReconciliationService {
             scheduleNext(
                     cancellation,
                     now,
-                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED,
+                    token
             );
             return;
         }
@@ -241,37 +316,47 @@ public class PaymentCancellationReconciliationService {
             );
 
             if (response == null || !matchesCancellationIdentity(order, response)) {
-                requireReview(cancellation, "취소 POST 응답의 주문 정보가 일치하지 않습니다.");
+                requireReview(
+                        cancellation,
+                        "취소 POST 응답의 주문 정보가 일치하지 않습니다.",
+                        token
+                );
                 return;
             }
 
             if (isCompletedCancellation(order, response)) {
-                saveAndCompensate(cancellation, order, response, now);
+                saveAndCompensate(cancellation, order, response, now, token);
                 return;
             }
 
-            if (response.cancellationStatus() == PaymentServerCancellationStatus.DECLINED) {
-                transactionService.markDeclined(cancellation.getId());
+            if (response.cancellationStatus()
+                    == PaymentServerCancellationStatus.DECLINED) {
+                transactionService.markDeclined(cancellation.getId(), token);
                 return;
             }
 
+            LocalDateTime current = LocalDateTime.now(clock);
             scheduleOrRequireReview(
                     cancellation,
-                    LocalDateTime.now(clock),
-                    isExpired(cancellation, LocalDateTime.now(clock)),
-                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+                    current,
+                    isExpired(cancellation, current),
+                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED,
+                    token
             );
         } catch (PaymentClientException exception) {
-            if (exception.failure() == PaymentClientFailure.CANCELLATION_DECLINED) {
-                transactionService.markDeclined(cancellation.getId());
+            if (exception.failure()
+                    == PaymentClientFailure.CANCELLATION_DECLINED) {
+                transactionService.markDeclined(cancellation.getId(), token);
                 return;
             }
 
+            LocalDateTime current = LocalDateTime.now(clock);
             scheduleOrRequireReview(
                     cancellation,
-                    LocalDateTime.now(clock),
-                    isExpired(cancellation, LocalDateTime.now(clock)),
-                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED
+                    current,
+                    isExpired(cancellation, current),
+                    PaymentCancellationFailureCode.CANCELLATION_RESULT_UNCONFIRMED,
+                    token
             );
         }
     }
@@ -280,27 +365,40 @@ public class PaymentCancellationReconciliationService {
             PaymentCancellation cancellation,
             Order order,
             PaymentCancelResponse response,
-            LocalDateTime now
+            LocalDateTime now,
+            String token
     ) {
         if (!isCompletedCancellation(order, response)) {
-            requireReview(cancellation, "확정 취소 응답의 필수 값이 올바르지 않습니다.");
+            requireReview(
+                    cancellation,
+                    "확정 취소 응답의 필수 값이 올바르지 않습니다.",
+                    token
+            );
             return;
         }
 
         transactionService.recordPaymentServerCancellationResult(
                 cancellation.getId(),
+                token,
                 response.transactionKey(),
                 response.cancelAmount(),
                 response.canceledAt()
         );
 
-        resumeLocalCompensation(cancellation, order, now);
+        PaymentCancellation saved = cancellationRepository
+                .findById(cancellation.getId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "저장한 취소 결과를 다시 읽을 수 없습니다."
+                ));
+
+        resumeLocalCompensation(saved, order, now, token);
     }
 
     private void resumeLocalCompensation(
             PaymentCancellation cancellation,
             Order order,
-            LocalDateTime now
+            LocalDateTime now,
+            String token
     ) {
         PaymentCancellationApproval approval = new PaymentCancellationApproval(
                 cancellation,
@@ -308,18 +406,28 @@ public class PaymentCancellationReconciliationService {
                 cancellation.getCancelTransactionKey(),
                 cancellation.getCancelAmount(),
                 cancellation.getCanceledAt(),
-                false
+                false,
+                token != null,
+                token
         );
 
         try {
-            compensationService.compensate(approval);
+            if (token == null) {
+                compensationService.compensate(approval);
+            } else {
+                transactionService.completeWithOwner(
+                        approval,
+                        () -> compensationService.compensate(approval)
+                );
+            }
         } catch (RuntimeException exception) {
             LocalDateTime current = LocalDateTime.now(clock);
             scheduleOrRequireReview(
                     cancellation,
                     current,
                     isExpired(cancellation, current),
-                    PaymentCancellationFailureCode.LOCAL_COMPENSATION_FAILED
+                    PaymentCancellationFailureCode.LOCAL_COMPENSATION_FAILED,
+                    token
             );
             log.error(
                     "원격 취소 확인 후 로컬 보상에 실패했습니다. cancellationId={}",
@@ -341,7 +449,8 @@ public class PaymentCancellationReconciliationService {
             Order order,
             PaymentCancelResponse response
     ) {
-        return response.cancellationStatus() == PaymentServerCancellationStatus.COMPLETED
+        return response.cancellationStatus()
+                == PaymentServerCancellationStatus.COMPLETED
                 && response.status() == PaymentServerStatus.CANCELED
                 && order.getAmount().equals(response.cancelAmount())
                 && hasText(response.transactionKey())
@@ -362,37 +471,49 @@ public class PaymentCancellationReconciliationService {
         return hasAny && !hasRemoteResult(cancellation);
     }
 
-    private boolean isExpired(PaymentCancellation cancellation, LocalDateTime now) {
-        LocalDateTime startedAt = cancellation.getReconciliationStartedAt() != null
-                ? cancellation.getReconciliationStartedAt()
-                : cancellation.getCreatedAt();
+    private boolean isExpired(
+            PaymentCancellation cancellation,
+            LocalDateTime now
+    ) {
+        LocalDateTime startedAt =
+                cancellation.getReconciliationStartedAt() != null
+                        ? cancellation.getReconciliationStartedAt()
+                        : cancellation.getCreatedAt();
 
-        return startedAt != null && !startedAt.plus(timeout).isAfter(now);
+        return startedAt != null
+                && !startedAt.plus(timeout).isAfter(now);
     }
 
     private void scheduleOrRequireReview(
             PaymentCancellation cancellation,
             LocalDateTime now,
             boolean expired,
-            PaymentCancellationFailureCode failureCode
+            PaymentCancellationFailureCode failureCode,
+            String token
     ) {
         if (expired) {
-            requireReview(cancellation, "취소 복구 기한 만료 후 결과가 미확정입니다.");
+            requireReview(
+                    cancellation,
+                    "취소 복구 기한 만료 후 결과가 미확정입니다.",
+                    token
+            );
             return;
         }
 
-        scheduleNext(cancellation, now, failureCode);
+        scheduleNext(cancellation, now, failureCode, token);
     }
 
     private void scheduleNext(
             PaymentCancellation cancellation,
             LocalDateTime now,
-            PaymentCancellationFailureCode failureCode
+            PaymentCancellationFailureCode failureCode,
+            String token
     ) {
         transactionService.scheduleNext(
                 cancellation.getId(),
                 failureCode,
-                now.plus(nextDelay(cancellation.getReconciliationAttempts()))
+                now.plus(nextDelay(cancellation.getReconciliationAttempts())),
+                token
         );
     }
 
@@ -404,13 +525,16 @@ public class PaymentCancellationReconciliationService {
         };
     }
 
-    private void requireReview(PaymentCancellation cancellation, String reason) {
-        transactionService.markReconciliationRequired(cancellation.getId());
-        log.error(
-                "{} cancellationId={}",
-                reason,
-                cancellation.getId()
+    private void requireReview(
+            PaymentCancellation cancellation,
+            String reason,
+            String token
+    ) {
+        transactionService.markReconciliationRequired(
+                cancellation.getId(),
+                token
         );
+        log.error("{} cancellationId={}", reason, cancellation.getId());
     }
 
     private boolean hasText(String value) {
