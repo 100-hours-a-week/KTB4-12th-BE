@@ -1,5 +1,6 @@
 package com.gift.gift.domain.order.recovery;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -33,17 +34,18 @@ public class PaymentRecoveryTaskRepository {
             PaymentRecoveryTaskType type,
             long targetId
     ) {
-        List<String> rows = jdbc.query("""
+        List<String> statuses = jdbc.query("""
                 SELECT status
                 FROM payment_recovery_tasks
                 WHERE target_type = ? AND target_id = ?
                 """, (rs, row) -> rs.getString("status"), type.name(), targetId);
 
-        if (rows.isEmpty()) {
+        if (statuses.isEmpty()) {
             return PaymentRecoveryTaskClaim.unmanaged();
         }
 
-        if (!PaymentRecoveryTaskStatus.WAITING_FOR_SYNC.name().equals(rows.getFirst())) {
+        if (!PaymentRecoveryTaskStatus.WAITING_FOR_SYNC.name()
+                .equals(statuses.getFirst())) {
             return PaymentRecoveryTaskClaim.managed(null);
         }
 
@@ -70,7 +72,7 @@ public class PaymentRecoveryTaskRepository {
                 SELECT id
                 FROM payment_recovery_tasks
                 WHERE target_type = ? AND target_id = ?
-                  AND status = 'WAITING_FOR_SYNC'
+                  AND status IN ('WAITING_FOR_SYNC', 'RUNNING')
                   AND claim_token = ?
                   AND lease_until > CURRENT_TIMESTAMP(6)
                 FOR UPDATE
@@ -108,14 +110,38 @@ public class PaymentRecoveryTaskRepository {
                     lease_until = NULL,
                     updated_at = CURRENT_TIMESTAMP(6)
                 WHERE target_type = ? AND target_id = ?
-                  AND status = 'WAITING_FOR_SYNC'
+                  AND status IN ('WAITING_FOR_SYNC', 'RUNNING')
                   AND claim_token = ?
                   AND lease_until > CURRENT_TIMESTAMP(6)
                 """, errorCode, type.name(), targetId, token);
 
-        if (updated != 1) {
-            throw new StalePaymentRecoveryOwnerException();
-        }
+        requireOne(updated);
+    }
+
+    public void scheduleNext(
+            PaymentRecoveryTaskType type,
+            long targetId,
+            String token,
+            LocalDateTime nextRunAt,
+            String errorCode
+    ) {
+        int updated = jdbc.update("""
+                UPDATE payment_recovery_tasks
+                SET status = 'READY',
+                    next_run_at = LEAST(deadline_at, ?),
+                    reconciliation_attempts = reconciliation_attempts + 1,
+                    last_error_code = ?,
+                    claim_token = NULL,
+                    lease_until = NULL,
+                    updated_at = CURRENT_TIMESTAMP(6)
+                WHERE target_type = ? AND target_id = ?
+                  AND status = 'RUNNING'
+                  AND claim_token = ?
+                  AND lease_until > CURRENT_TIMESTAMP(6)
+                  AND deadline_at IS NOT NULL
+                """, nextRunAt, errorCode, type.name(), targetId, token);
+
+        requireOne(updated);
     }
 
     public void markSyncReview(
@@ -133,14 +159,12 @@ public class PaymentRecoveryTaskRepository {
                     lease_until = NULL,
                     updated_at = CURRENT_TIMESTAMP(6)
                 WHERE target_type = ? AND target_id = ?
-                  AND status = 'WAITING_FOR_SYNC'
+                  AND status IN ('WAITING_FOR_SYNC', 'RUNNING')
                   AND claim_token = ?
                   AND lease_until > CURRENT_TIMESTAMP(6)
                 """, errorCode, type.name(), targetId, token);
 
-        if (updated != 1) {
-            throw new StalePaymentRecoveryOwnerException();
-        }
+        requireOne(updated);
     }
 
     public void completeSync(
@@ -157,20 +181,101 @@ public class PaymentRecoveryTaskRepository {
                     last_error_code = NULL,
                     updated_at = CURRENT_TIMESTAMP(6)
                 WHERE target_type = ? AND target_id = ?
-                  AND status = 'WAITING_FOR_SYNC'
+                  AND status IN ('WAITING_FOR_SYNC', 'RUNNING')
                   AND claim_token = ?
                   AND lease_until > CURRENT_TIMESTAMP(6)
                 """, type.name(), targetId, token);
 
-        if (updated != 1) {
-            throw new StalePaymentRecoveryOwnerException();
-        }
+        requireOne(updated);
     }
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW,
-            isolation = Isolation.READ_COMMITTED
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public DispatchJob claimWorker(
+            long taskId,
+            PaymentRecoveryTaskType expectedType,
+            long generation,
+            int leaseSeconds
+    ) {
+        String token = UUID.randomUUID().toString();
+        int updated = jdbc.update("""
+                UPDATE payment_recovery_tasks
+                SET status = 'RUNNING',
+                    claim_token = ?,
+                    lease_until = TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6)),
+                    updated_at = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                  AND target_type = ?
+                  AND status = 'DISPATCHED'
+                  AND generation = ?
+                  AND lease_until > CURRENT_TIMESTAMP(6)
+                """, token, leaseSeconds, taskId, expectedType.name(), generation);
+
+        if (updated != 1) {
+            return null;
+        }
+
+        return jdbc.queryForObject("""
+                SELECT id, target_type, target_id, generation
+                FROM payment_recovery_tasks
+                WHERE id = ?
+                  AND status = 'RUNNING'
+                  AND claim_token = ?
+                """, (rs, row) -> new DispatchJob(
+                rs.getLong("id"),
+                PaymentRecoveryTaskType.valueOf(rs.getString("target_type")),
+                rs.getLong("target_id"),
+                rs.getLong("generation"),
+                token
+        ), taskId, token);
+    }
+
+    public boolean isWrongTargetType(
+            long taskId,
+            PaymentRecoveryTaskType expectedType
+    ) {
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM payment_recovery_tasks
+                WHERE id = ? AND target_type <> ?
+                """, Integer.class, taskId, expectedType.name());
+        return count != null && count > 0;
+    }
+
+    public void retryWorkerDelivery(DispatchJob job) {
+        jdbc.update("""
+                UPDATE payment_recovery_tasks
+                SET status = 'DISPATCHED',
+                    last_error_code = 'WORKER_TECHNICAL_ERROR',
+                    updated_at = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                  AND status = 'RUNNING'
+                  AND generation = ?
+                  AND claim_token = ?
+                  AND lease_until > CURRENT_TIMESTAMP(6)
+                """, job.id(), job.generation(), job.claimToken());
+    }
+
+    public boolean reserveCancelPost(
+            long cancellationId,
+            String token,
+            int maxAttempts
+    ) {
+        return jdbc.update("""
+                UPDATE payment_recovery_tasks
+                SET cancel_post_attempts = cancel_post_attempts + 1,
+                    updated_at = CURRENT_TIMESTAMP(6)
+                WHERE target_type = 'CANCELLATION'
+                  AND target_id = ?
+                  AND status = 'RUNNING'
+                  AND claim_token = ?
+                  AND lease_until > CURRENT_TIMESTAMP(6)
+                  AND deadline_at > CURRENT_TIMESTAMP(6)
+                  AND cancel_post_attempts < ?
+                """, cancellationId, token, maxAttempts) == 1;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW,
+            isolation = Isolation.READ_COMMITTED)
     public List<DispatchJob> claimDue(int limit, int leaseSeconds) {
         if (limit < 1 || limit > 100 || leaseSeconds < 1) {
             throw new IllegalArgumentException("복구 발행 선점 설정이 올바르지 않습니다.");
@@ -252,6 +357,12 @@ public class PaymentRecoveryTaskRepository {
                   AND claim_token = ?
                   AND lease_until > CURRENT_TIMESTAMP(6)
                 """, errorCode, job.id(), job.generation(), job.claimToken());
+    }
+
+    private void requireOne(int updated) {
+        if (updated != 1) {
+            throw new StalePaymentRecoveryOwnerException();
+        }
     }
 
     public record DispatchJob(

@@ -113,6 +113,13 @@ class PaymentCancellationReconciliationServiceTest {
                 .thenReturn(true);
         when(paymentClient.cancel(PAYMENT_KEY, "cancel-key"))
                 .thenReturn(completedCancellationResponse());
+        PaymentCancellation savedCancellation = mock(PaymentCancellation.class);
+        when(savedCancellation.getCancelTransactionKey())
+                .thenReturn("cancel-transaction");
+        when(savedCancellation.getCancelAmount()).thenReturn(64_000L);
+        when(savedCancellation.getCanceledAt()).thenReturn(NOW.minusSeconds(30));
+        when(cancellationRepository.findById(CANCELLATION_ID))
+                .thenReturn(Optional.of(savedCancellation));
 
         service.reconcilePendingCancellations();
 

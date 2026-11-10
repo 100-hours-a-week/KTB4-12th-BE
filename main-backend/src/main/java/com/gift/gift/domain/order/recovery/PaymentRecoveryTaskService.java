@@ -1,5 +1,6 @@
 package com.gift.gift.domain.order.recovery;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,16 @@ public class PaymentRecoveryTaskService {
         repository.markSyncReady(type, targetId, token, errorCode);
     }
 
+    public void scheduleNext(
+            PaymentRecoveryTaskType type,
+            long targetId,
+            String token,
+            LocalDateTime nextRunAt,
+            String errorCode
+    ) {
+        repository.scheduleNext(type, targetId, token, nextRunAt, errorCode);
+    }
+
     public void markSyncReview(
             PaymentRecoveryTaskType type,
             long targetId,
@@ -56,6 +67,36 @@ public class PaymentRecoveryTaskService {
             String token
     ) {
         repository.completeSync(type, targetId, token);
+    }
+
+    public DispatchJob claimWorker(
+            long taskId,
+            PaymentRecoveryTaskType expectedType,
+            long generation,
+            int leaseSeconds
+    ) {
+        return repository.claimWorker(
+                taskId, expectedType, generation, leaseSeconds
+        );
+    }
+
+    public boolean isWrongTargetType(
+            long taskId,
+            PaymentRecoveryTaskType expectedType
+    ) {
+        return repository.isWrongTargetType(taskId, expectedType);
+    }
+
+    public void retryWorkerDelivery(DispatchJob job) {
+        repository.retryWorkerDelivery(job);
+    }
+
+    public boolean reserveCancelPost(
+            long cancellationId,
+            String token,
+            int maxAttempts
+    ) {
+        return repository.reserveCancelPost(cancellationId, token, maxAttempts);
     }
 
     public List<DispatchJob> claimDue(int limit, int leaseSeconds) {

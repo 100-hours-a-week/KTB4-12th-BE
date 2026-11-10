@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
+import com.gift.gift.domain.order.recovery.PaymentRecoveryTaskService;
+import com.gift.gift.domain.order.recovery.PaymentRecoveryTaskType;
 import com.gift.gift.domain.order.repository.OrderRepository;
 
 @Service
@@ -18,6 +20,7 @@ import com.gift.gift.domain.order.repository.OrderRepository;
 public class PaymentReconciliationTransactionService {
 
     private final OrderRepository orderRepository;
+    private final PaymentRecoveryTaskService recoveryTaskService;
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -39,8 +42,18 @@ public class PaymentReconciliationTransactionService {
             OrderFailureCode failureCode,
             LocalDateTime nextAt
     ) {
+        return scheduleNext(orderRecordId, failureCode, nextAt, null);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean scheduleNext(
+            Long orderRecordId,
+            OrderFailureCode failureCode,
+            LocalDateTime nextAt,
+            String token
+    ) {
         LocalDateTime now = LocalDateTime.now(clock);
-        return orderRepository.scheduleUnknownReconciliation(
+        int updated = orderRepository.scheduleUnknownReconciliation(
                 orderRecordId,
                 OrderStatus.PENDING,
                 PaymentApprovalResult.UNKNOWN,
@@ -48,6 +61,41 @@ public class PaymentReconciliationTransactionService {
                 failureCode,
                 now,
                 nextAt
-        ) == 1;
+        );
+
+        if (updated == 1 && token != null) {
+            recoveryTaskService.scheduleNext(
+                    PaymentRecoveryTaskType.APPROVAL,
+                    orderRecordId,
+                    token,
+                    nextAt,
+                    failureCode.name()
+            );
+        }
+
+        return updated == 1;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void completeTask(Long orderRecordId, String token) {
+        recoveryTaskService.completeSync(
+                PaymentRecoveryTaskType.APPROVAL,
+                orderRecordId,
+                token
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markTaskReview(
+            Long orderRecordId,
+            String token,
+            OrderFailureCode failureCode
+    ) {
+        recoveryTaskService.markSyncReview(
+                PaymentRecoveryTaskType.APPROVAL,
+                orderRecordId,
+                token,
+                failureCode.name()
+        );
     }
 }
