@@ -1,0 +1,104 @@
+groups:
+  - name: payment-rabbitmq
+    rules:
+      - alert: PaymentRabbitDLQNotEmpty
+        expr: |
+          max by (queue, vhost) (
+            rabbitmq_detailed_queue_messages{
+              vhost="gift",
+              queue=~"^gift[.](receipt[.]email|roulette|coupon[.]restore|payment[.](approval|cancellation)[.]recovery)[.]dlq$"
+            }
+          ) > 0
+        labels:
+          severity: warning
+          component: payment-rabbitmq
+        annotations:
+          summary: "결제 RabbitMQ DLQ에 메시지가 있습니다"
+          description: >-
+            {{ $labels.queue }}에 {{ $value }}개가 적체됐습니다.
+            원인을 확인하고 재처리 여부를 판단하세요.
+
+      - alert: PaymentRabbitDLQNearExpiry
+        expr: |
+          (
+            time() - max by (queue, vhost) (
+              rabbitmq_detailed_queue_head_message_timestamp{
+                vhost="gift",
+                queue=~"^gift[.](receipt[.]email|roulette|coupon[.]restore|payment[.](approval|cancellation)[.]recovery)[.]dlq$"
+              }
+            )
+          ) > 25 * 24 * 60 * 60
+        for: 5m
+        labels:
+          severity: warning
+          component: payment-rabbitmq
+        annotations:
+          summary: "결제 DLQ 메시지가 보관 만료에 가까워졌습니다"
+          description: >-
+            {{ $labels.queue }}의 가장 오래된 메시지가 25일 이상 보관됐습니다.
+            30일 TTL 만료 전에 확인하세요.
+
+      - alert: PaymentRabbitQueueWithoutConsumer
+        expr: |
+          (
+            max by (queue, vhost) (
+              rabbitmq_detailed_queue_messages_ready{
+                vhost="gift",
+                queue=~"^gift[.](receipt[.]email|roulette|coupon[.]restore|payment[.](approval|cancellation)[.]recovery)[.]q$"
+              }
+            ) > 0
+          )
+          and on (queue, vhost)
+          (
+            max by (queue, vhost) (
+              rabbitmq_detailed_queue_consumers{
+                vhost="gift",
+                queue=~"^gift[.](receipt[.]email|roulette|coupon[.]restore|payment[.](approval|cancellation)[.]recovery)[.]q$"
+              }
+            ) == 0
+          )
+        for: 2m
+        labels:
+          severity: warning
+          component: payment-rabbitmq
+        annotations:
+          summary: "대기 메시지가 있지만 Consumer가 없습니다"
+          description: >-
+            {{ $labels.queue }}에 ready 메시지가 있고 Consumer가 0명입니다.
+            기능 활성화와 배포 상태를 확인하세요.
+
+      - alert: PaymentRabbitPublisherReturned
+        expr: |
+          max by (exchange, vhost) (
+            increase(
+              rabbitmq_detailed_exchange_messages_unroutable_returned_total{
+                vhost="gift",
+                exchange="payment.events"
+              }[5m]
+            )
+          ) > 0
+        labels:
+          severity: warning
+          component: payment-rabbitmq
+        annotations:
+          summary: "결제 이벤트가 라우팅되지 않아 반환됐습니다"
+          description: >-
+            payment.events에서 최근 5분 내 미라우팅 Return이 발생했습니다.
+            Exchange 바인딩을 확인하세요.
+
+      - alert: PaymentRabbitDeliveryLimitExceeded
+        expr: |
+          increase(
+            rabbitmq_global_messages_dead_lettered_delivery_limit_total{
+              queue_type="rabbit_quorum_queue",
+              dead_letter_strategy="at_least_once"
+            }[5m]
+          ) > 0
+        labels:
+          severity: warning
+          component: payment-rabbitmq
+        annotations:
+          summary: "RabbitMQ 재전달 한도를 넘긴 메시지가 있습니다"
+          description: >-
+            최근 5분 내 delivery-limit을 초과한 메시지가 있습니다.
+            이 지표는 큐별이 아니라 노드 단위이므로 DLQ 깊이로 대상 큐를 확인하세요.
