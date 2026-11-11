@@ -106,13 +106,16 @@ jobs:
           done
           exit 1
 
-      - name: Validate profiling monitoring configuration and alert rules
+      - name: Validate RabbitMQ monitoring configuration and alert rules
         shell: bash
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s monitoring -p 'test_*.py'
           docker run --rm --entrypoint promtool \
             -v "$PWD/monitoring:/rules:ro" prom/prometheus:v3.15.0 \
             test rules /rules/profiling-alerts.test.yml
+          docker run --rm --entrypoint promtool \
+            -v "$PWD/monitoring:/rules:ro" prom/prometheus:v3.15.0 \
+            check rules /rules/payment-rabbitmq-alerts.yml
 
       - name: Upload test reports
         if: always()

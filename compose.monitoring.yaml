@@ -11,6 +11,7 @@ services:
       - ./monitoring/runtime.tmp/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/runtime.tmp/monitoring-password:/etc/prometheus/monitoring-password:ro
       - ./monitoring/profiling-alerts.yml:/etc/prometheus/profiling-alerts.yml:ro
+      - ./monitoring/payment-rabbitmq-alerts.yml:/etc/prometheus/payment-rabbitmq-alerts.yml:ro
       - prometheus-data:/prometheus
     extra_hosts:
       - host.docker.internal:host-gateway
@@ -23,6 +24,7 @@ services:
     command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--cluster.listen-address="]
     volumes:
       - ./monitoring/runtime.tmp/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./monitoring/runtime.tmp/alertmanager-discord-webhook:/etc/alertmanager/discord-webhook:ro
     extra_hosts:
       - host.docker.internal:host-gateway
     networks: [monitoring]

@@ -1,7 +1,7 @@
 # 선잘알 로컬 성능 모니터링
 
 프로파일링 발행 지표·RabbitMQ 수집·로컬 경보는 [PR4-3 운영·검증 문서](ai-profiling-observability.md)를 따른다.
-기본 구성은 유지하며 `PROFILING_MONITORING_ENABLED=true`와 Compose `profiling` 프로필을 명시했을 때 추가한다.
+프로파일링·결제 RabbitMQ 상세 수집과 Alertmanager는 `PROFILING_MONITORING_ENABLED=true` 및 Compose `profiling` 프로필에서 활성화한다.
 
 ## 구성과 적용 범위
 
@@ -13,14 +13,17 @@ Actuator는 기존 의존성을 재사용하고 `micrometer-registry-prometheus`
 ```mermaid
 flowchart LR
   APP[Spring Boot / management port + Basic auth] --> P[Prometheus / 15s / 7d]
+  RABBIT[RabbitMQ / default + detailed metrics] --> P
   DB[선택한 MySQL] --> EX[mysqld_exporter]
   EX --> P
   DOCKER[동일 Docker 호스트] --> CA[cAdvisor]
   CA --> P
   P --> G[Grafana / localhost:3001 / login]
+  P --> AM[Alertmanager / optional profiling profile]
+  AM --> DC[BE_ERROR Discord / payment DLQ alerts only]
 ```
 
-Compose는 모니터링 도구 4개만 실행한다. 앱·DB는 현재 환경의 것을 연결한다.
+Compose는 기본적으로 Prometheus, Grafana, mysqld_exporter, cAdvisor를 실행하고, `profiling` 프로필에서 Alertmanager를 추가한다. 앱·DB·RabbitMQ는 현재 환경의 것을 연결한다.
 Prometheus는 시계열 저장/조회, Grafana는 비교 화면, mysqld_exporter는 DB 전역 상태,
 cAdvisor는 컨테이너 자원/제한 상태를 담당한다. node_exporter와 추가 tracing 도구는 도입하지 않았다.
 
@@ -65,11 +68,38 @@ PYTHONDONTWRITEBYTECODE=1 python3 monitoring/verify.py
 ```
 
 Grafana: <http://127.0.0.1:3001>, 계정은 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`.
-`Gift Monitoring` 폴더에 대시보드 5개가 자동 등록된다.
+`Gift Monitoring` 폴더에 대시보드 6개가 자동 등록된다.
 생성 설정·비밀번호는 Git에서 제외된 `monitoring/runtime.tmp/`에 저장한다(디렉터리 0700).
-컨테이너 UID가 읽을 수 있도록 개별 마운트 파일은 0644이며, 다른 호스트 사용자에게 디렉터리를 공유하지 않는다.
+컨테이너 UID가 읽을 수 있도록 개별 마운트 파일은 0644로 둔다. Discord 웹훅 파일도 컨테이너에서 읽을 수 있어야 하며,
+다른 호스트 사용자가 파일 경로에 접근하지 못하도록 런타임 디렉터리 권한은 0700으로 제한한다.
 설정/비밀번호 변경 후 configure.py를 재실행하고 해당 컨테이너를 재생성한다.
 Grafana admin 환경변수는 **DB 최초 초기화**에 적용된다. 기존 Grafana 볼륨의 비밀번호를 자동 변경하지 않는다.
+
+## RabbitMQ 큐와 결제 DLQ 알림
+
+`PROFILING_MONITORING_ENABLED=true`일 때 Prometheus는 프로파일링 큐와 `gift` vhost의 결제 작업 큐·DLQ를 상세 수집하고,
+`profiling-alerts.yml`과 `payment-rabbitmq-alerts.yml`을 함께 평가한다. RabbitMQ detailed metrics에는 큐·Consumer·재전달·DLQ 나이·Exchange 지표 그룹이 포함된다.
+
+BE_ERROR Discord 웹훅은 실제 값을 저장소에 넣지 말고 `.env`의 `ALERTMANAGER_DISCORD_WEBHOOK_URL`에 설정한다.
+이는 버그 제보용 `DISCORD_WEBHOOK_URL`과 별도 설정이므로, 같은 BE_ERROR 채널을 사용할 경우 웹훅 값을 이 변수에도 명시한다.
+이 값을 비워 두면 Discord receiver가 생성되지 않고 기존 로컬 검증 receiver가 기본 수신처로 유지된다.
+설정 파일에는 웹훅 URL을 직접 기록하지 않고 `monitoring/runtime.tmp/alertmanager-discord-webhook` secret 파일로 전달한다.
+Discord 라우트는 DLQ 적재·만료 임박·delivery-limit 초과 경보만 보내며, 해결 알림도 보낸다.
+
+```dotenv
+PROFILING_MONITORING_ENABLED=true
+RABBITMQ_METRICS_TARGET=host.docker.internal:15692
+ALERTMANAGER_DISCORD_WEBHOOK_URL=<BE_ERROR Discord webhook secret>
+```
+
+`.env`를 셸에 내보낸 뒤 설정을 생성하고 `profiling` 프로필과 함께 실행한다.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 monitoring/configure.py
+docker compose -f compose.monitoring.yaml --profile profiling up -d
+```
+
+`ALERTMANAGER_DISCORD_WEBHOOK_URL`은 설정 생성 시점의 환경변수다. 값 변경 후에는 `configure.py`를 다시 실행하고 Alertmanager를 재생성한다.
 
 ## 환경별 연결 예시
 
