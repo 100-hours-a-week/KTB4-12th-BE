@@ -36,6 +36,8 @@ dependencies {
 
     implementation platform('software.amazon.awssdk:bom:2.54.17')
     implementation 'software.amazon.awssdk:s3'
+    // EKS IRSA의 웹 ID 토큰으로 임시 AWS 자격증명을 발급받는 데 필요.
+    implementation 'software.amazon.awssdk:sts'
 
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-mysql'
