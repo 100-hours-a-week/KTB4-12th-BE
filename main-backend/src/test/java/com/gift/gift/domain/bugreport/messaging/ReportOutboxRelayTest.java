@@ -14,6 +14,20 @@ class ReportOutboxRelayTest {
             new ReportMqProperties(10));
 
     @Test
+    @DisplayName("전역 스케줄링 없이 신고 발행 루프가 동작하고 종료된다")
+    void runsWithoutGlobalScheduling() throws Exception {
+        try {
+            reports.afterPropertiesSet();
+            verify(relay, timeout(4000)).relay("report.created.v1", 10, "report.events", "Report.created");
+        } finally {
+            reports.destroy();
+        }
+        int afterShutdown = mockingDetails(relay).getInvocations().size();
+        Thread.sleep(1200);
+        org.junit.jupiter.api.Assertions.assertEquals(afterShutdown, mockingDetails(relay).getInvocations().size());
+    }
+
+    @Test
     @DisplayName("두 채널 토폴로지를 확인한 뒤에만 리포트 타입과 전용 Exchange로 발행한다")
     void verifiesBeforeClaimingReportBatch() {
         reports.relayReports();

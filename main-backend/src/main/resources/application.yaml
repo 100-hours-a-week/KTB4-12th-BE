@@ -93,6 +93,7 @@ app:
       batch-size: ${REPORT_MQ_BATCH_SIZE:10}
   outbox:
     enabled: ${OUTBOX_ENABLED:false}
+    search-relay-enabled: ${OUTBOX_SEARCH_RELAY_ENABLED:true}
     rabbit:
       exchange: ${OUTBOX_RABBIT_EXCHANGE:}
       search-routing-key: ${OUTBOX_SEARCH_ROUTING_KEY:}
