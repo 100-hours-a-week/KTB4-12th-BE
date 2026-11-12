@@ -10,9 +10,13 @@ import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.availability.AvailabilityChangeEvent;
+import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.context.ApplicationContext;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,6 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @AutoConfigureMetrics
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "management.server.port=0",
+        "management.endpoint.health.probes.enabled=true",
+        "monitoring.health-bridge.enabled=true",
         "management.health.elasticsearch.enabled=false",
         "MONITORING_PASSWORD=monitoring-test-password-32-characters",
         "spring.datasource.hikari.maximum-pool-size=4",
@@ -29,6 +35,9 @@ class MonitoringSecurityTest {
 
     private static final String PASSWORD = "monitoring-test-password-32-characters";
     private final HttpClient client = HttpClient.newHttpClient();
+
+    @Autowired
+    private ApplicationContext applicationContext;
 
     @Value("${local.server.port}")
     private int appPort;
@@ -44,7 +53,24 @@ class MonitoringSecurityTest {
         assertThat(get(managementPort, "/actuator/prometheus", PASSWORD).statusCode()).isEqualTo(200);
         assertThat(get(appPort, "/actuator/prometheus", PASSWORD).statusCode()).isEqualTo(403);
         assertThat(get(managementPort, "/actuator/health", null).statusCode()).isEqualTo(200);
+        assertThat(get(appPort, "/actuator/health", null).statusCode()).isEqualTo(200);
+        assertThat(get(appPort, "/actuator/health/liveness", null).statusCode()).isEqualTo(200);
+        assertThat(get(appPort, "/actuator/health/readiness", null).statusCode()).isEqualTo(200);
         assertThat(get(appPort, "/users/me", PASSWORD).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    @DisplayName("애플리케이션 포트의 readiness는 실제 준비 상태 실패를 503으로 전달한다")
+    void applicationReadiness_preservesFailureStatusWithoutDetails() throws Exception {
+        AvailabilityChangeEvent.publish(applicationContext, ReadinessState.REFUSING_TRAFFIC);
+        try {
+            HttpResponse<String> response = get(appPort, "/actuator/health/readiness", null);
+            assertThat(response.statusCode()).isEqualTo(503);
+            assertThat(response.body()).contains("OUT_OF_SERVICE").doesNotContain("components", "details");
+            assertThat(get(managementPort, "/actuator/health/readiness", null).statusCode()).isEqualTo(503);
+        } finally {
+            AvailabilityChangeEvent.publish(applicationContext, ReadinessState.ACCEPTING_TRAFFIC);
+        }
     }
 
     @Test
