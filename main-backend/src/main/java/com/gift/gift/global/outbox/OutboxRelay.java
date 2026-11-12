@@ -3,7 +3,8 @@ package com.gift.gift.global.outbox;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,7 +18,6 @@ import com.gift.gift.global.outbox.OutboxClaimRepository.Job;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @ConditionalOnProperty(name = "app.outbox.enabled", havingValue = "true")
 public class OutboxRelay {
     private final OutboxClaimRepository repository;
@@ -25,9 +25,24 @@ public class OutboxRelay {
     private final OutboxProperties settings;
     private final RabbitRoutingProperties routing;
 
+    @Autowired
+    public OutboxRelay(OutboxClaimRepository repository, RabbitPublisher publisher, OutboxProperties settings,
+                       ObjectProvider<RabbitRoutingProperties> routing) {
+        this(repository, publisher, settings, routing.getIfAvailable());
+    }
+
+    public OutboxRelay(OutboxClaimRepository repository, RabbitPublisher publisher, OutboxProperties settings,
+                       RabbitRoutingProperties routing) {
+        this.repository = repository;
+        this.publisher = publisher;
+        this.settings = settings;
+        this.routing = routing;
+    }
+
     @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:1000}", scheduler = "outboxTaskScheduler")
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void relaySearch() {
+        if (routing == null) return; // 신고 전용 프로세스에서는 검색 이벤트를 선점하지 않는다.
         relay("product.search.sync.v1", settings.searchBatchSize(), routing.exchange(), routing.searchRoutingKey());
     }
 

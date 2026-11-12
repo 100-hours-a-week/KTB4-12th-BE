@@ -33,8 +33,13 @@ public class RabbitPublisherConfiguration {
 
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnProperty(name = "app.outbox.enabled", havingValue = "true")
-    @EnableConfigurationProperties(RabbitRoutingProperties.class)
     static class OutboxRoutingConfiguration {
+
+        @Configuration(proxyBeanMethods = false)
+        @ConditionalOnExpression("${app.outbox.enabled:false} and ${app.outbox.search-relay-enabled:true}")
+        @EnableConfigurationProperties(RabbitRoutingProperties.class)
+        static class SearchRoutingConfiguration {
+        }
 
         @Bean(defaultCandidate = false)
         ThreadPoolTaskScheduler outboxTaskScheduler() {
