@@ -85,7 +85,7 @@ class AuthSessionControllerTest {
                                 containsString("HttpOnly"),
                                 containsString("Secure"),
                                 containsString("SameSite=Lax"),
-                                containsString("Path=/auth")
+                                containsString("Path=/;")
                         )
                 ));
     }
@@ -166,7 +166,7 @@ class AuthSessionControllerTest {
                                 containsString("HttpOnly"),
                                 containsString("Secure"),
                                 containsString("SameSite=Lax"),
-                                containsString("Path=/auth")
+                                containsString("Path=/;")
                         )
                 ));
 

@@ -67,7 +67,7 @@ class LoginControllerTest {
     }
 
     @Test
-    @DisplayName("로그인 성공 Cookie는 HttpOnly Secure SameSite Lax와 auth 경로를 사용한다")
+    @DisplayName("로그인 성공 Cookie는 HttpOnly Secure SameSite Lax와 루트 경로를 사용한다")
     void login_setsSecureHttpOnlyRefreshCookie() throws Exception {
         when(loginService.login(any(), isNull()))
                 .thenReturn(successResult());
@@ -85,7 +85,7 @@ class LoginControllerTest {
                                 org.hamcrest.Matchers.containsString("HttpOnly"),
                                 org.hamcrest.Matchers.containsString("Secure"),
                                 org.hamcrest.Matchers.containsString("SameSite=Lax"),
-                                org.hamcrest.Matchers.containsString("Path=/auth")
+                                org.hamcrest.Matchers.containsString("Path=/;")
                         )
                 ));
     }
