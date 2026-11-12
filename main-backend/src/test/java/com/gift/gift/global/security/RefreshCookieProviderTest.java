@@ -6,9 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseCookie;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class RefreshCookieProviderTest {
 
@@ -25,7 +23,7 @@ class RefreshCookieProviderTest {
         assertEquals(RefreshCookieProvider.COOKIE_NAME, cookie.getName());
         assertEquals(token, cookie.getValue());
         assertEquals(Duration.ofDays(14), cookie.getMaxAge());
-        assertEquals("/auth", cookie.getPath());
+        assertEquals("/", cookie.getPath());
         assertEquals("Lax", cookie.getSameSite());
         assertTrue(cookie.isHttpOnly());
         assertTrue(cookie.isSecure());
@@ -40,7 +38,7 @@ class RefreshCookieProviderTest {
         assertEquals(RefreshCookieProvider.COOKIE_NAME, cookie.getName());
         assertEquals("", cookie.getValue());
         assertEquals(Duration.ZERO, cookie.getMaxAge());
-        assertEquals("/auth", cookie.getPath());
+        assertEquals("/", cookie.getPath());
         assertEquals("Lax", cookie.getSameSite());
         assertTrue(cookie.isHttpOnly());
         assertTrue(cookie.isSecure());
