@@ -2,18 +2,43 @@ package com.gift.gift.domain.bugreport.messaging;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
+import java.time.Duration;
+import java.time.Instant;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import com.gift.gift.global.outbox.OutboxRelay;
 
 @Slf4j
 @RequiredArgsConstructor
-public class ReportOutboxRelay {
+public class ReportOutboxRelay implements InitializingBean, DisposableBean {
     private final OutboxRelay relay;
     private final ReportTopologyPreflight preflight;
     private final ReportMqProperties settings;
 
-    @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:1000}", scheduler = "outboxTaskScheduler")
+    private final ThreadPoolTaskScheduler reportScheduler = new ThreadPoolTaskScheduler();
+    @Value("${app.outbox.poll-interval-ms:1000}")
+    private long pollIntervalMillis = 1000;
+
+    @Override
+    public void afterPropertiesSet() {
+        if (pollIntervalMillis <= 0) throw new IllegalArgumentException("신고 발행 간격은 양수여야 합니다.");
+        reportScheduler.setPoolSize(1);
+        reportScheduler.setThreadNamePrefix("report-outbox-");
+        reportScheduler.setWaitForTasksToCompleteOnShutdown(true);
+        reportScheduler.setAwaitTerminationSeconds(30);
+        reportScheduler.initialize();
+        reportScheduler.scheduleWithFixedDelay(this::relayReports,
+                Instant.now().plusMillis(pollIntervalMillis), Duration.ofMillis(pollIntervalMillis));
+    }
+
+    @Override
+    public void destroy() {
+        reportScheduler.shutdown();
+    }
+
     public void relayReports() {
         try {
             preflight.verify();

@@ -46,6 +46,33 @@ class OutboxRelayTest {
     }
 
     @Test
+    void springCanCreateReportOnlyRelayWithoutSearchProperties() {
+        var repository = org.mockito.Mockito.mock(OutboxClaimRepository.class);
+        new org.springframework.boot.test.context.runner.ApplicationContextRunner()
+                .withUserConfiguration(OutboxRelay.class)
+                .withPropertyValues("app.outbox.enabled=true")
+                .withBean(OutboxClaimRepository.class, () -> repository)
+                .withBean(com.gift.gift.global.messaging.RabbitPublisher.class,
+                        () -> org.mockito.Mockito.mock(com.gift.gift.global.messaging.RabbitPublisher.class))
+                .withBean(OutboxProperties.class, () -> org.mockito.Mockito.mock(OutboxProperties.class))
+                .run(context -> {
+                    org.assertj.core.api.Assertions.assertThat(context).hasNotFailed();
+                    context.getBean(OutboxRelay.class).relaySearch();
+                    org.mockito.Mockito.verifyNoInteractions(repository);
+                });
+    }
+
+    @Test
+    void reportOnlyRelayDoesNotClaimSearchEvents() {
+        var repository = org.mockito.Mockito.mock(OutboxClaimRepository.class);
+        var reportOnly = new OutboxRelay(repository, org.mockito.Mockito.mock(com.gift.gift.global.messaging.RabbitPublisher.class),
+                org.mockito.Mockito.mock(OutboxProperties.class),
+                (com.gift.gift.global.messaging.RabbitRoutingProperties) null);
+        reportOnly.relaySearch();
+        org.mockito.Mockito.verifyNoInteractions(repository);
+    }
+
+    @Test
     @DisplayName("발행 확인 전에는 완료하지 않으며 확인 실패만 발행 재시도로 기록한다")
     void onlyCompletesConfirmedPublishes() {
         Job success = job(1);
