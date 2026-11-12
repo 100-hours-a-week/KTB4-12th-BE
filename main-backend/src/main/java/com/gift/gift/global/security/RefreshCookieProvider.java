@@ -40,6 +40,6 @@ public class RefreshCookieProvider {
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Lax")
-                .path("/auth");
+                .path("/");
     }
 }
