@@ -32,8 +32,10 @@ def verify():
         if not result or any(float(row["value"][1]) != 1 for row in result):
             failures.append(expression)
     substitutions = {"$__rate_interval": "1m", "$__range": "15m", "$mysql_instance": ".*",
-                     "$instance": ".*", "$uri": ".*", "$container": ".*"}
+                     "$environment": ".*", "$cluster": ".*", "$vhost": ".*", "$instance": ".*", "$uri": ".*", "$container": ".*"}
     for path in sorted((Path(__file__).parent / "grafana/dashboards").glob("*.json")):
+        if path.stem == "gift-profiling" and os.environ.get("PROFILING_MONITORING_ENABLED", "false") != "true":
+            continue
         dashboard = api("/api/dashboards/uid/" + json.loads(path.read_text())["uid"])["dashboard"]
         for panel in dashboard["panels"]:
             for target in panel.get("targets", []):
@@ -47,8 +49,8 @@ def verify():
     if failures:
         print("Missing/failed collection (not zero):", *failures, sep="\n")
         return 1
-    print("All targets, DB collectors, five dashboards and panel queries verified.")
-    print("Queue depth and exact restart counts require additional instrumentation; OOM behavior was not induced.")
+    print("All targets, DB collectors, enabled dashboards and panel queries verified.")
+    print("Profiling queue queries require the profiling opt-in; OOM behavior was not induced.")
     return 0
 
 
