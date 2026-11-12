@@ -29,3 +29,63 @@ tests:
       - eval_time: 3m
         alertname: ProfilingPublishBacklog
         exp_alerts: []
+  - interval: 30s
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",environment="production",cluster="gift",vhost="gift",queue="profiling.result",instance="rabbit-1"}'
+        values: '600x4 0x5'
+      - series: 'rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",environment="production",cluster="gift",vhost="gift",queue="profiling.result",instance="rabbit-2"}'
+        values: '600x4 0x5'
+      - series: 'rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",environment="staging",cluster="gift",vhost="gift",queue="profiling.result",instance="rabbit-1"}'
+        values: '300x10'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ProfilingResultReadyBacklog
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ProfilingResultReadyBacklog
+        exp_alerts:
+          - exp_labels: {environment: production, cluster: gift, vhost: gift, queue: profiling.result, severity: warning, component: profiling}
+            exp_annotations:
+              summary: "Profiling result Ready backlog exceeds initial threshold"
+              description: "Inspect BE result processing and DB health; do not republish requests solely due to delay."
+      - eval_time: 3m
+        alertname: ProfilingResultReadyBacklog
+        exp_alerts: []
+  - interval: 30s
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",vhost="gift",queue="profiling.request"}'
+        values: '1x4 0x5'
+      - series: 'rabbitmq_detailed_queue_consumers{job="rabbitmq-queues",vhost="gift",queue="profiling.request"}'
+        values: '0x10'
+      - series: 'rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",vhost="gift",queue="profiling.result"}'
+        values: '0x10'
+      - series: 'rabbitmq_detailed_queue_consumers{job="rabbitmq-queues",vhost="gift",queue="profiling.result"}'
+        values: '0x10'
+      - series: 'rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",vhost="gift",queue="profiling.result.failed"}'
+        values: '1x4 0x5'
+      - series: 'rabbitmq_detailed_queue_consumers{job="rabbitmq-queues",vhost="gift",queue="profiling.result.failed"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ProfilingQueueWithoutConsumers
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ProfilingQueueWithoutConsumers
+        exp_alerts:
+          - exp_labels: {vhost: gift, queue: profiling.request, severity: warning, component: profiling}
+            exp_annotations:
+              summary: "Profiling queue has waiting messages but no consumers"
+              description: "Request queue: inspect AI. Result queue: inspect BE. Check feature flags and manual stops; silence planned maintenance. This is not an automatic resume trigger."
+      - eval_time: 3m
+        alertname: ProfilingQueueWithoutConsumers
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: ProfilingDeadLetterBacklog
+        exp_alerts:
+          - exp_labels: {vhost: gift, queue: profiling.result.failed, severity: warning, component: profiling}
+            exp_annotations:
+              summary: "Profiling dead-letter queue contains messages"
+              description: "Investigate the failed message and recover using the runbook; do not discard or automatically replay it."
+      - eval_time: 3m
+        alertname: ProfilingDeadLetterBacklog
+        exp_alerts: []

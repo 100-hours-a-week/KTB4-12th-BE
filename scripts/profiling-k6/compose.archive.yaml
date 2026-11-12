@@ -1,0 +1,26 @@
+name: gift-profiling-portfolio
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    user: ${ARCHIVE_UID:?}:${ARCHIVE_GID:?}
+    ports: [127.0.0.1:29091:9090]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=36500d
+    volumes:
+      - ${ARCHIVE_RUNTIME:?}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${ARCHIVE_RUNTIME:?}/tsdb:/prometheus
+  grafana:
+    image: grafana/grafana:13.2.3
+    ports: [127.0.0.1:23002:3000]
+    environment:
+      GF_SECURITY_ADMIN_USER: bench
+      GF_SECURITY_ADMIN_PASSWORD: bench-local-only
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - ./grafana:/etc/grafana/provisioning:ro
+      - ${ARCHIVE_RUNTIME:?}/dashboard.json:/var/lib/grafana/dashboards/profiling.json:ro
+      - grafana-data:/var/lib/grafana
+volumes:
+  grafana-data:

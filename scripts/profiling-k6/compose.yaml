@@ -1,0 +1,54 @@
+name: gift-profiling-bench
+services:
+  rabbitmq:
+    image: rabbitmq:4.4.0-management
+    environment:
+      RABBITMQ_DEFAULT_USER: bench
+      RABBITMQ_DEFAULT_PASS: bench-local-only
+      RABBITMQ_DEFAULT_VHOST: profiling-bench
+    ports:
+      - 127.0.0.1:25672:5672
+      - 127.0.0.1:25673:15672
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    volumes: [rabbit-data:/var/lib/rabbitmq]
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: bench
+      POSTGRES_PASSWORD: bench-local-only
+      POSTGRES_DB: profiling_bench
+    ports: [127.0.0.1:25432:5432]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U bench -d profiling_bench]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    volumes: [postgres-data:/var/lib/postgresql/data]
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    ports: [127.0.0.1:29090:9090]
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.retention.time=7d]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    extra_hosts: [host.docker.internal:host-gateway]
+  grafana:
+    image: grafana/grafana:13.2.3
+    ports: [127.0.0.1:23001:3000]
+    environment:
+      GF_SECURITY_ADMIN_USER: bench
+      GF_SECURITY_ADMIN_PASSWORD: bench-local-only
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - ./grafana:/etc/grafana/provisioning:ro
+      - ./dashboard.json:/var/lib/grafana/dashboards/profiling.json:ro
+      - grafana-data:/var/lib/grafana
+volumes:
+  rabbit-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:

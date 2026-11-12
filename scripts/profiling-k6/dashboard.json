@@ -1,0 +1,303 @@
+{
+  "uid": "profiling-bench",
+  "title": "Profiling / synthetic MQ benchmark",
+  "schemaVersion": 39,
+  "version": 3,
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "tags": [
+    "profiling",
+    "synthetic"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "run_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-profiling-bench"
+        },
+        "query": "label_values(profiling_bench_completed_total, run_id)",
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "phase",
+        "type": "custom",
+        "query": "measurement,warmup",
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "measurement",
+          "value": "measurement"
+        },
+        "options": [
+          {
+            "text": "measurement",
+            "value": "measurement",
+            "selected": true
+          },
+          {
+            "text": "warmup",
+            "value": "warmup",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active analyses",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_active{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Successes / minute",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(profiling_bench_completed_total{run_id=~\"$run_id\",phase=~\"$phase\"}[1m]) * 60",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Request Ready",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_profiling_request_ready{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Request Unacked",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_profiling_request_unacked{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Result Ready",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_profiling_result_ready{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Request failed Ready",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_profiling_request_failed_ready{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Analysis p95 (run to date)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_analysis_p95_seconds{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Process peak RSS (bytes)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_process_peak_rss_bytes{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Process CPU (cores)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(profiling_bench_process_cpu_seconds_total{run_id=~\"$run_id\",phase=~\"$phase\"}[1m])",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "DB pool checked out",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_db_checked_out{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "W={{workers}} P={{prefetch}} {{run_id}} {{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "\ubaa9\ud45c \uc720\uc785 \uc18d\ub3c4(\uac74/\ubd84)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-profiling-bench"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "profiling_bench_target_rate_per_min{run_id=~\"$run_id\",phase=~\"$phase\"}",
+          "legendFormat": "{{run_id}} {{phase}}"
+        }
+      ]
+    }
+  ]
+}

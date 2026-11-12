@@ -3,6 +3,7 @@ package com.gift.gift.domain.product.service;
 import java.util.*;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ import com.gift.gift.domain.recommendation.profiling.repository.RecipientRecomme
 import com.gift.gift.domain.user.service.UserQueryService;
 import com.gift.gift.global.exception.ErrorCode;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -303,7 +305,7 @@ public class ProductQueryService {
                             .map(ProductSearchDocument::toProjection)
                             .toList();
                 } catch (DataAccessException exception) {
-                    throw new ProductException(ErrorCode.SERVICE_UNAVAILABLE);
+                    log.warn("ES 상품 검색 실패로 MySQL 검색을 사용합니다.", exception);
                 }
             }
         }
