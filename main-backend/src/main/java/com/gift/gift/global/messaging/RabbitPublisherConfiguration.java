@@ -36,7 +36,7 @@ public class RabbitPublisherConfiguration {
     static class OutboxRoutingConfiguration {
 
         @Configuration(proxyBeanMethods = false)
-        @ConditionalOnProperty(name = "app.outbox.search-relay-enabled", havingValue = "true", matchIfMissing = true)
+        @ConditionalOnExpression("${app.outbox.enabled:false} and ${app.outbox.search-relay-enabled:true}")
         @EnableConfigurationProperties(RabbitRoutingProperties.class)
         static class SearchRoutingConfiguration {
         }

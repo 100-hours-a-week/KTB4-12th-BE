@@ -15,6 +15,14 @@ class RabbitRoutingConfigurationTest {
             .withBean("rabbitConnectionFactory", CachingConnectionFactory.class, CachingConnectionFactory::new);
 
     @Test
+    @DisplayName("중첩 검색 설정이 직접 스캔돼도 Outbox 비활성 시 라우팅을 요구하지 않는다")
+    void scannedSearchConfigurationStaysDisabledWithOutbox() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(RabbitPublisherConfiguration.OutboxRoutingConfiguration.SearchRoutingConfiguration.class)
+                .run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(RabbitRoutingProperties.class));
+    }
+
+    @Test
     @DisplayName("신고 전용 Outbox는 검색 라우팅 없이 발행 기반만 기동한다")
     void reportOnlyPublisherDoesNotRequireSearchRouting() {
         contextRunner.withPropertyValues("app.outbox.enabled=true", "app.outbox.search-relay-enabled=false")
