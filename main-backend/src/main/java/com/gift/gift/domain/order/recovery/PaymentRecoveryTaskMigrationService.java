@@ -103,7 +103,7 @@ public class PaymentRecoveryTaskMigrationService {
                             'AUTO_CANCELLATION_RECONCILIATION_REQUIRED'
                         )
                   )
-                ON DUPLICATE KEY UPDATE id = id
+                ON DUPLICATE KEY UPDATE payment_recovery_tasks.id = payment_recovery_tasks.id
                 """, timeout.toSeconds(), staleAge.toNanos() / 1_000);
     }
 
@@ -156,7 +156,7 @@ public class PaymentRecoveryTaskMigrationService {
                         OR cancellations.failure_code <>
                             'CANCELLATION_RECONCILIATION_REQUIRED'
                   )
-                ON DUPLICATE KEY UPDATE id = id
+                ON DUPLICATE KEY UPDATE payment_recovery_tasks.id = payment_recovery_tasks.id
                 """, timeout.toSeconds());
     }
 
