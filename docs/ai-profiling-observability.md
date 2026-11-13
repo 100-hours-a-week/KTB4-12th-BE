@@ -90,7 +90,8 @@ Alertmanager는 10초 group_wait/group_interval, 4시간 repeat_interval, send_r
 조건 해제 후에도 수집·평가·그룹 간격에 따른 전달 지연이 있다. 실패 증가량 경보는 5분 조회 창 동안 남을 수 있다.
 로컬 수신기는 외부 통지를 보내지 않으며 재시작하면 수신 이력이 사라진다.
 
-이 프로파일링 경로에는 새 대시보드·외부 채널·결과 미수신 경보를 추가하지 않았다. 결제 RabbitMQ 대시보드와 DLQ Discord 경보는 [모니터링 문서](monitoring.md)를 따른다.
+요청·결과 큐 전용 대시보드와 수집 YAML 예시는 [프로파일링 모니터링 전달 안내](../monitoring/README-profiling.md)를 따른다. 결과 큐 적체·업무 큐 Consumer 부재·DLQ 경보를 추가했으며 외부 채널 연결과 DB 결과 미수신 시간 경보는 포함하지 않는다.
+결제 RabbitMQ 대시보드와 DLQ Discord 경보는 [모니터링 문서](monitoring.md)를 따른다.
 
 ## 검증
 

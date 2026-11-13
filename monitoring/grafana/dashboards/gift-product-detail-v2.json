@@ -1,0 +1,839 @@
+{
+  "uid": "gift-product-detail-v2",
+  "title": "Gift / 상품 상세 A·B 캐시 전후 비교",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "tags": [
+    "gift",
+    "product-detail-v2",
+    "baseline-cache"
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Load tests",
+        "type": "dashboard",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 160, 0, 1)",
+        "target": {
+          "type": "tags",
+          "tags": [
+            "loadtest"
+          ],
+          "matchAny": false
+        }
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "App instance",
+        "query": "label_values(up{job=\"spring\"}, instance)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "uri",
+        "label": "API route",
+        "query": "/products/{productId}",
+        "type": "constant",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "/products/{productId}",
+          "value": "/products/{productId}"
+        },
+        "hide": 2
+      },
+      {
+        "name": "mysql_instance",
+        "label": "MySQL exporter",
+        "query": "label_values(mysql_up, instance)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "container",
+        "label": "Container",
+        "query": "label_values(container_cpu_usage_seconds_total{job=\"cadvisor\",name!=\"\"}, name)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "상품 상세 실제 서버 처리 RPS",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\"}[$__rate_interval]))",
+          "legendFormat": "RPS",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "상품 상세 서버 응답시간 P50 / P95 / P99",
+      "description": "서버 HTTP histogram 추정치. k6 성공 요청 응답시간(detail_success_duration_ms)과 측정 위치 및 모집단이 다릅니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\"}[$__rate_interval])))",
+          "legendFormat": "P50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\"}[$__rate_interval])))",
+          "legendFormat": "P95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\"}[$__rate_interval])))",
+          "legendFormat": "P99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "API 4xx / 5xx rate",
+      "description": "Separate client failures and server failures; a zero-request interval has no defined error rate.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\",status=~\"4..\"}[$__rate_interval])) or (sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\"}[$__rate_interval])) * 0)) / sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\"}[$__rate_interval]))",
+          "legendFormat": "4xx / requests",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "(sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\",status=~\"5..\"}[$__rate_interval])) or (sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\"}[$__rate_interval])) * 0)) / sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",uri=\"/products/{productId}\",method=\"GET\"}[$__rate_interval]))",
+          "legendFormat": "5xx / requests",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM process / system CPU",
+      "description": "System CPU is the OS/cgroup view seen by the JVM, not a macOS host measurement.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "process_cpu_usage{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "process {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "system_cpu_usage{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "JVM-visible system {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM heap used / max",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (jvm_memory_used_bytes{job=\"spring\",instance=~\"$instance\",area=\"heap\"})",
+          "legendFormat": "used {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum by(instance) (jvm_memory_max_bytes{job=\"spring\",instance=~\"$instance\",area=\"heap\"} > 0)",
+          "legendFormat": "max {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GC pause time / second",
+      "description": "Seconds spent in pauses per wall-clock second; compare peaks with API latency.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (rate(jvm_gc_pause_seconds_sum{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Hikari active / idle / pending / max",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hikaricp_connections_active{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "active {{instance}} {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "hikaricp_connections_idle{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "idle {{instance}} {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "hikaricp_connections_pending{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "pending {{instance}} {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "hikaricp_connections_max{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "max {{instance}} {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Hikari mean / max acquisition time",
+      "description": "Acquisition wait is outside time spent using the connection. Zero acquisitions produce an undefined mean.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(hikaricp_connections_acquire_seconds_sum{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]) / rate(hikaricp_connections_acquire_seconds_count{job=\"spring\",instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "mean {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "hikaricp_connections_acquire_seconds_max{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "time-window max {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "InnoDB row lock waits / second",
+      "description": "Global completed wait count; not a product-specific lock diagnosis.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_innodb_row_lock_waits{job=\"mysql\",instance=~\"$mysql_instance\"}[$__rate_interval])",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "InnoDB lock wait seconds / second",
+      "description": "MySQL exports cumulative row-lock time in milliseconds. This is not instantaneous queue wait duration.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_innodb_row_lock_time{job=\"mysql\",instance=~\"$mysql_instance\"}[$__rate_interval]) / 1000",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Container CPU (cores)",
+      "description": "1.0 means one CPU core; host and process CPU percentages use different denominators.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(name) (rate(container_cpu_usage_seconds_total{job=\"cadvisor\",name=~\"$container\",name!=\"\",id!=\"/\"}[$__rate_interval]))",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU throttled time / second",
+      "description": "Requires supported cgroups and a CPU quota. No series is unsupported/unlimited, not proof of zero throttling.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(name) (rate(container_cpu_cfs_throttled_seconds_total{job=\"cadvisor\",name=~\"$container\",name!=\"\",id!=\"/\"}[$__rate_interval]))",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 12,
+        "y": 45,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "text",
+      "title": "실험 조건과 구간",
+      "options": {
+        "mode": "markdown",
+        "content": "## 상품 상세 v2 — baseline / cache 각각 A·B 3회\n- 예열: 별도 60초, 20 RPS. 본 측정 링크에 포함하지 않음.\n- A: 180초, 20 RPS, 계정 1,000개.\n- B: 280초. 일반 탐색 20 RPS + 이벤트 단일 상품 최대 80 RPS.\n- B 구간: 0–60초 평상시 / 60–80초 상승 / **80–200초 이벤트 유지** / 200–220초 하강 / 220–280초 회복.\n- 일반 상품 100개 중 상위 20개에 80%; 최초 80% / 재조회 20%. 계정 수는 동시 접속 수가 아님.\n- 결과 폴더의 dashboard-url.txt로 해당 회차 시간 범위를 열기. 서로 다른 회차를 동시에 합산하지 않기.\n- 전후 동일 DB·상품·계정·풀·JVM·배치 중단·로그 설정 유지. cache는 예열된 캐시 비교."
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "text",
+      "title": "해석과 미측정 항목",
+      "options": {
+        "mode": "markdown",
+        "content": "## 함께 확인할 항목\n- 지연 상승 시 Hikari pending/acquire → DB row lock waits → JVM CPU/GC 순으로 함께 관측.\n- B 이벤트 유지 구간은 실제 측정 시작 +80초부터 +200초까지 선택해 비교. rate/quantile은 이동 구간 추정치이므로 경계 전후가 섞일 수 있음.\n- **k6 summary.json / raw.json**에서 성공 응답 p95·p99, 연결/HTTP/본문 오류, dropped_iterations 확인. 이 서버 대시보드만으로 목표 부하 달성을 판정하지 않음.\n- 서버 지표에는 stream/history/period/run_id 라벨이 없음. 일반/이벤트 및 최초/재조회 분리는 k6 raw.json 사용.\n- MySQL 전역 지표는 상세 API 전용 SQL 수·시간이 아님. 다른 DB 부하가 있으면 섞임.\n- 캐시 적중률·단계별 SQL 시간은 현재 계측되지 않았으므로 미측정. 컨테이너 지표는 해당 exporter가 없거나 앱이 호스트 JVM이면 No data 가능.\n- 반복 회차 p95를 평균해 전체 p95로 해석하지 않음. 운영 최대 처리량을 입증하는 실험이 아님."
+      },
+      "id": 14,
+      "gridPos": {
+        "x": 12,
+        "y": 54,
+        "w": 12,
+        "h": 9
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "상품 상세 원인 분석",
+      "type": "link",
+      "url": "/d/gift-product-diagnostics",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ]
+}

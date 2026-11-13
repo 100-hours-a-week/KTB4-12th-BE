@@ -1,0 +1,1550 @@
+{
+  "uid": "gift-product-cache",
+  "title": "상품 상세 캐시 분석",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "tags": [
+    "gift",
+    "product-detail",
+    "cache",
+    "loadtest"
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Load tests",
+        "type": "dashboard",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 160, 0, 1)",
+        "target": {
+          "type": "tags",
+          "tags": [
+            "loadtest"
+          ],
+          "matchAny": false
+        }
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "App instance",
+        "query": "label_values(up{job=\"spring\"}, instance)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "allValue": ".*",
+        "current": {
+          "text": "host.docker.internal:8081",
+          "value": "host.docker.internal:8081"
+        }
+      },
+      {
+        "name": "uri",
+        "label": "API 경로",
+        "type": "constant",
+        "query": "/products/{productId}",
+        "hide": 2,
+        "current": {
+          "text": "/products/{productId}",
+          "value": "/products/{productId}"
+        }
+      },
+      {
+        "name": "mysql_instance",
+        "label": "MySQL exporter",
+        "query": "label_values(mysql_up, instance)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "allValue": ".*",
+        "current": {
+          "text": "mysqld-exporter:9104",
+          "value": "mysqld-exporter:9104"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "실험 기록·읽는 방법",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**캐시 판정과 구간 비용을 확인하는 대시보드입니다.** 백엔드 계측 코드 반영 후 재시작해야 새 지표가 수집됩니다. 과거 실행에는 소급 적용되지 않습니다.\n\n**stage:** stock_db=재고·삭제 상태 DB 조회 / cache_read=Redis 조회·역직렬화 / metadata_db=상세 DB 조회·DTO 매핑 / cache_write=직렬화·Redis 저장 / response_build=이미지 URL 생성·응답 조합 / view_history=공유 락·조회 이력·이벤트 처리(커밋 포함).\n\n시간은 순수 SQL 실행시간이 아닌 애플리케이션 구간 시간이며 실패 호출도 포함합니다. hit 비율은 hit/(hit+miss), Redis read error는 별도 표시합니다. miss에는 형식 오류로 사용하지 못한 캐시도 포함됩니다. DB 호출 횟수는 SQL 개수가 아닙니다. **타임아웃·DB 대체는 기존 정책을 유지합니다.**\n\n서버 재시작 후 최소 두 번 수집된 것을 확인하고 측정하세요. 짧은 부하는 15초 수집 사이에 끝날 수 있으며, 서로 다른 구간의 p95를 더해 전체 p95로 해석하지 않습니다. **No data ≠ 0**. 실험 시각·실패는 k6 원자료와 함께 확인하세요."
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "계측 준비 상태 / Spring 수집 상태",
+      "description": "두 값이 모두 1인지 확인하세요. 계측 시계열이 없으면 재시작·수집을 확인합니다. 과거 구간에 0을 채우지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(gift_product_detail_instrumentation_ready{job=\"spring\",instance=~\"$instance\"})",
+          "legendFormat": "계측 준비",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "min(up{job=\"spring\",instance=~\"$instance\"})",
+          "legendFormat": "Spring up",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 21,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "캐시 조회: hit / miss / Redis read error",
+      "description": "상품 상세 캐시만 집계합니다. error는 Redis 읽기 장애이며 정상 miss와 분리합니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gift_product_detail_cache_requests_total{job=\"spring\",instance=~\"$instance\",result=\"hit\"}[$__rate_interval]))",
+          "legendFormat": "hit",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(gift_product_detail_cache_requests_total{job=\"spring\",instance=~\"$instance\",result=\"miss\"}[$__rate_interval]))",
+          "legendFormat": "miss",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(gift_product_detail_cache_requests_total{job=\"spring\",instance=~\"$instance\",result=\"error\"}[$__rate_interval]))",
+          "legendFormat": "error",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 22,
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "정상 캐시 조회의 적중률",
+      "description": "Redis read error를 분모에서 제외합니다. 요청이 없으면 비율은 정의되지 않습니다. 오류 그래프도 함께 확인하세요.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gift_product_detail_cache_requests_total{job=\"spring\",instance=~\"$instance\",result=\"hit\"}[$__rate_interval])) / sum(rate(gift_product_detail_cache_requests_total{job=\"spring\",instance=~\"$instance\",result=~\"hit|miss\"}[$__rate_interval]))",
+          "legendFormat": "hit / (hit + miss)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 23,
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "캐시 저장 성공 / 오류",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gift_product_detail_cache_writes_total{job=\"spring\",instance=~\"$instance\",result=\"success\"}[$__rate_interval]))",
+          "legendFormat": "success",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(gift_product_detail_cache_writes_total{job=\"spring\",instance=~\"$instance\",result=\"error\"}[$__rate_interval]))",
+          "legendFormat": "error",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 24,
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "처리 구간별 평균 시간",
+      "description": "Redis 읽기는 복원까지, 쓰기는 직렬화까지 포함합니다. metadata_db는 DB 통신·조회·매핑을 포함하고 view_history는 트랜잭션 완료까지 포함합니다. 호출이 없는 단계는 평균이 없습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (stage) (rate(gift_product_detail_stage_seconds_sum{job=\"spring\",instance=~\"$instance\"}[$__rate_interval])) / sum by (stage) (rate(gift_product_detail_stage_seconds_count{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{stage}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 25,
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "처리 구간별 p95",
+      "description": "각 단계 자체 분포의 p95입니다. 합산해 API p95로 사용하지 않습니다. 적은 표본의 근사치입니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(gift_product_detail_stage_seconds_bucket{job=\"spring\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 26,
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "메타데이터 DB 호출 / Redis 오류 후 DB 대체 시도",
+      "description": "DB 호출은 성공 여부와 관계없이 계측합니다. error는 DB 대체 시작을 뜻하며 DB 조회 성공을 보장하지 않습니다. 이 값은 실제 SQL 수가 아닙니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gift_product_detail_stage_seconds_count{job=\"spring\",instance=~\"$instance\",stage=\"metadata_db\"}[$__rate_interval]))",
+          "legendFormat": "메타데이터 DB 호출",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(gift_product_detail_cache_requests_total{job=\"spring\",instance=~\"$instance\",result=\"error\"}[$__rate_interval]))",
+          "legendFormat": "Redis 읽기 오류 → DB 대체 시도",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 27,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "선택 시간 범위의 캐시 판정 횟수",
+      "description": "Prometheus increase는 수집값 사이를 추정하므로 소수·오차가 가능합니다. exact 요청 수는 k6와 대조하세요.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (result) (increase(gift_product_detail_cache_requests_total{job=\"spring\",instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 28,
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "처리 구간별 호출률",
+      "description": "warm에서 metadata_db와 cache_write 호출이 계속 발생하는지 확인하세요. stock_db와 view_history는 캐시 히트에도 유지됩니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (stage) (rate(gift_product_detail_stage_seconds_count{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{stage}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 29,
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "메타데이터 DB 호출 / 캐시 조회 비율",
+      "description": "메타데이터 DB 호출을 발생시킨 조회 비중입니다. 재적재 수이며 SQL 개수나 성공률이 아닙니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gift_product_detail_stage_seconds_count{job=\"spring\",instance=~\"$instance\",stage=\"metadata_db\"}[$__rate_interval])) / sum(rate(gift_product_detail_cache_requests_total{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "DB load / cache lookup",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 30,
+      "gridPos": {
+        "x": 12,
+        "y": 33,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "수집 상태 — Spring / MySQL / DB",
+      "description": "1=healthy, 0=failed. Exporter HTTP UP does not imply DB collection success.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "Spring {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "mysql_up",
+          "legendFormat": "DB connection {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "mysql_exporter_collector_success",
+          "legendFormat": "collector {{collector}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "up{job=\"mysql\",instance=~\"$mysql_instance\"}",
+          "legendFormat": "MySQL exporter {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 102,
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "상품 상세 GET 요청량 (RPS)",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__rate_interval]))",
+          "legendFormat": "RPS",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 103,
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "상품 상세 GET 서버 응답시간 평균 / p50 / p95 / p99",
+      "description": "완료된 상품 상세 GET 요청의 서버 처리 시간입니다(실패 포함). 평균은 시간 합계/요청 수이며 요청이 없는 구간은 정의되지 않습니다. k6의 클라이언트 응답시간 및 실행 전체 요약과 구분하세요.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__rate_interval])))",
+          "legendFormat": "P50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__rate_interval])))",
+          "legendFormat": "P95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__rate_interval])))",
+          "legendFormat": "P99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "sum(rate(http_server_requests_seconds_sum{job=\"spring\",instance=~\"$instance\",method=\"GET\",uri=\"$uri\"}[$__rate_interval])) / sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",method=\"GET\",uri=\"$uri\"}[$__rate_interval]))",
+          "legendFormat": "평균",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 104,
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "상품 상세 GET HTTP 4xx / 5xx 비율",
+      "description": "Separate client failures and server failures; a zero-request interval has no defined error rate.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\",status=~\"4..\"}[$__rate_interval])) or (sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__rate_interval])) * 0)) / sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__rate_interval]))",
+          "legendFormat": "4xx / requests",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "(sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\",status=~\"5..\"}[$__rate_interval])) or (sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__rate_interval])) * 0)) / sum(rate(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__rate_interval]))",
+          "legendFormat": "5xx / requests",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 105,
+      "gridPos": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "선택 기간 상품 상세 GET 요청 수",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(http_server_requests_seconds_count{job=\"spring\",instance=~\"$instance\",uri!~\"/actuator.*\",method=\"GET\",uri=\"$uri\"}[$__range]))",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 106,
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DB 연결 풀 — Active / Idle / Pending / Max",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hikaricp_connections_active{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "active {{instance}} {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "hikaricp_connections_idle{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "idle {{instance}} {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "hikaricp_connections_pending{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "pending {{instance}} {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "hikaricp_connections_max{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "max {{instance}} {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 107,
+      "gridPos": {
+        "x": 12,
+        "y": 54,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DB 연결 획득 시간 — 평균 / 시간창 최대",
+      "description": "Acquisition wait is outside time spent using the connection. Zero acquisitions produce an undefined mean.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(hikaricp_connections_acquire_seconds_sum{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]) / rate(hikaricp_connections_acquire_seconds_count{job=\"spring\",instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "mean {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "hikaricp_connections_acquire_seconds_max{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "time-window max {{pool}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 108,
+      "gridPos": {
+        "x": 0,
+        "y": 61,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DB 연결 타임아웃 발생률",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(hikaricp_connections_timeout_total{job=\"spring\",instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 109,
+      "gridPos": {
+        "x": 12,
+        "y": 61,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "MySQL 연결 수 / 실행 중 스레드",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mysql_global_status_threads_connected{job=\"mysql\",instance=~\"$mysql_instance\"}",
+          "legendFormat": "connected",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "mysql_global_status_threads_running{job=\"mysql\",instance=~\"$mysql_instance\"}",
+          "legendFormat": "running",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 110,
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "MySQL 전체 쿼리량",
+      "description": "Exporter queries also contribute to these global counters.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_queries{job=\"mysql\",instance=~\"$mysql_instance\"}[$__rate_interval])",
+          "legendFormat": "queries including stored programs",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "rate(mysql_global_status_questions{job=\"mysql\",instance=~\"$mysql_instance\"}[$__rate_interval])",
+          "legendFormat": "client statements",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 111,
+      "gridPos": {
+        "x": 12,
+        "y": 68,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "MySQL 행 잠금 대기 발생률",
+      "description": "Global completed wait count; not a product-specific lock diagnosis.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_innodb_row_lock_waits{job=\"mysql\",instance=~\"$mysql_instance\"}[$__rate_interval])",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 112,
+      "gridPos": {
+        "x": 0,
+        "y": 75,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "MySQL 누적 행 잠금 대기 시간 증가율",
+      "description": "MySQL exports cumulative row-lock time in milliseconds. This is not instantaneous queue wait duration.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_innodb_row_lock_time{job=\"mysql\",instance=~\"$mysql_instance\"}[$__rate_interval]) / 1000",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 113,
+      "gridPos": {
+        "x": 12,
+        "y": 75,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "백엔드 CPU — 프로세스 / 시스템",
+      "description": "System CPU is the OS/cgroup view seen by the JVM, not a macOS host measurement.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "process_cpu_usage{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "process {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "system_cpu_usage{job=\"spring\",instance=~\"$instance\"}",
+          "legendFormat": "JVM-visible system {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 114,
+      "gridPos": {
+        "x": 0,
+        "y": 82,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "백엔드 힙 메모리 — 사용 / 최대",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (jvm_memory_used_bytes{job=\"spring\",instance=~\"$instance\",area=\"heap\"})",
+          "legendFormat": "used {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum by(instance) (jvm_memory_max_bytes{job=\"spring\",instance=~\"$instance\",area=\"heap\"} > 0)",
+          "legendFormat": "max {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 115,
+      "gridPos": {
+        "x": 12,
+        "y": 82,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "백엔드 GC 일시정지 시간 증가율",
+      "description": "Seconds spent in pauses per wall-clock second; compare peaks with API latency.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (rate(jvm_gc_pause_seconds_sum{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{instance}} {{pool}} {{name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 116,
+      "gridPos": {
+        "x": 0,
+        "y": 89,
+        "w": 12,
+        "h": 7
+      }
+    }
+  ],
+  "description": "상품 상세 GET 부하 테스트용. API 지표는 상세 경로로 한정하며 JVM/Hikari/MySQL은 프로세스·풀·DB 전체 지표입니다. 순간 부하 지연은 k6 원자료로 확인합니다.",
+  "links": [
+    {
+      "title": "상품 상세 원인 분석",
+      "type": "link",
+      "url": "/d/gift-product-diagnostics",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ]
+}

@@ -97,7 +97,7 @@ def configure():
              "params": {"family": ["queue_coarse_metrics", "queue_consumer_count"],
                         "vhost": [os.environ.get("SPRING_RABBITMQ_VIRTUAL_HOST",
                                                  os.environ.get("RABBITMQ_VHOST", "gift"))],
-                        "queue": ["^profiling[.](request|result)$"]},
+                        "queue": ["^profiling[.](request|result)([.]failed)?$"]},
              "static_configs": [{"targets": [rabbit]}]},
             {"job_name": "rabbitmq-payment-queues", "metrics_path": "/metrics/detailed",
              "params": {"family": ["queue_coarse_metrics", "queue_consumer_count",

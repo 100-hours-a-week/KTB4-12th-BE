@@ -8,12 +8,15 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -193,24 +196,71 @@ class ProductQueryServiceTest {
     }
 
     @Test
-    @DisplayName("ES 검색 실패는 서비스 불가로 처리하고 MySQL로 재검색하지 않는다")
-    void getProducts_reportsUnavailableWhenEsFails() {
+    @DisplayName("ES 장애 시 MySQL 검색으로 상품과 다음 페이지 커서를 반환한다")
+    void getProducts_fallsBackToMysqlWhenEsFails() {
         ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
         searchBeanFactory.addBean("productSearchRepository", esRepository);
         when(esRepository.search(any(), isNull(), eq(21)))
                 .thenThrow(new DataAccessResourceFailureException("ES unavailable"));
+        stubFirstPage(products(21));
+        when(productImageRepository.findThumbnailCandidates(anyList())).thenReturn(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("세트", List.of(11L), ProductSort.POPULAR, null, null), null
+        );
+
+        assertThat(response.products()).hasSize(20);
+        assertThat(response.pagination().hasNext()).isTrue();
+        ProductSearchCondition condition = captureCondition();
+        assertThat(condition.query()).isEqualTo("세트");
+        assertThat(condition.categoryIds()).containsExactly(11L);
+        ProductCursor cursor = cursorCodec.decode(response.pagination().nextCursor(), condition);
+        assertThat(cursor.productId()).isEqualTo(response.products().getLast().productId());
+    }
+
+    @Test
+    @DisplayName("ES 장애 다음 페이지도 동일한 조건과 커서로 MySQL을 조회한다")
+    void getProducts_fallsBackWithSameCursorWhenEsFails() {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        ProductSearchCondition condition = new ProductSearchCondition("세트", List.of(), ProductSort.MOST_GIFTED);
+        ProductCursor cursor = new ProductCursor(
+                1, ProductSort.MOST_GIFTED, "세트", List.of(), 20L,
+                LocalDateTime.of(2026, 7, 13, 12, 0), 100, 10
+        );
+        when(esRepository.search(condition, cursor, 21))
+                .thenThrow(new DataAccessResourceFailureException("ES unavailable"));
+        when(productRepository.searchProducts(condition, cursor, 21)).thenReturn(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("세트", null, ProductSort.MOST_GIFTED, null,
+                        cursorCodec.encode(cursor, condition)), null
+        );
+
+        assertThat(response.products()).isEmpty();
+        assertThat(response.pagination().hasNext()).isFalse();
+        verify(productRepository).searchProducts(condition, cursor, 21);
+    }
+
+    @Test
+    @DisplayName("ES와 MySQL이 모두 실패하면 MySQL 오류를 숨기지 않는다")
+    void getProducts_propagatesMysqlFailureAfterEsFailure() {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        when(esRepository.search(any(), isNull(), eq(21)))
+                .thenThrow(new DataAccessResourceFailureException("ES unavailable"));
+        DataAccessResourceFailureException mysqlFailure =
+                new DataAccessResourceFailureException("MySQL unavailable");
+        when(productRepository.searchProducts(any(), isNull(), eq(21))).thenThrow(mysqlFailure);
 
         assertThatThrownBy(() -> productQueryService.getProducts(
                 new ProductListRequest("세트", null, ProductSort.POPULAR, null, null), null
-        )).isInstanceOfSatisfying(ProductException.class, exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
-
-        verifyNoInteractions(productRepository, productImageRepository);
+        )).isSameAs(mysqlFailure);
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", "세", "😀"})
-    @DisplayName("검색어가 없거나 한 코드포인트이면 ES 대신 기존 검색을 유지한다")
+    @ValueSource(strings = {"세", "😀"})
+    @DisplayName("한 코드포인트 검색어는 ES 대신 기존 검색을 유지한다")
     void getProducts_keepsMysqlForUnsupportedQuery(String query) {
         ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
         searchBeanFactory.addBean("productSearchRepository", esRepository);
@@ -221,6 +271,130 @@ class ProductQueryServiceTest {
         );
 
         assertThat(captureCondition().query()).isEqualTo(query);
+        verifyNoInteractions(esRepository);
+    }
+
+    @ParameterizedTest
+    @MethodSource("listingCases")
+    @DisplayName("검색어 없는 목록은 ES를 사용하고 20건 응답과 다음 커서를 유지한다")
+    void getProducts_usesEsWithoutQuery(
+            String query,
+            List<Long> categoryIds,
+            ProductSort sort
+    ) {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        ProductSearchCondition condition = new ProductSearchCondition(query, categoryIds, sort);
+        List<ProductSearchDocument> documents = new ArrayList<>();
+        for (long id = 1; id <= 21; id++) {
+            documents.add(new ProductSearchDocument(
+                    id, "상품 " + id, "브랜드", new BigDecimal("10000"),
+                    100, 10, "2026-07-13T03:00:00.123456Z"
+            ));
+        }
+        SearchHits<ProductSearchDocument> hits = esHits(documents);
+        when(esRepository.search(condition, null, 21)).thenReturn(hits);
+        when(productImageRepository.findThumbnailCandidates(anyList())).thenReturn(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest(query, categoryIds, sort, null, null), null
+        );
+
+        assertThat(response.products()).hasSize(20);
+        assertThat(response.pagination().hasNext()).isTrue();
+        ProductCursor cursor = cursorCodec.decode(response.pagination().nextCursor(), condition);
+        assertThat(cursor.query()).isEmpty();
+        assertThat(cursor.categoryIds()).isEqualTo(condition.categoryIds());
+        assertThat(cursor.sort()).isEqualTo(sort);
+        assertThat(cursor.productId()).isEqualTo(20L);
+        assertThat(cursor.createdAt()).isEqualTo(LocalDateTime.of(2026, 7, 13, 12, 0, 0, 123456000));
+        verify(esRepository).search(condition, null, 21);
+        verifyNoInteractions(productRepository);
+    }
+
+    private static Stream<Arguments> listingCases() {
+        return Stream.of(ProductSort.POPULAR, ProductSort.MOST_GIFTED)
+                .flatMap(sort -> Stream.of(List.<Long>of(), List.of(26L))
+                        .flatMap(categories -> Stream.<String>of(null, "", "   ")
+                                .map(query -> Arguments.of(query, categories, sort))));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductSort.class, names = {"POPULAR", "MOST_GIFTED"})
+    @DisplayName("검색어 없는 다음 페이지도 ES에 같은 커서를 전달하고 빈 결과는 재검색하지 않는다")
+    void getProducts_passesCursorToEsWithoutQuery(ProductSort sort) {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        ProductSearchCondition condition = new ProductSearchCondition("", List.of(26L), sort);
+        ProductCursor cursor = new ProductCursor(
+                1, sort, "", List.of(26L), 20L,
+                LocalDateTime.of(2026, 7, 13, 12, 0), 100, 10
+        );
+        SearchHits<ProductSearchDocument> hits = esHits(List.of());
+        when(esRepository.search(condition, cursor, 21)).thenReturn(hits);
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("", List.of(26L), sort, null,
+                        cursorCodec.encode(cursor, condition)), null
+        );
+
+        assertThat(response.products()).isEmpty();
+        assertThat(response.pagination().hasNext()).isFalse();
+        assertThat(response.pagination().nextCursor()).isNull();
+        verify(esRepository).search(condition, cursor, 21);
+        verifyNoInteractions(productRepository);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductSort.class, names = {"POPULAR", "MOST_GIFTED"})
+    @DisplayName("검색어 없는 다음 페이지도 ES 장애 시 같은 조건과 커서로 MySQL을 조회한다")
+    void getProducts_fallsBackWithoutQueryWhenEsFails(ProductSort sort) {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        ProductSearchCondition condition = new ProductSearchCondition("", List.of(26L), sort);
+        ProductCursor cursor = new ProductCursor(
+                1, sort, "", List.of(26L), 20L,
+                LocalDateTime.of(2026, 7, 13, 12, 0), 100, 10
+        );
+        when(esRepository.search(condition, cursor, 21))
+                .thenThrow(new DataAccessResourceFailureException("ES unavailable"));
+        when(productRepository.searchProducts(condition, cursor, 21)).thenReturn(List.of());
+
+        ProductListResponse response = productQueryService.getProducts(
+                new ProductListRequest("", List.of(26L), sort, null,
+                        cursorCodec.encode(cursor, condition)), null
+        );
+
+        assertThat(response.products()).isEmpty();
+        verify(productRepository).searchProducts(condition, cursor, 21);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductSort.class, names = {"POPULAR", "MOST_GIFTED"})
+    @DisplayName("ES Bean이 없으면 검색어 없는 목록도 MySQL을 사용한다")
+    void getProducts_keepsMysqlWithoutEsBeanAndQuery(ProductSort sort) {
+        stubFirstPage(List.of());
+
+        productQueryService.getProducts(
+                new ProductListRequest(null, List.of(26L), sort, null, null), null
+        );
+
+        assertThat(captureCondition())
+                .isEqualTo(new ProductSearchCondition("", List.of(26L), sort));
+    }
+
+    @Test
+    @DisplayName("검색어 없는 최신순은 ES가 활성화되어도 MySQL을 사용한다")
+    void getProducts_keepsMysqlForNewestWithoutQuery() {
+        ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
+        searchBeanFactory.addBean("productSearchRepository", esRepository);
+        stubFirstPage(List.of());
+
+        productQueryService.getProducts(
+                new ProductListRequest(null, null, ProductSort.NEWEST, null, null), null
+        );
+
+        assertThat(captureCondition().sort()).isEqualTo(ProductSort.NEWEST);
         verifyNoInteractions(esRepository);
     }
 
@@ -236,16 +410,17 @@ class ProductQueryServiceTest {
         assertThat(captureCondition().query()).isEqualTo("세트");
     }
 
-    @Test
-    @DisplayName("ES가 활성화되어도 AI 추천의 인기순 대체는 기존 검색을 사용한다")
-    void getProducts_keepsMysqlForAiFallbackWithQuery() {
+    @ParameterizedTest
+    @ValueSource(strings = {"", "세트"})
+    @DisplayName("ES가 활성화되어도 AI 추천의 인기순 대체는 검색어 유무와 관계없이 기존 검색을 사용한다")
+    void getProducts_keepsMysqlForAiFallback(String query) {
         ProductSearchRepository esRepository = mock(ProductSearchRepository.class);
         searchBeanFactory.addBean("productSearchRepository", esRepository);
         stubAccessibleRecipient();
         stubFirstPage(List.of());
 
         productQueryService.getProducts(
-                new ProductListRequest("세트", null, ProductSort.AI_RECOMMENDED, 10L, null), 1L
+                new ProductListRequest(query, null, ProductSort.AI_RECOMMENDED, 10L, null), 1L
         );
 
         assertThat(captureCondition().sort()).isEqualTo(ProductSort.POPULAR);
