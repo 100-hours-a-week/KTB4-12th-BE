@@ -282,12 +282,18 @@ public class ProductQueryService {
             ProductCursor cursor,
             List<Long> cachedRecommendationIds
     ) {
-        boolean supportsEs = !condition.isAiRequested()
-                && condition.hasQuery()
+        boolean supportsKeywordSearch = condition.hasQuery()
                 && condition.query().codePointCount(
                 0,
                 condition.query().length()
         ) >= 2;
+
+        boolean supportsListing = !condition.hasQuery()
+                && (condition.sort() == ProductSort.POPULAR
+                || condition.sort() == ProductSort.MOST_GIFTED);
+
+        boolean supportsEs = !condition.isAiRequested()
+                && (supportsKeywordSearch || supportsListing);
 
         if (supportsEs) {
             ProductSearchRepository esRepository =
@@ -305,7 +311,10 @@ public class ProductQueryService {
                             .map(ProductSearchDocument::toProjection)
                             .toList();
                 } catch (DataAccessException exception) {
-                    log.warn("ES 상품 검색 실패로 MySQL 검색을 사용합니다.", exception);
+                    log.warn(
+                            "ES 상품 검색 실패로 MySQL 검색을 사용합니다.",
+                            exception
+                    );
                 }
             }
         }

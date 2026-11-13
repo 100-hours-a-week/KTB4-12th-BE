@@ -22,6 +22,7 @@ import org.springframework.stereotype.Repository;
 import com.gift.gift.domain.product.cursor.ProductCursor;
 import com.gift.gift.domain.product.cursor.ProductCursorValidator;
 import com.gift.gift.domain.product.repository.ProductSearchCondition;
+import com.gift.gift.domain.product.repository.ProductSort;
 
 @Repository
 @ConditionalOnProperty(
@@ -70,13 +71,19 @@ public class ProductSearchRepository {
             ProductCursorValidator.validate(cursor, condition);
         }
 
-        if (!condition.hasQuery()
-                || condition.query().codePointCount(
-                0,
-                condition.query().length()
-        ) < 2) {
+        if (condition.hasQuery()) {
+            if (condition.query().codePointCount(
+                    0,
+                    condition.query().length()
+            ) < 2) {
+                throw new IllegalArgumentException(
+                        "검색어는 두 글자 이상이어야 합니다."
+                );
+            }
+        } else if (condition.sort() != ProductSort.POPULAR
+                && condition.sort() != ProductSort.MOST_GIFTED) {
             throw new IllegalArgumentException(
-                    "이 검색 경로는 두 글자 이상 검색어를 대상으로 합니다."
+                    "검색어 없는 ES 조회는 조회순과 구매순만 지원합니다."
             );
         }
 
@@ -95,17 +102,19 @@ public class ProductSearchRepository {
 
         List<Query> filters = new ArrayList<>();
 
-        filters.add(Query.of(query -> query.bool(bool -> bool
-                .should(clause -> clause.matchPhrase(phrase -> phrase
-                        .field("name")
-                        .query(condition.query())
-                        .slop(0)))
-                .should(clause -> clause.matchPhrase(phrase -> phrase
-                        .field("brand")
-                        .query(condition.query())
-                        .slop(0)))
-                .minimumShouldMatch("1")
-        )));
+        if (condition.hasQuery()) {
+            filters.add(Query.of(query -> query.bool(bool -> bool
+                    .should(clause -> clause.matchPhrase(phrase -> phrase
+                            .field("name")
+                            .query(condition.query())
+                            .slop(0)))
+                    .should(clause -> clause.matchPhrase(phrase -> phrase
+                            .field("brand")
+                            .query(condition.query())
+                            .slop(0)))
+                    .minimumShouldMatch("1")
+            )));
+        }
 
         if (condition.hasCategoryIds()) {
             List<FieldValue> categoryIds = condition.categoryIds()
