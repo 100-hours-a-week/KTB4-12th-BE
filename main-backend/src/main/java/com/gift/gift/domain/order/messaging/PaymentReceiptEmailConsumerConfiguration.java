@@ -5,6 +5,7 @@ import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
@@ -36,13 +37,16 @@ public class PaymentReceiptEmailConsumerConfiguration {
     @Bean
     public SimpleMessageListenerContainer paymentReceiptEmailListenerContainer(
             @Qualifier("rabbitConnectionFactory") CachingConnectionFactory connectionFactory,
-            PaymentReceiptEmailConsumer consumer
+            PaymentReceiptEmailConsumer consumer,
+            @Value("${app.payment.mq.consumer.receipt.concurrency:1}") int concurrency,
+            @Value("${app.payment.mq.consumer.receipt.prefetch:1}") int prefetch
     ) {
         SimpleMessageListenerContainer container = new SimpleMessageListenerContainer(connectionFactory);
         container.setQueueNames(PaymentRabbitTopologyConfiguration.RECEIPT_QUEUE);
         container.setAcknowledgeMode(AcknowledgeMode.MANUAL);
-        container.setConcurrentConsumers(1);
-        container.setPrefetchCount(1);
+        // 이미지를 다시 빌드하지 않고 컨슈머 설정을 비교 측정하기 위해 프로퍼티로 받는다. 기본값 1은 기존 동작과 같다.
+        container.setConcurrentConsumers(concurrency);
+        container.setPrefetchCount(prefetch);
         container.setAutoDeclare(false);
         container.setMissingQueuesFatal(true);
         container.setAutoStartup(false);
