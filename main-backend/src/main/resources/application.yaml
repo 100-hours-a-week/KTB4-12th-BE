@@ -204,8 +204,23 @@ app:
 
   payment:
     mq:
+      enabled: ${APP_PAYMENT_MQ_ENABLED:false}
       topology:
         enabled: ${PAYMENT_MQ_TOPOLOGY_ENABLED:false}
+      consumer:
+        receipt:
+          enabled: ${APP_PAYMENT_MQ_CONSUMER_RECEIPT_ENABLED:false}
+          concurrency: ${APP_PAYMENT_MQ_CONSUMER_RECEIPT_CONCURRENCY:1}
+          prefetch: ${APP_PAYMENT_MQ_CONSUMER_RECEIPT_PREFETCH:1}
+        roulette:
+          concurrency: ${APP_PAYMENT_MQ_CONSUMER_ROULETTE_CONCURRENCY:1}
+          prefetch: ${APP_PAYMENT_MQ_CONSUMER_ROULETTE_PREFETCH:1}
+        coupon-restore:
+          concurrency: ${APP_PAYMENT_MQ_CONSUMER_COUPON_RESTORE_CONCURRENCY:1}
+          prefetch: ${APP_PAYMENT_MQ_CONSUMER_COUPON_RESTORE_PREFETCH:1}
+        recovery:
+          concurrency: ${APP_PAYMENT_MQ_CONSUMER_RECOVERY_CONCURRENCY:1}
+          prefetch: ${APP_PAYMENT_MQ_CONSUMER_RECOVERY_PREFETCH:1}
     recovery:
       dispatch:
         enabled: ${PAYMENT_RECOVERY_DISPATCH_ENABLED:false}
