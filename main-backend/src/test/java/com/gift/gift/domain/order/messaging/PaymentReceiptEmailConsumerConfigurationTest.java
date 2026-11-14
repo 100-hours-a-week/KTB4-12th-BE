@@ -7,6 +7,7 @@ import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import com.gift.gift.domain.notification.event.handler.PaymentReceiptEmailEventHandler;
@@ -59,6 +60,48 @@ class PaymentReceiptEmailConsumerConfigurationTest {
                     assertThat(container.getAcknowledgeMode())
                             .isEqualTo(AcknowledgeMode.MANUAL);
                     assertThat(container.isAutoStartup()).isFalse();
+                });
+    }
+
+    @Test
+    @DisplayName("동시성과 prefetch 설정이 없으면 기존과 같은 1로 구성한다")
+    void consumer_usesOneConcurrencyAndOnePrefetch_whenNotConfigured() {
+        contextRunner
+                .withPropertyValues(
+                        "app.payment.mq.consumer.receipt.enabled=true",
+                        "app.payment.mq.topology.enabled=true"
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+
+                    SimpleMessageListenerContainer container =
+                            context.getBean("paymentReceiptEmailListenerContainer",
+                                    SimpleMessageListenerContainer.class);
+
+                    assertThat(ReflectionTestUtils.getField(container, "concurrentConsumers")).isEqualTo(1);
+                    assertThat(ReflectionTestUtils.getField(container, "prefetchCount")).isEqualTo(1);
+                });
+    }
+
+    @Test
+    @DisplayName("동시성과 prefetch 프로퍼티를 지정하면 Listener 컨테이너에 반영한다")
+    void consumer_appliesConfiguredConcurrencyAndPrefetch() {
+        contextRunner
+                .withPropertyValues(
+                        "app.payment.mq.consumer.receipt.enabled=true",
+                        "app.payment.mq.topology.enabled=true",
+                        "app.payment.mq.consumer.receipt.concurrency=4",
+                        "app.payment.mq.consumer.receipt.prefetch=10"
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+
+                    SimpleMessageListenerContainer container =
+                            context.getBean("paymentReceiptEmailListenerContainer",
+                                    SimpleMessageListenerContainer.class);
+
+                    assertThat(ReflectionTestUtils.getField(container, "concurrentConsumers")).isEqualTo(4);
+                    assertThat(ReflectionTestUtils.getField(container, "prefetchCount")).isEqualTo(10);
                 });
     }
 }
