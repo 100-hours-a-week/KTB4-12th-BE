@@ -15,6 +15,7 @@ Python·curl·별도 시작 스크립트는 사용하지 않는다. 기본 이�
 - `rabbitmq.conf`: `/etc/rabbitmq/definitions` 디렉터리를 부팅 시 import한다.
 - `report-definitions.json`: `gift` vhost, Topic Exchange 3개, Classic 큐 4개, binding 7개, policy 3개.
 - `profiling-definitions.json`: 결과 큐의 at-least-once DLX와 요청/결과 실패 큐의 reject-publish Policy. TTL은 설정하지 않는다.
+- `payment-definitions.json`: 결제 후속 큐 5개의 재시도·DLX·reject-publish Policy와 DLQ 보관(30일) Policy. 영수증·룰렛·쿠폰 복구 큐는 `max-length`로 크기 상한을 둔다(잠정값).
 - `access-definitions.example.json`: 계정·권한 Secret의 형식 예시다. 실제로 적용할 비밀번호 해시는 없다.
 - `.dockerignore`: 이미지 빌드 컨텍스트를 Dockerfile·설정·도메인 정의로 제한한다.
 
