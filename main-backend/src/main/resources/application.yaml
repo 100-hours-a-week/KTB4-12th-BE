@@ -193,8 +193,8 @@ app:
     read-timeout: ${AI_PROFILE_READ_TIMEOUT:10s}
     quiet-period: 60s
     maximum-window: 300s
-    batch-size: ${AI_PROFILE_BATCH_SIZE:100}
-    dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:1m}
+    batch-size: ${AI_PROFILE_BATCH_SIZE:25}
+    dispatch-interval: ${AI_PROFILE_DISPATCH_INTERVAL:15s}
     amqp:
       enabled: ${AI_PROFILE_AMQP_ENABLED:false}
 

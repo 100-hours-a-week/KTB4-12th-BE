@@ -20,7 +20,7 @@ docker compose -f compose.rabbitmq.yaml up -d --build --wait
 ```bash
 docker compose -f compose.rabbitmq.yaml exec rabbitmq rabbitmqctl set_policy \
   -p gift --apply-to queues profiling-request-protection '^profiling[.]request$' \
-  '{"max-length":10000,"max-length-bytes":268435456,"overflow":"reject-publish"}'
+  '{"max-length":200,"overflow":"reject-publish"}'
 ```
 
 길이 제한은 브로커 Policy에서 관리하며 Java 큐 인자로 중복 지정하지 않는다. 요청 TTL·지연 재시도 큐는 미설정이다. 상한은 브로커 전체 메모리 제한이 아니며 unacked를 포함하지 않는다. 결과 큐에는 같은 상한을 임의 적용하지 않는다.
@@ -100,8 +100,8 @@ CI는 같은 테스트 작업에서 RabbitMQ 컨테이너를 실행한다. Docke
 - `AI_PROFILE_SCHEDULING_ENABLED=true`와 `AI_PROFILE_AMQP_ENABLED=true`를 함께 설정해야 자동 실행한다. 공통 `SCHEDULING_ENABLED=true`도 필요하다. 애플리케이션 기본값은 둘 다 false이며, 예제는 scheduling=true·AMQP=false여서 자동 발행하지 않는다. 기능 활성화 전에 AI 요청 Consumer와 결과 수신 경로를 준비한다.
 - 기존 `ProfileDispatchScheduler` → `ProfileDispatchService` → 작업 준비 → 발행기 흐름을 사용한다. AI `/health` 확인·HTTP POST·오래된 PENDING의 HTTP 재요청은 호출하지 않는다.
 - 후보 조회와 준비 트랜잭션에서 최신 버전의 READY·CLAIMED·RETRY_WAIT를 확인한다. 이 작업이 먼저 발행될 때까지 신규 변경은 보존한다. PUBLISHED 또는 BLOCKED 이후 신규 변경은 다음 버전으로 준비할 수 있으며 BLOCKED 작업은 SUPERSEDED로 남긴다.
-- 한 틱에서 신규 준비 최대 100개, 신규·재시도를 합친 발행 호출 최대 100회다. 설정은 1~100만 허용한다. 복구 전용 배치 크기·기존 프로필 선점 타임아웃 설정은 제거한다. 작업별 선점 2분은 PR 3-2 발행 저장소에서 관리한다.
-- 고정 지연 기본값 1분은 **이전 틱 종료 후** 대기 시간이다. 인스턴스별 잠금으로 같은 인스턴스의 틱 중첩을 막는다. 엄밀한 전체 시스템 100건/분 제한은 아니며 다중 인스턴스의 총 발행량은 별도 제어가 필요하다.
+- 한 틱에서 신규 준비 기본 최대 25개, 신규·재시도를 합친 발행 호출 기본 최대 25회다. 설정은 1~100만 허용한다. 복구 전용 배치 크기·기존 프로필 선점 타임아웃 설정은 제거한다. 작업별 선점 2분은 PR 3-2 발행 저장소에서 관리한다.
+- 고정 지연 기본값 15초는 **이전 틱 종료 후** 대기 시간이다. 인스턴스별 잠금으로 같은 인스턴스의 틱 중첩을 막는다. 엄밀한 전체 시스템 100건/분 제한은 아니며 다중 인스턴스의 총 발행량은 별도 제어가 필요하다.
 - 변경 후보가 없어도 발행 루프를 실행하여 READY·기한 도래 RETRY_WAIT·만료 CLAIMED를 처리한다. NO_WORK·STOP·인터럽트에서는 루프를 종료한다. PUBLISHED의 결과 지연만으로 요청을 재발행하지 않으며 BLOCKED는 자동 복구하지 않는다.
 - 기존 HTTP 콜백 API·추천 저장은 유지한다. 콜백은 현재 프로필·추천을 반영하지만 `profiling_jobs.result_status`를 갱신하지 않는다. requestId 기반 성공·최종 실패 결과 Consumer와 작업 종료 기록은 후속 범위다.
 
