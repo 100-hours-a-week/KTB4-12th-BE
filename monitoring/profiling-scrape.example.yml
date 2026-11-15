@@ -1,0 +1,32 @@
+# Merge scrape_configs and rule_files into the existing Prometheus configuration.
+# Replace targets, environment, cluster and vhost. These are metrics ports, not AMQP ports.
+scrape_configs:
+  - job_name: rabbitmq
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    static_configs:
+      - targets:
+          - rabbitmq-az-a.internal:15692
+          - rabbitmq-az-b.internal:15692
+          - rabbitmq-az-c.internal:15692
+        labels:
+          environment: production
+          cluster: gift-profiling
+  - job_name: rabbitmq-queues
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics, queue_consumer_count]
+      vhost: [gift]
+      queue: ['^profiling[.](request|result)([.]failed)?$']
+    static_configs:
+      - targets:
+          - rabbitmq-az-a.internal:15692
+          - rabbitmq-az-b.internal:15692
+          - rabbitmq-az-c.internal:15692
+        labels:
+          environment: production
+          cluster: gift-profiling
+rule_files:
+  - /etc/prometheus/profiling-alerts.yml

@@ -1,0 +1,345 @@
+{
+  "uid": "gift-profiling",
+  "title": "Gift / Profiling Queues",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "tags": [
+    "gift",
+    "profiling",
+    "rabbitmq"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "Environment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "query": "label_values(up{job=\"rabbitmq-queues\"}, environment)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "cluster",
+        "label": "RabbitMQ cluster",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "query": "label_values(up{job=\"rabbitmq-queues\",environment=~\"$environment\"}, cluster)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "vhost",
+        "label": "Virtual host",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "gift-prometheus"
+        },
+        "query": "label_values(rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\"}, vhost)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "요청 큐 / Ready",
+      "type": "timeseries",
+      "description": "전달 전 대기 메시지 수 동일 논리 큐의 노드별 값은 합산하지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\",vhost=~\"$vhost\",queue=\"profiling.request\"})",
+          "legendFormat": "{{environment}} / {{cluster}} / {{vhost}} / {{queue}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "요청 큐 / Unacked",
+      "type": "timeseries",
+      "description": "전달 후 ACK 대기 메시지 수. 정상 처리 중에도 존재할 수 있습니다. 동일 논리 큐의 노드별 값은 합산하지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_unacked{job=\"rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\",vhost=~\"$vhost\",queue=\"profiling.request\"})",
+          "legendFormat": "{{environment}} / {{cluster}} / {{vhost}} / {{queue}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "요청 큐 / Consumers",
+      "type": "timeseries",
+      "description": "AI Consumer 수. 0일 때 기능 OFF·계획 중지 여부를 함께 확인합니다. 동일 논리 큐의 노드별 값은 합산하지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_consumers{job=\"rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\",vhost=~\"$vhost\",queue=\"profiling.request\"})",
+          "legendFormat": "{{environment}} / {{cluster}} / {{vhost}} / {{queue}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "결과 큐 / Ready",
+      "type": "timeseries",
+      "description": "전달 전 대기 메시지 수 동일 논리 큐의 노드별 값은 합산하지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\",vhost=~\"$vhost\",queue=\"profiling.result\"})",
+          "legendFormat": "{{environment}} / {{cluster}} / {{vhost}} / {{queue}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "결과 큐 / Unacked",
+      "type": "timeseries",
+      "description": "전달 후 ACK 대기 메시지 수. 정상 처리 중에도 존재할 수 있습니다. 동일 논리 큐의 노드별 값은 합산하지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_unacked{job=\"rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\",vhost=~\"$vhost\",queue=\"profiling.result\"})",
+          "legendFormat": "{{environment}} / {{cluster}} / {{vhost}} / {{queue}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "결과 큐 / Consumers",
+      "type": "timeseries",
+      "description": "BE Consumer 수. 0일 때 기능 OFF·계획 중지 여부를 함께 확인합니다. 동일 논리 큐의 노드별 값은 합산하지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_consumers{job=\"rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\",vhost=~\"$vhost\",queue=\"profiling.result\"})",
+          "legendFormat": "{{environment}} / {{cluster}} / {{vhost}} / {{queue}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "요청·결과 DLQ / Ready",
+      "type": "timeseries",
+      "description": "격리 메시지 수. 조사 후 별도 복구 절차를 따릅니다. DLQ에는 Consumer 부재 경보를 적용하지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\",vhost=~\"$vhost\",queue=~\"profiling[.](request|result)[.]failed\"})",
+          "legendFormat": "{{environment}} / {{cluster}} / {{vhost}} / {{queue}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "RabbitMQ 수집 상태 / 노드별",
+      "type": "stat",
+      "description": "1=수집 성공, 0=수집 실패. 큐 미노출은 0건으로 채우지 않습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"rabbitmq|rabbitmq-queues\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "{{environment}} / {{cluster}} / {{job}} / {{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    }
+  ]
+}

@@ -68,7 +68,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 monitoring/verify.py
 ```
 
 Grafana: <http://127.0.0.1:3001>, 계정은 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`.
-`Gift Monitoring` 폴더에 대시보드 6개가 자동 등록된다.
+`Gift Monitoring` 폴더에 대시보드 11개가 자동 등록된다. 프로파일링 큐 화면은 [전달 안내](../monitoring/README-profiling.md)를 따른다.
 생성 설정·비밀번호는 Git에서 제외된 `monitoring/runtime.tmp/`에 저장한다(디렉터리 0700).
 컨테이너 UID가 읽을 수 있도록 개별 마운트 파일은 0644로 둔다. Discord 웹훅 파일도 컨테이너에서 읽을 수 있어야 하며,
 다른 호스트 사용자가 파일 경로에 접근하지 못하도록 런타임 디렉터리 권한은 0700으로 제한한다.

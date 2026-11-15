@@ -65,6 +65,11 @@ class ConfigureTest(unittest.TestCase):
             )
             self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)
             self.assertEqual((runtime / "alertmanager-discord-webhook").stat().st_mode & 0o777, 0o644)
+            queue_filter = jobs["rabbitmq-queues"]["params"]["queue"][0]
+            for queue in ("profiling.request", "profiling.result",
+                          "profiling.request.failed", "profiling.result.failed"):
+                self.assertRegex(queue, queue_filter)
+            self.assertIsNone(re.search(queue_filter, "Report.dlq"))
             for url in ["https://example.com/alerts", "http://user:pass@localhost/alerts",
                         "http://localhost/alerts?token=secret"]:
                 with self.assertRaises(ValueError):

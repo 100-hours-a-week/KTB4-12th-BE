@@ -43,11 +43,36 @@ groups:
         annotations:
           summary: "Profiling publisher connection is blocked"
       - alert: ProfilingRabbitReadyBacklog
-        expr: max(rabbitmq_detailed_queue_messages_ready{queue="profiling.request"}) > 550
+        expr: max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",queue="profiling.request"}) > 550
         for: 2m
         labels: {severity: warning, component: profiling}
         annotations:
           summary: "Profiling request Ready backlog exceeds initial threshold"
+      - alert: ProfilingResultReadyBacklog
+        # Initial investigation threshold, not an AI completion deadline.
+        expr: max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",queue="profiling.result"}) > 550
+        for: 2m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling result Ready backlog exceeds initial threshold"
+          description: "Inspect BE result processing and DB health; do not republish requests solely due to delay."
+      - alert: ProfilingQueueWithoutConsumers
+        expr: |
+          (max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",queue=~"profiling[.](request|result)"}) > 0)
+          and on (environment, cluster, vhost, queue)
+          (max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_consumers{job="rabbitmq-queues",queue=~"profiling[.](request|result)"}) == 0)
+        for: 2m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling queue has waiting messages but no consumers"
+          description: "Request queue: inspect AI. Result queue: inspect BE. Check feature flags and manual stops; silence planned maintenance. This is not an automatic resume trigger."
+      - alert: ProfilingDeadLetterBacklog
+        expr: max by (environment, cluster, vhost, queue) (rabbitmq_detailed_queue_messages_ready{job="rabbitmq-queues",queue=~"profiling[.](request|result)[.]failed"}) > 0
+        for: 1m
+        labels: {severity: warning, component: profiling}
+        annotations:
+          summary: "Profiling dead-letter queue contains messages"
+          description: "Investigate the failed message and recover using the runbook; do not discard or automatically replay it."
       - alert: ProfilingRabbitMemoryPressure
         expr: rabbitmq_process_resident_memory_bytes / rabbitmq_resident_memory_limit_bytes > 0.9
         for: 1m
