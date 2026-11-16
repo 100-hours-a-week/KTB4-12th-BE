@@ -220,6 +220,12 @@ class PaymentRabbitTopologyBrokerIntegrationTest {
                 60_000
         );
 
+        assertMaximumLength(policies, "payment-receipt-email-retry", 600_000);
+        assertMaximumLength(policies, "payment-roulette-retry", 600_000);
+        assertMaximumLength(policies, "payment-coupon-restore-retry", 30_000);
+        assertNoMaximumLength(policies, "payment-approval-recovery-retry");
+        assertNoMaximumLength(policies, "payment-cancellation-recovery-retry");
+
         JsonNode retentionPolicy = findPolicy(policies, "payment-dead-letter-retention");
         assertThat(retentionPolicy.path("pattern").asText()).isEqualTo(
                 "^gift[.](receipt[.]email|payment[.]approval[.]recovery|payment[.]cancellation[.]recovery|roulette|coupon[.]restore)[.]dlq$"
@@ -251,6 +257,16 @@ class PaymentRabbitTopologyBrokerIntegrationTest {
         assertThat(definition.path("delayed-retry-min").asLong()).isEqualTo(minimumDelay);
         assertThat(definition.path("delayed-retry-max").asLong()).isEqualTo(maximumDelay);
         assertThat(definition.has("dead-letter-routing-key")).isFalse();
+    }
+
+    private static void assertMaximumLength(JsonNode policies, String name, long maximumLength) {
+        JsonNode definition = findPolicy(policies, name).path("definition");
+
+        assertThat(definition.path("max-length").asLong()).isEqualTo(maximumLength);
+    }
+
+    private static void assertNoMaximumLength(JsonNode policies, String name) {
+        assertThat(findPolicy(policies, name).path("definition").has("max-length")).isFalse();
     }
 
     private static JsonNode findPolicy(JsonNode policies, String name) {
