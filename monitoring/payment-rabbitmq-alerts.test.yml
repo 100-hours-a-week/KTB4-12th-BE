@@ -1,0 +1,61 @@
+rule_files: [payment-rabbitmq-alerts.yml]
+evaluation_interval: 30s
+tests:
+  - interval: 30s
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages_ready{vhost="gift",queue="gift.receipt.email.q"}'
+        values: '0 0 400000x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PaymentRabbitQueueDepthHigh
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: PaymentRabbitQueueDepthHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, component: payment-rabbitmq, queue: gift.receipt.email.q, vhost: gift}
+            exp_annotations:
+              summary: "결제 큐 적체가 상한의 50%를 넘었습니다"
+              description: "gift.receipt.email.q에 대기 메시지 400000개가 쌓였습니다. 소비자와 외부 서비스(SMTP 등) 상태를 확인하세요."
+      - eval_time: 7m
+        alertname: PaymentRabbitQueueDepthCritical
+        exp_alerts: []
+  - interval: 30s
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages_ready{vhost="gift",queue="gift.roulette.q"}'
+        values: '0 0 500000x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PaymentRabbitQueueDepthCritical
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PaymentRabbitQueueDepthCritical
+        exp_alerts:
+          - exp_labels: {severity: critical, component: payment-rabbitmq, queue: gift.roulette.q, vhost: gift}
+            exp_annotations:
+              summary: "결제 큐 적체가 상한의 80%를 넘었습니다"
+              description: "gift.roulette.q에 대기 메시지 500000개가 쌓였습니다. 상한에 도달하면 새 메시지 발행이 거절됩니다."
+  - interval: 30s
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages_ready{vhost="gift",queue="gift.coupon.restore.q"}'
+        values: '0 0 20000x20'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: PaymentRabbitQueueDepthHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, component: payment-rabbitmq, queue: gift.coupon.restore.q, vhost: gift}
+            exp_annotations:
+              summary: "결제 큐 적체가 상한의 50%를 넘었습니다"
+              description: "gift.coupon.restore.q에 대기 메시지 20000개가 쌓였습니다. 소비자와 외부 서비스(SMTP 등) 상태를 확인하세요."
+      - eval_time: 7m
+        alertname: PaymentRabbitQueueDepthCritical
+        exp_alerts: []
+  - interval: 30s
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages_ready{vhost="gift",queue="gift.receipt.email.q"}'
+        values: '200000x20'
+      - series: 'rabbitmq_detailed_queue_messages_ready{vhost="gift",queue="gift.payment.approval.recovery.q"}'
+        values: '900000x20'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: PaymentRabbitQueueDepthHigh
+        exp_alerts: []
