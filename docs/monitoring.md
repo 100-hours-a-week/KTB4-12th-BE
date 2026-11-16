@@ -84,7 +84,17 @@ BE_ERROR Discord 웹훅은 실제 값을 저장소에 넣지 말고 `.env`의 `A
 이는 버그 제보용 `DISCORD_WEBHOOK_URL`과 별도 설정이므로, 같은 BE_ERROR 채널을 사용할 경우 웹훅 값을 이 변수에도 명시한다.
 이 값을 비워 두면 Discord receiver가 생성되지 않고 기존 로컬 검증 receiver가 기본 수신처로 유지된다.
 설정 파일에는 웹훅 URL을 직접 기록하지 않고 `monitoring/runtime.tmp/alertmanager-discord-webhook` secret 파일로 전달한다.
-Discord 라우트는 DLQ 적재·만료 임박·delivery-limit 초과 경보만 보내며, 해결 알림도 보낸다.
+Discord 라우트는 DLQ 적재·만료 임박·delivery-limit 초과·큐 적체(`PaymentRabbitQueueDepth*`) 경보만 보내며, 해결 알림도 보낸다.
+
+결제 큐 적체 경보는 작업 큐의 ready 메시지 수가 큐 상한(`payment-definitions.json`의 `max-length`)의 50%(경고, 5분 지속)와 80%(위험, 2분 지속)를 넘으면 울린다.
+임계값은 규칙에 절대값으로 적혀 있으므로 상한을 바꾸면 `payment-rabbitmq-alerts.yml`도 함께 바꾼다.
+승인·취소 복구 큐는 상한이 없어 대상이 아니다.
+
+| 큐 | max-length | 경고(50%) | 위험(80%) |
+|---|---|---|---|
+| `gift.receipt.email.q` | 600,000 | 300,000 | 480,000 |
+| `gift.roulette.q` | 600,000 | 300,000 | 480,000 |
+| `gift.coupon.restore.q` | 30,000 | 15,000 | 24,000 |
 
 ```dotenv
 PROFILING_MONITORING_ENABLED=true

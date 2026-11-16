@@ -102,3 +102,59 @@ groups:
           description: >-
             최근 5분 내 delivery-limit을 초과한 메시지가 있습니다.
             이 지표는 큐별이 아니라 노드 단위이므로 DLQ 깊이로 대상 큐를 확인하세요.
+
+      # 임계값은 payment-definitions.json의 max-length와 같이 바꾼다(영수증·룰렛 600000, 쿠폰 복구 30000).
+      # 상한의 50%는 일찍 알아채기 위한 경고, 80%는 거절이 임박한 위험 단계다. max-length는 ready 메시지 수 기준이다.
+      - alert: PaymentRabbitQueueDepthHigh
+        expr: |
+          (
+            max by (queue, vhost) (
+              rabbitmq_detailed_queue_messages_ready{
+                vhost="gift",
+                queue=~"^gift[.](receipt[.]email|roulette)[.]q$"
+              }
+            ) > 300000
+          )
+          or
+          (
+            max by (queue, vhost) (
+              rabbitmq_detailed_queue_messages_ready{
+                vhost="gift",
+                queue="gift.coupon.restore.q"
+              }
+            ) > 15000
+          )
+        for: 5m
+        labels:
+          severity: warning
+          component: payment-rabbitmq
+        annotations:
+          summary: "결제 큐 적체가 상한의 50%를 넘었습니다"
+          description: "{{ $labels.queue }}에 대기 메시지 {{ $value }}개가 쌓였습니다. 소비자와 외부 서비스(SMTP 등) 상태를 확인하세요."
+
+      - alert: PaymentRabbitQueueDepthCritical
+        expr: |
+          (
+            max by (queue, vhost) (
+              rabbitmq_detailed_queue_messages_ready{
+                vhost="gift",
+                queue=~"^gift[.](receipt[.]email|roulette)[.]q$"
+              }
+            ) > 480000
+          )
+          or
+          (
+            max by (queue, vhost) (
+              rabbitmq_detailed_queue_messages_ready{
+                vhost="gift",
+                queue="gift.coupon.restore.q"
+              }
+            ) > 24000
+          )
+        for: 2m
+        labels:
+          severity: critical
+          component: payment-rabbitmq
+        annotations:
+          summary: "결제 큐 적체가 상한의 80%를 넘었습니다"
+          description: "{{ $labels.queue }}에 대기 메시지 {{ $value }}개가 쌓였습니다. 상한에 도달하면 새 메시지 발행이 거절됩니다."

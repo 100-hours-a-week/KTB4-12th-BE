@@ -56,7 +56,7 @@ class ConfigureTest(unittest.TestCase):
                 "/etc/alertmanager/discord-webhook",
             )
             self.assertTrue(receivers["be-error-discord"]["discord_configs"][0]["send_resolved"])
-            self.assertIn('alertname=~"PaymentRabbitDLQ.*|PaymentRabbitDeliveryLimitExceeded"',
+            self.assertIn('alertname=~"PaymentRabbitDLQ.*|PaymentRabbitDeliveryLimitExceeded|PaymentRabbitQueueDepth.*"',
                           receiver["route"]["routes"][0]["matchers"])
             self.assertNotIn("test-token", alertmanager_text)
             self.assertEqual(

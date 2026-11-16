@@ -23,7 +23,7 @@ def alertmanager_config(webhook, discord_enabled=False):
             "receiver": "be-error-discord",
             "matchers": [
                 'component="payment-rabbitmq"',
-                'alertname=~"PaymentRabbitDLQ.*|PaymentRabbitDeliveryLimitExceeded"',
+                'alertname=~"PaymentRabbitDLQ.*|PaymentRabbitDeliveryLimitExceeded|PaymentRabbitQueueDepth.*"',
             ],
             "group_by": ["alertname", "queue"],
         }]
