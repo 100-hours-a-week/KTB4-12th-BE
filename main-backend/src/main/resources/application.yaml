@@ -204,7 +204,6 @@ app:
 
   payment:
     mq:
-      enabled: ${APP_PAYMENT_MQ_ENABLED:false}
       topology:
         enabled: ${PAYMENT_MQ_TOPOLOGY_ENABLED:false}
       consumer:

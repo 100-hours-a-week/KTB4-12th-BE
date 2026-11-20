@@ -350,8 +350,8 @@ class CouponRewardLifecycleIntegrationTest {
 
     @ParameterizedTest
     @CsvSource({"USER", "GIFT_EXPIRATION"})
-    @DisplayName("미수락 취소·만료 확정 시 사용 쿠폰을 한 번 복구하고 보상은 지급하지 않는다")
-    void cancellation_restoresUsedCouponOnce(CancellationSource source) {
+    @DisplayName("미수락 취소·만료 확정은 Outbox 요청을 한 번 기록하고 쿠폰 복구를 위임한다")
+    void cancellation_defersUsedCouponRestoreToOutbox(CancellationSource source) {
         Order order = completed(2);
         if (source == CancellationSource.GIFT_EXPIRATION) {
             jdbc.update("UPDATE gift_histories SET expires_at = ? WHERE id = ?",
@@ -365,29 +365,32 @@ class CouponRewardLifecycleIntegrationTest {
         var first = compensation.compensate(approval);
         var repeated = compensation.compensate(approval);
         assertThat(first.orderId()).isEqualTo(repeated.orderId());
-        assertThat(usageStatus(order)).isEqualTo("RESTORED");
-        assertThat(quantity(payerId, 2)).isEqualTo(1);
+        assertThat(usageStatus(order)).isEqualTo("USED");
+        assertThat(quantity(payerId, 2)).isZero();
+        assertThat(cancellationOutboxCount(approval.cancellation().getId())).isEqualTo(1);
         assertThat(balance(payerId)).isEqualTo(500_000L);
         assertThat(rewardCount()).isZero();
         var restored = paymentQueries.getStatus(payerId, order.getOrderId());
         assertThat(restored.couponMultiplier()).isEqualTo(2);
-        assertThat(restored.couponStatus()).isEqualTo(OrderCouponUsageStatus.RESTORED);
+        assertThat(restored.couponStatus()).isEqualTo(OrderCouponUsageStatus.USED);
         assertThat(restored.expectedRewardAmount()).isNull();
         assertThat(restored.rewardAmount()).isNull();
     }
 
     @Test
-    @DisplayName("쿠폰 복구 실패 시 취소 상태·환불·재고 복구를 함께 롤백한다")
-    void cancellation_rollsBackIfCouponCannotBeRestored() {
+    @DisplayName("쿠폰 복구는 결제 취소 트랜잭션에서 실행하지 않는다")
+    void cancellation_doesNotRestoreCouponSynchronously() {
         Order order = completed(2);
         var approval = cancellation(order, CancellationSource.USER);
         jdbc.update("UPDATE coupon_inventories SET quantity = 2147483647 WHERE user_id = ? AND multiplier = 2",
                 payerId);
-        assertThatThrownBy(() -> compensation.compensate(approval)).isInstanceOf(IllegalStateException.class);
-        assertThat(giftStatus(order)).isEqualTo("WAITING_FOR_ACCEPTANCE");
-        assertThat(orders.findById(order.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        compensation.compensate(approval);
+        assertThat(giftStatus(order)).isEqualTo("CANCELED");
+        assertThat(orders.findById(order.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELED);
         assertThat(usageStatus(order)).isEqualTo("USED");
-        assertThat(balance(payerId)).isEqualTo(499_000L);
+        assertThat(quantity(payerId, 2)).isEqualTo(Integer.MAX_VALUE);
+        assertThat(cancellationOutboxCount(approval.cancellation().getId())).isEqualTo(1);
+        assertThat(balance(payerId)).isEqualTo(500_000L);
     }
 
     @Test
@@ -688,8 +691,8 @@ class CouponRewardLifecycleIntegrationTest {
     }
 
     @Test
-    @DisplayName("인증 거절된 사용자 취소는 새 요청 키로 다시 취소하면 쿠폰을 한 번 복구한다")
-    void cancellation_newKeyCanRetryAfterAuthenticationRejection() {
+    @DisplayName("인증 거절된 사용자 취소 재시도는 쿠폰 복구를 Outbox에 위임한다")
+    void cancellation_newKeyCanRetryWithoutSynchronouslyRestoringCoupon() {
         Order order = completed(2);
         when(paymentClient.cancel(any(), any()))
                 .thenThrow(clientFailure(PaymentClientFailure.AUTHENTICATION_FAILED));
@@ -700,8 +703,10 @@ class CouponRewardLifecycleIntegrationTest {
         String retryKey = key();
         cancellationService.cancel(payerId, order.getOrderId(), retryKey, CancellationSource.USER);
         cancellationService.cancel(payerId, order.getOrderId(), retryKey, CancellationSource.USER);
-        assertThat(usageStatus(order)).isEqualTo("RESTORED");
-        assertThat(quantity(payerId, 2)).isEqualTo(1);
+        assertThat(cancellationStatus(retryKey)).isEqualTo("COMPLETED");
+        assertThat(usageStatus(order)).isEqualTo("USED");
+        assertThat(quantity(payerId, 2)).isZero();
+        assertThat(cancellationOutboxCount(cancellationId(retryKey))).isEqualTo(1);
         assertThat(balance(payerId)).isEqualTo(500_000L);
         assertThat(rewardCount()).isZero();
         verify(paymentClient, times(2)).cancel(any(), any());
@@ -801,6 +806,19 @@ class CouponRewardLifecycleIntegrationTest {
     private String cancellationStatus(String cancellationKey) {
         return jdbc.queryForObject("SELECT status FROM payment_cancellations WHERE requester_id = ? AND idempotency_key = ?",
                 String.class, payerId, cancellationKey);
+    }
+
+    private Long cancellationId(String cancellationKey) {
+        return jdbc.queryForObject("SELECT id FROM payment_cancellations WHERE requester_id = ? AND idempotency_key = ?",
+                Long.class, payerId, cancellationKey);
+    }
+
+    private long cancellationOutboxCount(Long cancellationId) {
+        return jdbc.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'payment.order.canceled.v1' AND aggregate_id = ?",
+                Long.class,
+                cancellationId.toString()
+        );
     }
 
     private com.gift.gift.infrastructure.payment.dto.PaymentCancelResponse cancelResponse(Order order) {
