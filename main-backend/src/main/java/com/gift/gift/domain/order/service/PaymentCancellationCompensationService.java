@@ -3,12 +3,10 @@ package com.gift.gift.domain.order.service;
 import java.time.LocalDateTime;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.coupon.service.OrderCouponService;
 import com.gift.gift.domain.credit.entity.CreditAccount;
 import com.gift.gift.domain.credit.entity.CreditTransaction;
 import com.gift.gift.domain.credit.entity.CreditTransactionType;
@@ -22,7 +20,6 @@ import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
 import com.gift.gift.domain.order.event.PaymentCanceledEvent;
-import com.gift.gift.domain.order.event.PaymentRefundReceiptEmailEvent;
 import com.gift.gift.domain.order.exception.OrderErrorCode;
 import com.gift.gift.domain.order.exception.OrderException;
 import com.gift.gift.domain.order.messaging.PaymentOutboxEventWriter.PaymentCanceledOutboxRequested;
@@ -43,11 +40,7 @@ public class PaymentCancellationCompensationService {
     private final CreditAccountRepository creditAccountRepository;
     private final CreditTransactionRepository creditTransactionRepository;
     private final ProductStockService productStockService;
-    private final OrderCouponService orderCouponService;
     private final ApplicationEventPublisher eventPublisher;
-
-    @Value("${app.payment.mq.enabled:false}")
-    private boolean paymentMqEnabled;
 
     @Transactional
     public PaymentCancellationResult compensate(PaymentCancellationApproval approval) {
@@ -78,7 +71,6 @@ public class PaymentCancellationCompensationService {
         LocalDateTime paymentCompletedAt = order.getUpdatedAt();
         User sender = gift.getSender();
         boolean receiptEligible = sender.getEmailVerifiedAt() != null;
-        String recipientEmail = receiptEligible ? sender.getEmail() : null;
 
         int giftCanceled = giftHistoryRepository.cancel(
                 gift.getId(),
@@ -102,10 +94,6 @@ public class PaymentCancellationCompensationService {
             throw new OrderException(
                     OrderErrorCode.PAYMENT_NOT_CANCELABLE
             );
-        }
-
-        if (!paymentMqEnabled) {
-            orderCouponService.restoreAfterCancellation(order.getId());
         }
 
         int balanceUpdated = creditAccountRepository.increaseBalance(
@@ -182,27 +170,13 @@ public class PaymentCancellationCompensationService {
                 )
         );
 
-        if (paymentMqEnabled) {
-            eventPublisher.publishEvent(
-                    new PaymentCanceledOutboxRequested(
-                            completedCancellation.getId(),
-                            paymentCompletedAt,
-                            receiptEligible
-                    )
-            );
-        } else if (recipientEmail != null) {
-            eventPublisher.publishEvent(
-                    new PaymentRefundReceiptEmailEvent(
-                            recipientEmail,
-                            order.getOrderId(),
-                            gift.getProductNameSnapshot(),
-                            gift.getQuantity(),
-                            refund.getAmount(),
-                            refund.getBalanceAfter(),
-                            approval.canceledAt()
-                    )
-            );
-        }
+        eventPublisher.publishEvent(
+                new PaymentCanceledOutboxRequested(
+                        completedCancellation.getId(),
+                        paymentCompletedAt,
+                        receiptEligible
+                )
+        );
 
         return result;
     }

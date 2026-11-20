@@ -9,7 +9,7 @@ import com.gift.gift.global.outbox.OutboxRelay;
 
 @Service
 @ConditionalOnProperty(
-        name = "app.payment.mq.enabled",
+        name = "app.outbox.enabled",
         havingValue = "true"
 )
 public class PaymentOutboxRelay {

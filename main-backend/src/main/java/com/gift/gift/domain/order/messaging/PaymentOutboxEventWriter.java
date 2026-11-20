@@ -5,7 +5,6 @@ import java.time.LocalDateTime;
 import java.util.Objects;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -19,10 +18,6 @@ import com.gift.gift.global.outbox.OutboxEventWriter.Event;
 
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(
-        name = "app.payment.mq.enabled",
-        havingValue = "true"
-)
 public class PaymentOutboxEventWriter {
 
     private static final String PAYMENT_COMPLETED_TYPE = "payment.order.completed.v1";

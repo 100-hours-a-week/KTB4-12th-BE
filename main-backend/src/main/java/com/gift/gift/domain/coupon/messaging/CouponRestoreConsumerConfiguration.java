@@ -17,7 +17,7 @@ import com.gift.gift.domain.order.messaging.PaymentRabbitTopologyConfiguration;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnExpression(
-        "${app.payment.mq.enabled:false} and ${app.payment.mq.topology.enabled:false}"
+        "${app.payment.mq.topology.enabled:false}"
 )
 public class CouponRestoreConsumerConfiguration {
 
