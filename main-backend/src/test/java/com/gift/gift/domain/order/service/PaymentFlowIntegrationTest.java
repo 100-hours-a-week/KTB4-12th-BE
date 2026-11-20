@@ -285,10 +285,15 @@ class PaymentFlowIntegrationTest {
         assertThat(first.created()).isTrue();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, payerId
-        )).isEqualTo(1);
+        )).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM roulette_ticket_grants WHERE user_id = ?", Long.class, recipientId
         )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'payment.order.completed.v1' AND aggregate_id = ?",
+                Long.class,
+                String.valueOf(order.getId())
+        )).isEqualTo(1);
         assertThat(second.created()).isFalse();
         assertThat(order.getStatus())
                 .isEqualTo(OrderStatus.COMPLETED);

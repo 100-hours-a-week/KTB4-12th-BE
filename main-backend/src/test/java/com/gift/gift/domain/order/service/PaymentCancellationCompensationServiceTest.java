@@ -14,7 +14,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.context.ApplicationEventPublisher;
 
-import com.gift.gift.domain.coupon.service.OrderCouponService;
 import com.gift.gift.domain.credit.entity.CreditAccount;
 import com.gift.gift.domain.credit.entity.CreditTransaction;
 import com.gift.gift.domain.credit.repository.CreditAccountRepository;
@@ -26,8 +25,8 @@ import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentCancellation;
 import com.gift.gift.domain.order.entity.PaymentCancellationStatus;
-import com.gift.gift.domain.order.event.PaymentRefundReceiptEmailEvent;
 import com.gift.gift.domain.order.exception.OrderException;
+import com.gift.gift.domain.order.messaging.PaymentOutboxEventWriter.PaymentCanceledOutboxRequested;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.order.repository.PaymentCancellationRepository;
 import com.gift.gift.domain.product.service.ProductStockService;
@@ -60,10 +59,9 @@ class PaymentCancellationCompensationServiceTest {
     private static final String PAYMENT_KEY = "7d9f6d7e-a34c-4bbc-97d6-33a2b43c183a";
     private static final String TRANSACTION_KEY = "542f1507-e235-47c2-93c1-a30ed5b31d49";
     private static final LocalDateTime CANCELED_AT = LocalDateTime.of(2026, 10, 24, 14, 0);
+    private static final LocalDateTime PAYMENT_COMPLETED_AT =
+            LocalDateTime.of(2026, 10, 24, 12, 30, 45);
     private static final LocalDateTime EMAIL_VERIFIED_AT = LocalDateTime.of(2026, 10, 20, 9, 0);
-
-    @Mock
-    private OrderCouponService orderCouponService;
 
     @Mock
     private OrderRepository orderRepository;
@@ -121,14 +119,13 @@ class PaymentCancellationCompensationServiceTest {
                 creditAccountRepository,
                 creditTransactionRepository,
                 productStockService,
-                orderCouponService,
                 eventPublisher
         );
     }
 
     @Test
-    @DisplayName("취소와 크레딧 복구가 성공하면 인증된 결제자에게 영수증 이벤트를 발행한다")
-    void compensate_publishesReceiptEventForVerifiedPayer() {
+    @DisplayName("취소와 크레딧 복구가 성공하면 인증된 결제자에게 Outbox 요청 이벤트를 발행한다")
+    void compensate_publishesOutboxRequestForVerifiedPayer() {
         PaymentCancellationApproval approval = givenSuccessfulCompensation(true);
 
         PaymentCancellationResult result = service.compensate(approval);
@@ -138,25 +135,11 @@ class PaymentCancellationCompensationServiceTest {
         assertThat(result.balanceAfter()).isEqualTo(BALANCE_AFTER);
         assertThat(result.created()).isTrue();
 
-        ArgumentCaptor<Object> eventCaptor =
-                ArgumentCaptor.forClass(Object.class);
-        verify(eventPublisher, atLeastOnce()).publishEvent(eventCaptor.capture());
-
-        List<PaymentRefundReceiptEmailEvent> receiptEvents =
-                eventCaptor.getAllValues().stream()
-                        .filter(PaymentRefundReceiptEmailEvent.class::isInstance)
-                        .map(PaymentRefundReceiptEmailEvent.class::cast)
-                        .toList();
-
-        assertThat(receiptEvents).containsExactly(
-                new PaymentRefundReceiptEmailEvent(
-                        "payer@example.com",
-                        ORDER_ID,
-                        "테스트 선물",
-                        QUANTITY,
-                        CREDIT_AMOUNT,
-                        BALANCE_AFTER,
-                        CANCELED_AT
+        assertThat(outboxRequests()).containsExactly(
+                new PaymentCanceledOutboxRequested(
+                        CANCELLATION_ID,
+                        PAYMENT_COMPLETED_AT,
+                        true
                 )
         );
 
@@ -165,21 +148,26 @@ class PaymentCancellationCompensationServiceTest {
     }
 
     @Test
-    @DisplayName("이메일 미인증 결제자의 취소는 완료하되 영수증 이벤트는 발행하지 않는다")
-    void compensate_doesNotPublishReceiptEventForUnverifiedPayer() {
+    @DisplayName("이메일 미인증 결제자도 영수증 자격이 없는 Outbox 요청 이벤트를 발행한다")
+    void compensate_publishesOutboxRequestForUnverifiedPayer() {
         PaymentCancellationApproval approval = givenSuccessfulCompensation(false);
 
         service.compensate(approval);
 
-        verify(eventPublisher, never())
-                .publishEvent(isA(PaymentRefundReceiptEmailEvent.class));
+        assertThat(outboxRequests()).containsExactly(
+                new PaymentCanceledOutboxRequested(
+                        CANCELLATION_ID,
+                        PAYMENT_COMPLETED_AT,
+                        false
+                )
+        );
         verify(creditTransactionRepository)
                 .saveAndFlush(any(CreditTransaction.class));
     }
 
     @Test
-    @DisplayName("이미 완료된 취소의 재요청은 복구 영수증을 다시 발행하지 않는다")
-    void compensate_doesNotRepublishReceiptForCompletedCancellation() {
+    @DisplayName("이미 완료된 취소의 재요청은 Outbox 요청 이벤트를 다시 발행하지 않는다")
+    void compensate_doesNotRepublishOutboxRequestForCompletedCancellation() {
         givenCompletedCancellationRestore();
 
         PaymentCancellationApproval approval =
@@ -201,15 +189,15 @@ class PaymentCancellationCompensationServiceTest {
     }
 
     @Test
-    @DisplayName("다른 요청이 선물을 먼저 취소한 경우 영수증 이벤트를 발행하지 않는다")
-    void compensate_doesNotPublishReceiptWhenGiftCancellationLosesRace() {
+    @DisplayName("다른 요청이 선물을 먼저 취소한 경우 Outbox 요청 이벤트를 발행하지 않는다")
+    void compensate_doesNotPublishOutboxRequestWhenGiftCancellationLosesRace() {
         PaymentCancellationApproval approval = givenGiftCancellationRaceLost();
 
         assertThatThrownBy(() -> service.compensate(approval))
                 .isInstanceOf(OrderException.class);
 
         verify(eventPublisher, never())
-                .publishEvent(isA(PaymentRefundReceiptEmailEvent.class));
+                .publishEvent(isA(PaymentCanceledOutboxRequested.class));
         verifyNoInteractions(creditAccountRepository, productStockService);
     }
 
@@ -227,6 +215,7 @@ class PaymentCancellationCompensationServiceTest {
         when(pendingCancellation.getOrderRecordId()).thenReturn(ORDER_RECORD_ID);
 
         when(completedCancellation.getOrderRecordId()).thenReturn(ORDER_RECORD_ID);
+        when(completedCancellation.getId()).thenReturn(CANCELLATION_ID);
         when(completedCancellation.getCancelTransactionKey())
                 .thenReturn(TRANSACTION_KEY);
         when(completedCancellation.getCancelAmount()).thenReturn(CREDIT_AMOUNT);
@@ -243,6 +232,7 @@ class PaymentCancellationCompensationServiceTest {
         when(completedOrder.getPayerId()).thenReturn(PAYER_ID);
         when(completedOrder.getProductId()).thenReturn(PRODUCT_ID);
         when(completedOrder.getQuantity()).thenReturn(QUANTITY);
+        when(completedOrder.getUpdatedAt()).thenReturn(PAYMENT_COMPLETED_AT);
 
         when(canceledOrder.getId()).thenReturn(ORDER_RECORD_ID);
         when(canceledOrder.getStatus()).thenReturn(OrderStatus.CANCELED);
@@ -258,12 +248,6 @@ class PaymentCancellationCompensationServiceTest {
         when(gift.getSender()).thenReturn(sender);
         when(sender.getEmailVerifiedAt())
                 .thenReturn(emailVerified ? EMAIL_VERIFIED_AT : null);
-
-        if (emailVerified) {
-            when(completedOrder.getOrderId()).thenReturn(ORDER_ID);
-            when(gift.getQuantity()).thenReturn(QUANTITY);
-            when(sender.getEmail()).thenReturn("payer@example.com");
-        }
 
         when(giftHistoryRepository.cancel(GIFT_ID, CANCELED_AT))
                 .thenReturn(1);
@@ -358,7 +342,6 @@ class PaymentCancellationCompensationServiceTest {
         when(gift.getStatus()).thenReturn(GiftStatus.WAITING_FOR_ACCEPTANCE);
         when(gift.getSender()).thenReturn(sender);
         when(sender.getEmailVerifiedAt()).thenReturn(EMAIL_VERIFIED_AT);
-        when(sender.getEmail()).thenReturn("payer@example.com");
 
         when(giftHistoryRepository.cancel(GIFT_ID, CANCELED_AT))
                 .thenReturn(0);
@@ -371,5 +354,16 @@ class PaymentCancellationCompensationServiceTest {
                 CANCELED_AT,
                 true
         );
+    }
+
+    private List<PaymentCanceledOutboxRequested> outboxRequests() {
+        ArgumentCaptor<Object> eventCaptor =
+                ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(eventCaptor.capture());
+
+        return eventCaptor.getAllValues().stream()
+                .filter(PaymentCanceledOutboxRequested.class::isInstance)
+                .map(PaymentCanceledOutboxRequested.class::cast)
+                .toList();
     }
 }

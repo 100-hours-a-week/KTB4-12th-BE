@@ -28,22 +28,19 @@ import com.gift.gift.domain.order.entity.Order;
 import com.gift.gift.domain.order.entity.OrderFailureCode;
 import com.gift.gift.domain.order.entity.OrderStatus;
 import com.gift.gift.domain.order.entity.PaymentApprovalResult;
-import com.gift.gift.domain.order.event.PaymentReceiptEmailEvent;
+import com.gift.gift.domain.order.messaging.PaymentOutboxEventWriter.PaymentCompletedOutboxRequested;
 import com.gift.gift.domain.order.repository.OrderRepository;
 import com.gift.gift.domain.product.entity.Product;
 import com.gift.gift.domain.product.service.ProductQueryService;
 import com.gift.gift.domain.product.service.ProductStockService;
-import com.gift.gift.domain.roulette.service.RouletteService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.service.UserQueryService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -121,9 +118,6 @@ class PaymentCompletionServiceTest {
     @Mock
     private CreditTransaction savedCreditTransaction;
 
-    @Mock
-    private RouletteService rouletteService;
-
     private PaymentCompletionService paymentCompletionService;
 
     @BeforeEach
@@ -144,8 +138,7 @@ class PaymentCompletionServiceTest {
                 eventPublisher,
                 orderCouponService,
                 orderRewardQueryService,
-                clock,
-                rouletteService
+                clock
         );
 
         when(completedOrder.getId()).thenReturn(ORDER_RECORD_ID);
@@ -163,33 +156,18 @@ class PaymentCompletionServiceTest {
     }
 
     @Test
-    @DisplayName("결제 완료 시 이메일 인증을 마친 결제자에게 영수증 이벤트를 발행한다")
-    void complete_publishesReceiptEventForVerifiedPayer() {
+    @DisplayName("결제 완료 시 이메일 인증을 마친 결제자에게 Outbox 요청 이벤트를 발행한다")
+    void complete_publishesOutboxRequestForVerifiedPayer() {
         givenSuccessfulCompletion();
-        when(sender.getEmail()).thenReturn("payer@example.com");
         when(sender.getEmailVerifiedAt()).thenReturn(EMAIL_VERIFIED_AT);
 
         paymentCompletionService.complete(ORDER_RECORD_ID);
 
-        ArgumentCaptor<Object> eventCaptor =
-                ArgumentCaptor.forClass(Object.class);
-        verify(eventPublisher, atLeastOnce()).publishEvent(eventCaptor.capture());
-
-        List<PaymentReceiptEmailEvent> receiptEvents =
-                eventCaptor.getAllValues().stream()
-                        .filter(PaymentReceiptEmailEvent.class::isInstance)
-                        .map(PaymentReceiptEmailEvent.class::cast)
-                        .toList();
-
-        assertThat(receiptEvents).containsExactly(
-                new PaymentReceiptEmailEvent(
-                        "payer@example.com",
-                        ORDER_ID,
-                        "테스트 선물",
-                        QUANTITY,
-                        CREDIT_AMOUNT,
-                        BALANCE_AFTER,
-                        COMPLETED_AT
+        assertThat(outboxRequests()).containsExactly(
+                new PaymentCompletedOutboxRequested(
+                        ORDER_RECORD_ID,
+                        COMPLETED_AT,
+                        true
                 )
         );
 
@@ -198,22 +176,27 @@ class PaymentCompletionServiceTest {
     }
 
     @Test
-    @DisplayName("이메일 미인증 결제자는 결제는 완료하되 영수증 이벤트를 발행하지 않는다")
-    void complete_doesNotPublishReceiptEventForUnverifiedPayer() {
+    @DisplayName("이메일 미인증 결제자도 영수증 자격이 없는 Outbox 요청 이벤트를 발행한다")
+    void complete_publishesOutboxRequestForUnverifiedPayer() {
         givenSuccessfulCompletion();
         when(sender.getEmailVerifiedAt()).thenReturn(null);
 
         paymentCompletionService.complete(ORDER_RECORD_ID);
 
-        verify(eventPublisher, never())
-                .publishEvent(isA(PaymentReceiptEmailEvent.class));
+        assertThat(outboxRequests()).containsExactly(
+                new PaymentCompletedOutboxRequested(
+                        ORDER_RECORD_ID,
+                        COMPLETED_AT,
+                        false
+                )
+        );
         verify(creditTransactionRepository)
                 .saveAndFlush(any(CreditTransaction.class));
     }
 
     @Test
-    @DisplayName("이미 완료된 주문의 재요청은 영수증 이벤트를 다시 발행하지 않는다")
-    void complete_doesNotRepublishReceiptForCompletedOrder() {
+    @DisplayName("이미 완료된 주문의 재요청은 Outbox 요청 이벤트를 다시 발행하지 않는다")
+    void complete_doesNotRepublishOutboxRequestForCompletedOrder() {
         when(orderRepository.findByIdForUpdate(ORDER_RECORD_ID))
                 .thenReturn(Optional.of(completedOrder));
         givenRestoreData();
@@ -225,8 +208,8 @@ class PaymentCompletionServiceTest {
     }
 
     @Test
-    @DisplayName("다른 인스턴스가 먼저 주문 완료에 성공한 경우 영수증 이벤트를 발행하지 않는다")
-    void complete_doesNotPublishReceiptWhenConcurrentCompletionAlreadyWon() {
+    @DisplayName("다른 인스턴스가 먼저 주문 완료에 성공한 경우 Outbox 요청 이벤트를 발행하지 않는다")
+    void complete_doesNotPublishOutboxRequestWhenConcurrentCompletionAlreadyWon() {
         when(orderRepository.findByIdForUpdate(ORDER_RECORD_ID))
                 .thenReturn(Optional.of(pendingOrder));
         when(orderRepository.findById(ORDER_RECORD_ID))
@@ -298,6 +281,17 @@ class PaymentCompletionServiceTest {
         doReturn(savedGift)
                 .when(giftHistoryRepository)
                 .saveAndFlush(any(GiftHistory.class));
+    }
+
+    private List<PaymentCompletedOutboxRequested> outboxRequests() {
+        ArgumentCaptor<Object> eventCaptor =
+                ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(eventCaptor.capture());
+
+        return eventCaptor.getAllValues().stream()
+                .filter(PaymentCompletedOutboxRequested.class::isInstance)
+                .map(PaymentCompletedOutboxRequested.class::cast)
+                .toList();
     }
 
     private void givenRestoreData() {
