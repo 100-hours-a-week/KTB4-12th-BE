@@ -1,0 +1,53 @@
+rule_files: [product-view-alerts.yml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'gift_product_view_sync_last_success_seconds{job="spring",instance="app:8081"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ProductViewSyncStalled
+        exp_alerts: []
+      - eval_time: 46m
+        alertname: ProductViewSyncStalled
+        exp_alerts:
+          - exp_labels: {severity: warning, component: product-view}
+            exp_annotations:
+              summary: "상품 조회수 DB 반영이 멈췄습니다"
+              description: "Redis 조회수를 DB 통계에 반영한 지 30분이 넘었습니다. 조회수 반영 스케줄러 로그와 ShedLock 잠금 상태를 확인하세요."
+  - interval: 1m
+    input_series:
+      - series: 'gift_product_view_sync_last_success_seconds{job="spring",instance="app:8081"}'
+        values: '0x9 600x9 1200x9 1800x9 2400x9 3000x9'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: ProductViewSyncStalled
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'gift_product_view_increment_total{job="spring",instance="app:8081",result="error"}'
+        values: '0+6x20'
+      - series: 'gift_product_view_increment_total{job="spring",instance="app:8081",result="incremented"}'
+        values: '0+54x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ProductViewIncrementErrorsHigh
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: ProductViewIncrementErrorsHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, component: product-view}
+            exp_annotations:
+              summary: "상품 조회수 Redis 기록 실패가 5%를 넘었습니다"
+              description: "Redis에 기록하지 못한 조회는 조회수에서 빠집니다. 상품 Redis 연결과 메모리 상태를 확인하세요."
+  - interval: 1m
+    input_series:
+      - series: 'gift_product_view_increment_total{job="spring",instance="app:8081",result="error"}'
+        values: '0+1x20'
+      - series: 'gift_product_view_increment_total{job="spring",instance="app:8081",result="incremented"}'
+        values: '0+99x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ProductViewIncrementErrorsHigh
+        exp_alerts: []

@@ -116,6 +116,9 @@ jobs:
           docker run --rm --entrypoint promtool \
             -v "$PWD/monitoring:/rules:ro" prom/prometheus:v3.15.0 \
             check rules /rules/payment-rabbitmq-alerts.yml
+          docker run --rm --entrypoint promtool \
+            -v "$PWD/monitoring:/rules:ro" prom/prometheus:v3.15.0 \
+            test rules /rules/product-view-alerts.test.yml
 
       - name: Upload test reports
         if: always()

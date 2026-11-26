@@ -46,6 +46,7 @@ class ConfigureTest(unittest.TestCase):
             self.assertEqual(config["rule_files"], [
                 "/etc/prometheus/profiling-alerts.yml",
                 "/etc/prometheus/payment-rabbitmq-alerts.yml",
+                "/etc/prometheus/product-view-alerts.yml",
             ])
             alertmanager_text = (runtime / "alertmanager.yml").read_text()
             receiver = json.loads(alertmanager_text)
