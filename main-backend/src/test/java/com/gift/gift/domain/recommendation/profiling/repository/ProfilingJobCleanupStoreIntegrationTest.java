@@ -84,8 +84,8 @@ class ProfilingJobCleanupStoreIntegrationTest {
         jdbc.update("""
                 INSERT INTO products (
                     category_id, name, brand, price, quantity,
-                    views, sales, created_at, updated_at
-                ) VALUES (?, ?, 'test', 1000, 1, 0, 0, NOW(6), NOW(6))
+                    sales, created_at, updated_at
+                ) VALUES (?, ?, 'test', 1000, 1, 0, NOW(6), NOW(6))
                 """, categoryId, key);
 
         productId = jdbc.queryForObject(

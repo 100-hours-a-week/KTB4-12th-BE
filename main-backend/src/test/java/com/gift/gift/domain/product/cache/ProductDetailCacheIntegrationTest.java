@@ -64,9 +64,9 @@ class ProductDetailCacheIntegrationTest {
                 "SELECT id FROM categories WHERE name = ?", Long.class, suffix);
         jdbc.update("""
                 INSERT INTO products
-                (category_id, name, brand, description, price, quantity, views, sales,
+                (category_id, name, brand, description, price, quantity, sales,
                  created_at, updated_at)
-                VALUES (?, ?, '브랜드', NULL, 12345, 7, 0, 0,
+                VALUES (?, ?, '브랜드', NULL, 12345, 7, 0,
                         CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
                 """, categoryId, suffix);
         productId = jdbc.queryForObject(

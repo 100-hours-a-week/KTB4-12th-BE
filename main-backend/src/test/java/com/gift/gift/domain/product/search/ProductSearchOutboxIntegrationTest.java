@@ -72,9 +72,9 @@ class ProductSearchOutboxIntegrationTest {
         categoryId = jdbc.queryForObject("SELECT id FROM categories WHERE name = ?",
                 Long.class, "outbox-leaf-" + suffix);
         jdbc.update("""
-                INSERT INTO products (category_id, name, brand, price, quantity, views, sales,
+                INSERT INTO products (category_id, name, brand, price, quantity, sales,
                     created_at, updated_at)
-                VALUES (?, ?, '브랜드', 10000, 100, 0, 0, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                VALUES (?, ?, '브랜드', 10000, 100, 0, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
                 """, categoryId, "outbox-product-" + suffix);
         productId = jdbc.queryForObject("SELECT id FROM products WHERE category_id = ?",
                 Long.class, categoryId);

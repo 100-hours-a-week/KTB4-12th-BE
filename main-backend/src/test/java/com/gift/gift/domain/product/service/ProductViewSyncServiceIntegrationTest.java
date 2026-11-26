@@ -244,10 +244,10 @@ class ProductViewSyncServiceIntegrationTest {
         jdbcTemplate.update("""
                 INSERT INTO products (
                     category_id, name, brand, description,
-                    price, quantity, views, sales, created_at, updated_at
+                    price, quantity, sales, created_at, updated_at
                 )
                 VALUES (?, ?, '테스트 브랜드', NULL,
-                        10000, 100, 0, 0, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                        10000, 100, 0, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
                 """, leafCategoryId, name);
         Long productId = jdbcTemplate.queryForObject(
                 "SELECT id FROM products WHERE name = ?", Long.class, name);

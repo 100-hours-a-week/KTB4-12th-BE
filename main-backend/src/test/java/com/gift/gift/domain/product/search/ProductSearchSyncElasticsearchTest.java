@@ -84,9 +84,9 @@ class ProductSearchSyncElasticsearchTest {
         Long productId = null;
         try {
             jdbc.update("""
-                    INSERT INTO products(category_id,name,brand,price,quantity,views,sales,
+                    INSERT INTO products(category_id,name,brand,price,quantity,sales,
                         created_at,updated_at,search_version)
-                    VALUES (?,'선물세트','브랜드',1000,10,2,1,NOW(6),NOW(6),2)
+                    VALUES (?,'선물세트','브랜드',1000,10,1,NOW(6),NOW(6),2)
                     """, categoryId);
             productId = jdbc.queryForObject("SELECT id FROM products WHERE category_id=?", Long.class, categoryId);
             jdbc.update("UPDATE product_view_stats SET views=8 WHERE product_id=?", productId);
