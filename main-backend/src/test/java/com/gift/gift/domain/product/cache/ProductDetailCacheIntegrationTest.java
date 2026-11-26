@@ -89,6 +89,10 @@ class ProductDetailCacheIntegrationTest {
         reset(cache, products);
         if (productId != null) {
             redis.delete(ProductCacheKeys.detail(productId));
+            redis.opsForHash().delete(ProductCacheKeys.pendingViews(), productId.toString());
+            if (userId != null) {
+                redis.delete(ProductCacheKeys.recentView(userId, productId));
+            }
             jdbc.update("DELETE FROM product_view_events WHERE product_id = ?", productId);
             jdbc.update("DELETE FROM product_views WHERE product_id = ?", productId);
             jdbc.update("DELETE FROM product_images WHERE product_id = ?", productId);
@@ -180,22 +184,18 @@ class ProductDetailCacheIntegrationTest {
     }
 
     @Test
-    @DisplayName("캐시 히트에서도 최초 이벤트만 저장하고 24시간 경과 후 다시 저장한다")
-    void warmCache_preservesViewCooldownAndEvents() {
+    @DisplayName("캐시 히트에서도 최초 조회만 Redis에 누적하고 최근 조회 기록이 만료되면 다시 누적한다")
+    void warmCache_countsViewInRedisOncePerRecentView() {
         cacheService.getProductDetail(productId);
         detailService.getProductDetail(userId, productId);
         detailService.getProductDetail(userId, productId);
-        assertThat(count("product_views")).isEqualTo(1);
-        assertThat(count("product_view_events")).isEqualTo(1);
+        assertThat(pendingViewCount()).isEqualTo("1");
 
-        jdbc.update("""
-                UPDATE product_views
-                SET last_viewed_at = CURRENT_TIMESTAMP(6) - INTERVAL 25 HOUR
-                WHERE user_id = ? AND product_id = ?
-                """, userId, productId);
+        redis.delete(ProductCacheKeys.recentView(userId, productId));
         detailService.getProductDetail(userId, productId);
-        assertThat(count("product_views")).isEqualTo(1);
-        assertThat(count("product_view_events")).isEqualTo(2);
+        assertThat(pendingViewCount()).isEqualTo("2");
+        assertThat(count("product_views")).isZero();
+        assertThat(count("product_view_events")).isZero();
         assertThat(jdbc.queryForObject(
                 "SELECT views FROM product_view_stats WHERE product_id = ?",
                 Integer.class, productId)).isZero();
@@ -282,5 +282,9 @@ class ProductDetailCacheIntegrationTest {
     private int count(String table) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE product_id = ?",
                 Integer.class, productId);
+    }
+
+    private Object pendingViewCount() {
+        return redis.opsForHash().get(ProductCacheKeys.pendingViews(), productId.toString());
     }
 }
