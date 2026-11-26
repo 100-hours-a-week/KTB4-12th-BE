@@ -110,6 +110,7 @@ def configure():
         config["rule_files"] = [
             "/etc/prometheus/profiling-alerts.yml",
             "/etc/prometheus/payment-rabbitmq-alerts.yml",
+            "/etc/prometheus/product-view-alerts.yml",
         ]
         config["alerting"] = {"alertmanagers": [{"static_configs": [{"targets": ["alertmanager:9093"]}]}]}
         webhook = os.environ.get("LOCAL_ALERT_WEBHOOK_URL", "http://host.docker.internal:19093/alerts")

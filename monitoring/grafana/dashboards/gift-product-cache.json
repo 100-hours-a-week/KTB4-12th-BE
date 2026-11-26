@@ -1534,6 +1534,215 @@
         "w": 12,
         "h": 7
       }
+    },
+    {
+      "type": "timeseries",
+      "title": "조회수 반영 대기 상품 수 / 10분간 DB 반영 상품 수",
+      "description": "Redis pending 해시의 상품 수와 최근 10분간 DB 통계에 반영한 상품 수입니다. 대기 상품 수가 반영 주기마다 0 근처로 내려가지 않으면 반영이 밀리고 있습니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(gift_product_view_pending{job=\"spring\",instance=~\"$instance\"})",
+          "legendFormat": "반영 대기 상품 수",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(gift_product_view_synced_total{job=\"spring\",instance=~\"$instance\"}[10m]))",
+          "legendFormat": "10분간 반영 상품 수",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 117,
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "조회수 Redis 기록 결과",
+      "description": "incremented는 새로 센 조회, duplicate는 24시간 안의 재조회, error는 Redis 실패로 빠진 조회입니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (result) (rate(gift_product_view_increment_total{job=\"spring\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 118,
+      "gridPos": {
+        "x": 12,
+        "y": 96,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "마지막 조회수 DB 반영 후 경과 시간",
+      "description": "반영 주기(기본 10분)를 크게 넘으면 스케줄러나 ShedLock 잠금을 확인합니다. 30분 초과가 15분 지속되면 알림이 발생합니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - max(gift_product_view_sync_last_success_seconds{job=\"spring\",instance=~\"$instance\"})",
+          "legendFormat": "경과 시간",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 119,
+      "gridPos": {
+        "x": 0,
+        "y": 103,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "조회수 DB 반영 1회 최대 소요 시간",
+      "description": "반영 한 번에 걸린 시간의 최댓값입니다. 반영 주기보다 충분히 짧아야 합니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gift-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(gift_product_view_sync_seconds_max{job=\"spring\",instance=~\"$instance\"})",
+          "legendFormat": "최대 소요 시간",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gift-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 120,
+      "gridPos": {
+        "x": 12,
+        "y": 103,
+        "w": 12,
+        "h": 7
+      }
     }
   ],
   "description": "상품 상세 GET 부하 테스트용. API 지표는 상세 경로로 한정하며 JVM/Hikari/MySQL은 프로세스·풀·DB 전체 지표입니다. 순간 부하 지연은 k6 원자료로 확인합니다.",

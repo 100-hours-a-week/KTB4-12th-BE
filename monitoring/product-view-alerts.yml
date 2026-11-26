@@ -1,0 +1,29 @@
+groups:
+  - name: product-view
+    rules:
+      - alert: ProductViewSyncStalled
+        expr: |
+          time() - max(gift_product_view_sync_last_success_seconds{job="spring"}) > 30 * 60
+        for: 15m
+        labels:
+          severity: warning
+          component: product-view
+        annotations:
+          summary: "상품 조회수 DB 반영이 멈췄습니다"
+          description: >-
+            Redis 조회수를 DB 통계에 반영한 지 30분이 넘었습니다.
+            조회수 반영 스케줄러 로그와 ShedLock 잠금 상태를 확인하세요.
+
+      - alert: ProductViewIncrementErrorsHigh
+        expr: |
+          sum(rate(gift_product_view_increment_total{job="spring",result="error"}[5m]))
+            / sum(rate(gift_product_view_increment_total{job="spring"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: product-view
+        annotations:
+          summary: "상품 조회수 Redis 기록 실패가 5%를 넘었습니다"
+          description: >-
+            Redis에 기록하지 못한 조회는 조회수에서 빠집니다.
+            상품 Redis 연결과 메모리 상태를 확인하세요.
