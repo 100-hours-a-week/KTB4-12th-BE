@@ -8,10 +8,13 @@ services:
     image: redis:7.4-alpine
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD for Redis and the backend}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-0}
     command:
       - /bin/sh
       - -ec
-      - exec /usr/local/bin/docker-entrypoint.sh redis-server --requirepass "$$REDIS_PASSWORD"
+      - >-
+        exec /usr/local/bin/docker-entrypoint.sh redis-server --requirepass "$$REDIS_PASSWORD"
+        --maxmemory "$$REDIS_MAXMEMORY" --maxmemory-policy volatile-lru
     volumes:
       - redis-data:/data
     healthcheck:
