@@ -134,7 +134,11 @@ app:
 
       detail-cache:
         ttl: ${PRODUCT_DETAIL_CACHE_TTL:2h}
-
+      recent-view:
+        ttl: ${PRODUCT_RECENT_VIEW_TTL:24h}
+  product-view:
+    sync-interval: ${PRODUCT_VIEW_SYNC_INTERVAL:PT10M}
+    sync-chunk-size: ${PRODUCT_VIEW_SYNC_CHUNK_SIZE:100}
   scheduling:
     enabled: ${SCHEDULING_ENABLED:true}
   email:

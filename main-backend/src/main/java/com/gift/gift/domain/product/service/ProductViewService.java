@@ -1,24 +1,21 @@
 package com.gift.gift.domain.product.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import com.gift.gift.domain.product.exception.ProductException;
-import com.gift.gift.domain.product.repository.ProductRepository;
-import com.gift.gift.domain.product.repository.ProductViewEventRepository;
-import com.gift.gift.domain.product.repository.ProductViewRepository;
-import com.gift.gift.global.exception.ErrorCode;
+import com.gift.gift.domain.product.cache.ProductViewRedisRepository;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ProductViewService {
 
-    private final ProductRepository productRepository;
-    private final ProductViewRepository productViewRepository;
-    private final ProductViewEventRepository productViewEventRepository;
+    private final ProductViewRedisRepository productViewRedisRepository;
+    private final MeterRegistry meterRegistry;
 
-    @Transactional
     public void recordProductView(Long userId, Long productId) {
         if (userId == null || userId <= 0) {
             throw new IllegalArgumentException("사용자 ID는 양수여야 합니다.");
@@ -27,25 +24,16 @@ public class ProductViewService {
             throw new IllegalArgumentException("상품 ID는 양수여야 합니다.");
         }
 
-        productRepository.findActiveByIdForRead(productId)
-                .orElseThrow(() -> new ProductException(ErrorCode.PRODUCT_NOT_FOUND));
-
-        int affectedRows = productViewRepository.recordViewAfterCooldown(
-                userId,
-                productId
-        );
-
-        if (affectedRows == 0) {
-            return;
+        try {
+            boolean incremented = productViewRedisRepository.incrementView(userId, productId);
+            count(incremented ? "incremented" : "duplicate");
+        } catch (DataAccessException | IllegalStateException exception) {
+            count("error");
+            log.warn("상품 조회수 증가 실패. 상세 응답은 유지합니다. productId={}", productId, exception);
         }
-        if (affectedRows != 1 && affectedRows != 2) {
-            throw new IllegalStateException(
-                    "상품 조회 이력 갱신 결과가 올바르지 않습니다."
-            );
-        }
+    }
 
-        if (productViewEventRepository.insertEvent(userId, productId) != 1) {
-            throw new IllegalStateException("상품 조회 이벤트 저장에 실패했습니다.");
-        }
+    private void count(String result) {
+        meterRegistry.counter("gift.product.view.increment", "result", result).increment();
     }
 }

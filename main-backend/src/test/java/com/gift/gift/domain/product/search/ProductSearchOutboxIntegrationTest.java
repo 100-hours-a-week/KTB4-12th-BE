@@ -24,12 +24,17 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
+import com.gift.gift.domain.product.cache.ProductCacheKeys;
+import com.gift.gift.domain.product.service.ProductViewSyncService;
 import com.gift.gift.domain.product.service.ProductStockService;
 import com.gift.gift.domain.product.service.ProductViewBatchService;
 import com.gift.gift.domain.product.service.ProductViewService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
+import com.gift.gift.domain.product.repository.ProductViewEventRepository;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.doThrow;
@@ -45,6 +50,9 @@ class ProductSearchOutboxIntegrationTest {
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private UserRepository users;
+    @Autowired private ProductViewEventRepository viewEvents;
+    @Autowired private ProductViewSyncService viewSyncService;
+    @Autowired @Qualifier("productRedisTemplate") private StringRedisTemplate redis;
     @MockitoSpyBean private ProductSearchOutboxRepository outbox;
 
     private Long rootId;
@@ -76,6 +84,14 @@ class ProductSearchOutboxIntegrationTest {
                 Long.class, categoryId);
         userId = users.saveAndFlush(new User(suffix + "@example.com",
                 "$2a$10$" + "a".repeat(53), "Outbox 테스트", LocalDate.of(1990, 1, 1))).getId();
+
+        redis.delete(List.of(
+                ProductCacheKeys.pendingViews(),
+                ProductCacheKeys.syncingViews(),
+                ProductCacheKeys.recentView(userId, productId),
+                ProductCacheKeys.recentView(userId + 1, productId),
+                ProductCacheKeys.recentView(userId + 2, productId)
+        ));
     }
 
     @AfterEach
@@ -87,6 +103,14 @@ class ProductSearchOutboxIntegrationTest {
         jdbc.update("DELETE FROM categories WHERE id = ?", categoryId);
         jdbc.update("DELETE FROM categories WHERE id = ?", rootId);
         jdbc.update("DELETE FROM users WHERE id = ?", userId);
+
+        redis.delete(List.of(
+                ProductCacheKeys.pendingViews(),
+                ProductCacheKeys.syncingViews(),
+                ProductCacheKeys.recentView(userId, productId),
+                ProductCacheKeys.recentView(userId + 1, productId),
+                ProductCacheKeys.recentView(userId + 2, productId)
+        ));
     }
 
     @Test
@@ -104,24 +128,6 @@ class ProductSearchOutboxIntegrationTest {
     }
 
     @Test
-    @DisplayName("중복 조회는 조회수·버전·Outbox 기록을 추가하지 않는다")
-    void repeatedViewWithinCooldownDoesNotCreateAnotherJob() {
-        viewService.recordProductView(userId, productId);
-        viewService.recordProductView(userId, productId);
-
-        assertThat(versions()).isEmpty();
-        assertThat(value("search_version")).isZero();
-        assertThat(value("views")).isZero();
-        assertThat(viewBatchService.processPendingEvents()).isEqualTo(1);
-
-        assertThat(value("views")).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT views FROM products WHERE id = ?",
-                Long.class, productId)).isZero();
-        assertThat(value("search_version")).isEqualTo(1);
-        assertThat(versions()).containsExactly(1L);
-    }
-
-    @Test
     @DisplayName("실패한 재고 변경은 버전과 작업을 남기지 않는다")
     void unsuccessfulStockChangesDoNotCreateJobsOrAdvanceVersion() {
         assertThat(stockService.deductStockIfAvailable(productId, 101)).isFalse();
@@ -135,7 +141,7 @@ class ProductSearchOutboxIntegrationTest {
     @DisplayName("호출자 롤백 시 조회 이력·상품 변경·Outbox가 함께 취소된다")
     void callerRollbackRemovesAllProductChangesAndJobs() {
         assertThatThrownBy(() -> transaction().executeWithoutResult(tx -> {
-            viewService.recordProductView(userId, productId);
+            viewEvents.insertEvent(userId, productId);
             assertThat(viewBatchService.processPendingEvents()).isEqualTo(1);
             stockService.deductStockIfAvailable(productId, 3);
             assertThat(versions()).containsExactly(1L, 2L);
@@ -147,8 +153,6 @@ class ProductSearchOutboxIntegrationTest {
         assertThat(value("views")).isZero();
         assertThat(value("search_version")).isZero();
         assertThat(versions()).isEmpty();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_views WHERE product_id = ?",
-                Integer.class, productId)).isZero();
     }
 
     @Test
@@ -167,7 +171,7 @@ class ProductSearchOutboxIntegrationTest {
     @Test
     @DisplayName("Outbox 실패 시 배치 집계와 완료 처리를 롤백하고 조회 이벤트는 재처리한다")
     void outboxFailureRollsBackViewBatchAndAllowsRetry() {
-        viewService.recordProductView(userId, productId);
+        insertViewEvent();
         doThrow(new DataAccessResourceFailureException("Outbox 저장 실패")).when(outbox).insert(productId);
 
         assertThatThrownBy(() -> viewBatchService.processPendingEvents())
@@ -175,8 +179,6 @@ class ProductSearchOutboxIntegrationTest {
         assertThat(value("views")).isZero();
         assertThat(value("search_version")).isZero();
         assertThat(versions()).isEmpty();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_views WHERE product_id = ?",
-                Integer.class, productId)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_view_events WHERE product_id = ? AND processed_at IS NULL",
                 Integer.class, productId)).isEqualTo(1);
 
@@ -189,10 +191,8 @@ class ProductSearchOutboxIntegrationTest {
     @Test
     @DisplayName("여러 조회 이벤트를 상품별로 집계한 뒤 버전과 Outbox는 한 번만 기록한다")
     void viewBatchCreatesOneJobPerProductAndBatch() {
-        viewService.recordProductView(userId, productId);
-        jdbc.update("UPDATE product_views SET last_viewed_at=TIMESTAMPADD(HOUR,-25,NOW(6)) WHERE product_id=?",
-                productId);
-        viewService.recordProductView(userId, productId);
+        insertViewEvent();
+        insertViewEvent();
         assertThat(versions()).isEmpty();
 
         assertThat(viewBatchService.processPendingEvents()).isEqualTo(2);
@@ -258,8 +258,33 @@ class ProductSearchOutboxIntegrationTest {
         assertThat(versions()).containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L);
     }
 
+    @Test
+    @DisplayName("Redis 조회수 반영은 상품별로 버전과 Outbox를 한 번만 기록한다")
+    void viewSyncCreatesOneOutboxJobPerProduct() {
+        viewService.recordProductView(userId, productId);
+        viewService.recordProductView(userId + 1, productId);
+        viewService.recordProductView(userId + 2, productId);
+        assertThat(versions()).isEmpty();
+        assertThat(value("views")).isZero();
+
+        assertThat(viewSyncService.sync()).isEqualTo(1);
+        assertThat(value("views")).isEqualTo(3);
+        assertThat(value("search_version")).isEqualTo(1);
+        assertThat(versions()).containsExactly(1L);
+
+        assertThat(viewSyncService.sync()).isZero();
+        assertThat(versions()).containsExactly(1L);
+    }
+
     private TransactionTemplate transaction() {
         return new TransactionTemplate(transactionManager);
+    }
+
+    private void insertViewEvent() {
+        jdbc.update("""
+                INSERT INTO product_view_events (product_id, user_id, created_at, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                """, productId, userId);
     }
 
     private long value(String column) {
