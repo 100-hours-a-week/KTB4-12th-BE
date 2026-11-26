@@ -38,9 +38,9 @@ class ProductSearchSyncIntegrationTest {
         jdbc.update("INSERT INTO categories(name,created_at,updated_at) VALUES (?,NOW(6),NOW(6))", name);
         categoryId = jdbc.queryForObject("SELECT id FROM categories WHERE name=?", Long.class, name);
         jdbc.update("""
-                INSERT INTO products(category_id,name,brand,price,quantity,views,sales,
+                INSERT INTO products(category_id,name,brand,price,quantity,sales,
                     created_at,updated_at,search_version)
-                VALUES (?,'세트','브랜드',1000,10,2,1,'2026-01-01 12:00:00.123456',NOW(6),2)
+                VALUES (?,'세트','브랜드',1000,10,1,'2026-01-01 12:00:00.123456',NOW(6),2)
                 """, categoryId);
         productId = jdbc.queryForObject("SELECT id FROM products WHERE category_id=?", Long.class, categoryId);
     }
@@ -114,7 +114,6 @@ class ProductSearchSyncIntegrationTest {
         assertThat(active.version()).isEqualTo(2);
         jdbc.update("UPDATE product_view_stats SET views=8 WHERE product_id=?", productId);
         assertThat(source.findLatest(List.of(productId)).get(productId).source().get("views")).isEqualTo(8);
-        assertThat(jdbc.queryForObject("SELECT views FROM products WHERE id=?", Integer.class, productId)).isEqualTo(2);
         jdbc.update("UPDATE products SET deleted_at=NOW(6),search_version=3 WHERE id=?", productId);
         var deleted = source.findLatest(List.of(productId)).get(productId);
         assertThat(deleted.version()).isEqualTo(3);

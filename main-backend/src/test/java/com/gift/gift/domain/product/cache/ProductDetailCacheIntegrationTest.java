@@ -64,9 +64,9 @@ class ProductDetailCacheIntegrationTest {
                 "SELECT id FROM categories WHERE name = ?", Long.class, suffix);
         jdbc.update("""
                 INSERT INTO products
-                (category_id, name, brand, description, price, quantity, views, sales,
+                (category_id, name, brand, description, price, quantity, sales,
                  created_at, updated_at)
-                VALUES (?, ?, '브랜드', NULL, 12345, 7, 0, 0,
+                VALUES (?, ?, '브랜드', NULL, 12345, 7, 0,
                         CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
                 """, categoryId, suffix);
         productId = jdbc.queryForObject(
@@ -93,8 +93,6 @@ class ProductDetailCacheIntegrationTest {
             if (userId != null) {
                 redis.delete(ProductCacheKeys.recentView(userId, productId));
             }
-            jdbc.update("DELETE FROM product_view_events WHERE product_id = ?", productId);
-            jdbc.update("DELETE FROM product_views WHERE product_id = ?", productId);
             jdbc.update("DELETE FROM product_images WHERE product_id = ?", productId);
             jdbc.update("DELETE FROM products WHERE id = ?", productId);
         }
@@ -194,8 +192,6 @@ class ProductDetailCacheIntegrationTest {
         redis.delete(ProductCacheKeys.recentView(userId, productId));
         detailService.getProductDetail(userId, productId);
         assertThat(pendingViewCount()).isEqualTo("2");
-        assertThat(count("product_views")).isZero();
-        assertThat(count("product_view_events")).isZero();
         assertThat(jdbc.queryForObject(
                 "SELECT views FROM product_view_stats WHERE product_id = ?",
                 Integer.class, productId)).isZero();
@@ -277,11 +273,6 @@ class ProductDetailCacheIntegrationTest {
         } finally {
             REDIS.getDockerClient().unpauseContainerCmd(REDIS.getContainerId()).exec();
         }
-    }
-
-    private int count(String table) {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE product_id = ?",
-                Integer.class, productId);
     }
 
     private Object pendingViewCount() {

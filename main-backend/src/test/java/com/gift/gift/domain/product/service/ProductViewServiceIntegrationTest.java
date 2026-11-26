@@ -48,9 +48,6 @@ class ProductViewServiceIntegrationTest {
     private ProductDetailService productDetailService;
 
     @Autowired
-    private ProductViewBatchService productViewBatchService;
-
-    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -89,10 +86,10 @@ class ProductViewServiceIntegrationTest {
         jdbcTemplate.update("""
                 INSERT INTO products (
                     category_id, name, brand, description,
-                    price, quantity, views, sales, created_at, updated_at
+                    price, quantity, sales, created_at, updated_at
                 )
                 VALUES (?, ?, '테스트 브랜드', NULL,
-                        10000, 100, 0, 0, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                        10000, 100, 0, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
                 """, leafCategoryId, "조회수 테스트 상품-" + suffix);
         productId = jdbcTemplate.queryForObject(
                 "SELECT id FROM products WHERE category_id = ? AND name = ?",
@@ -108,7 +105,6 @@ class ProductViewServiceIntegrationTest {
         }
 
         if (productId != null) {
-            jdbcTemplate.update("DELETE FROM product_view_events WHERE product_id = ?", productId);
             jdbcTemplate.update("DELETE FROM products WHERE id = ?", productId);
         }
         if (leafCategoryId != null) {
@@ -123,7 +119,7 @@ class ProductViewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("상세 조회는 조회수를 Redis에만 올리고 DB 이력과 이벤트는 만들지 않는다")
+    @DisplayName("상세 조회는 조회수를 Redis에만 올리고 DB 조회수는 바로 바꾸지 않는다")
     void getProductDetail_incrementsInRedisOnly() {
         Long userId = createUser();
         recentViewKeys.add(ProductCacheKeys.recentView(userId, productId));
@@ -132,8 +128,6 @@ class ProductViewServiceIntegrationTest {
                 .isEqualTo(productId);
 
         assertThat(pendingCount()).isEqualTo("1");
-        assertThat(countRows("product_views")).isZero();
-        assertThat(countRows("product_view_events")).isZero();
         assertThat(viewCount()).isZero();
     }
 
@@ -213,17 +207,10 @@ class ProductViewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("상품 생성·삭제·복구 시 통계 상태가 연동되고 레거시 조회수는 갱신하지 않는다")
+    @DisplayName("상품 생성 시 통계 행을 만들고 삭제·복구 상태를 연동하며 조회수는 유지한다")
     void productTriggers_syncStatsLifecycle() {
         assertThat(viewCount()).isZero();
-        jdbcTemplate.update("""
-                INSERT INTO product_view_events (product_id, user_id, created_at, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
-                """, productId, createUser());
-        productViewBatchService.processPendingEvents();
-        assertThat(viewCount()).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT views FROM products WHERE id = ?", Integer.class, productId)).isZero();
+        jdbcTemplate.update("UPDATE product_view_stats SET views = 1 WHERE product_id = ?", productId);
 
         jdbcTemplate.update("UPDATE products SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", productId);
         assertThat(jdbcTemplate.queryForObject(
@@ -270,12 +257,6 @@ class ProductViewServiceIntegrationTest {
     private int viewCount() {
         return jdbcTemplate.queryForObject(
                 "SELECT views FROM product_view_stats WHERE product_id = ?",
-                Integer.class, productId);
-    }
-
-    private int countRows(String table) {
-        return jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM " + table + " WHERE product_id = ?",
                 Integer.class, productId);
     }
 

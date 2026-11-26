@@ -30,11 +30,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.gift.gift.domain.product.cache.ProductCacheKeys;
 import com.gift.gift.domain.product.service.ProductViewSyncService;
 import com.gift.gift.domain.product.service.ProductStockService;
-import com.gift.gift.domain.product.service.ProductViewBatchService;
 import com.gift.gift.domain.product.service.ProductViewService;
 import com.gift.gift.domain.user.entity.User;
 import com.gift.gift.domain.user.repository.UserRepository;
-import com.gift.gift.domain.product.repository.ProductViewEventRepository;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.doThrow;
@@ -45,12 +43,10 @@ class ProductSearchOutboxIntegrationTest {
 
     @Autowired private ProductStockService stockService;
     @Autowired private ProductViewService viewService;
-    @Autowired private ProductViewBatchService viewBatchService;
     @Autowired private ProductSearchOutboxWriter writer;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private UserRepository users;
-    @Autowired private ProductViewEventRepository viewEvents;
     @Autowired private ProductViewSyncService viewSyncService;
     @Autowired @Qualifier("productRedisTemplate") private StringRedisTemplate redis;
     @MockitoSpyBean private ProductSearchOutboxRepository outbox;
@@ -76,9 +72,9 @@ class ProductSearchOutboxIntegrationTest {
         categoryId = jdbc.queryForObject("SELECT id FROM categories WHERE name = ?",
                 Long.class, "outbox-leaf-" + suffix);
         jdbc.update("""
-                INSERT INTO products (category_id, name, brand, price, quantity, views, sales,
+                INSERT INTO products (category_id, name, brand, price, quantity, sales,
                     created_at, updated_at)
-                VALUES (?, ?, '브랜드', 10000, 100, 0, 0, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                VALUES (?, ?, '브랜드', 10000, 100, 0, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
                 """, categoryId, "outbox-product-" + suffix);
         productId = jdbc.queryForObject("SELECT id FROM products WHERE category_id = ?",
                 Long.class, categoryId);
@@ -97,8 +93,6 @@ class ProductSearchOutboxIntegrationTest {
     @AfterEach
     void cleanUp() {
         jdbc.update("DELETE FROM product_search_outbox WHERE product_id = ?", productId);
-        jdbc.update("DELETE FROM product_view_events WHERE product_id = ?", productId);
-        jdbc.update("DELETE FROM product_views WHERE product_id = ?", productId);
         jdbc.update("DELETE FROM products WHERE id = ?", productId);
         jdbc.update("DELETE FROM categories WHERE id = ?", categoryId);
         jdbc.update("DELETE FROM categories WHERE id = ?", rootId);
@@ -138,19 +132,16 @@ class ProductSearchOutboxIntegrationTest {
     }
 
     @Test
-    @DisplayName("호출자 롤백 시 조회 이력·상품 변경·Outbox가 함께 취소된다")
+    @DisplayName("호출자 롤백 시 상품 변경과 Outbox가 함께 취소된다")
     void callerRollbackRemovesAllProductChangesAndJobs() {
         assertThatThrownBy(() -> transaction().executeWithoutResult(tx -> {
-            viewEvents.insertEvent(userId, productId);
-            assertThat(viewBatchService.processPendingEvents()).isEqualTo(1);
             stockService.deductStockIfAvailable(productId, 3);
-            assertThat(versions()).containsExactly(1L, 2L);
+            assertThat(versions()).containsExactly(1L);
             throw new IllegalStateException("결제 후속 처리 실패");
         })).isInstanceOf(IllegalStateException.class).hasMessage("결제 후속 처리 실패");
 
         assertThat(value("quantity")).isEqualTo(100);
         assertThat(value("sales")).isZero();
-        assertThat(value("views")).isZero();
         assertThat(value("search_version")).isZero();
         assertThat(versions()).isEmpty();
     }
@@ -169,38 +160,22 @@ class ProductSearchOutboxIntegrationTest {
     }
 
     @Test
-    @DisplayName("Outbox 실패 시 배치 집계와 완료 처리를 롤백하고 조회 이벤트는 재처리한다")
-    void outboxFailureRollsBackViewBatchAndAllowsRetry() {
-        insertViewEvent();
+    @DisplayName("Outbox 실패 시 조회수 반영을 롤백하고 Redis 조회수를 남겨 다음 반영에서 처리한다")
+    void outboxFailureRollsBackViewSyncAndAllowsRetry() {
+        viewService.recordProductView(userId, productId);
         doThrow(new DataAccessResourceFailureException("Outbox 저장 실패")).when(outbox).insert(productId);
 
-        assertThatThrownBy(() -> viewBatchService.processPendingEvents())
+        assertThatThrownBy(() -> viewSyncService.sync())
                 .isInstanceOf(DataAccessResourceFailureException.class);
         assertThat(value("views")).isZero();
         assertThat(value("search_version")).isZero();
         assertThat(versions()).isEmpty();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_view_events WHERE product_id = ? AND processed_at IS NULL",
-                Integer.class, productId)).isEqualTo(1);
+        assertThat(redis.opsForHash().get(ProductCacheKeys.syncingViews(), productId.toString()))
+                .isEqualTo("1");
 
         doCallRealMethod().when(outbox).insert(productId);
-        assertThat(viewBatchService.processPendingEvents()).isEqualTo(1);
+        assertThat(viewSyncService.sync()).isEqualTo(1);
         assertThat(value("views")).isEqualTo(1);
-        assertThat(versions()).containsExactly(1L);
-    }
-
-    @Test
-    @DisplayName("여러 조회 이벤트를 상품별로 집계한 뒤 버전과 Outbox는 한 번만 기록한다")
-    void viewBatchCreatesOneJobPerProductAndBatch() {
-        insertViewEvent();
-        insertViewEvent();
-        assertThat(versions()).isEmpty();
-
-        assertThat(viewBatchService.processPendingEvents()).isEqualTo(2);
-        assertThat(value("views")).isEqualTo(2);
-        assertThat(value("search_version")).isEqualTo(1);
-        assertThat(versions()).containsExactly(1L);
-
-        assertThat(viewBatchService.processPendingEvents()).isZero();
         assertThat(versions()).containsExactly(1L);
     }
 
@@ -278,13 +253,6 @@ class ProductSearchOutboxIntegrationTest {
 
     private TransactionTemplate transaction() {
         return new TransactionTemplate(transactionManager);
-    }
-
-    private void insertViewEvent() {
-        jdbc.update("""
-                INSERT INTO product_view_events (product_id, user_id, created_at, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
-                """, productId, userId);
     }
 
     private long value(String column) {

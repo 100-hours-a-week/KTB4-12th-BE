@@ -75,9 +75,9 @@ class ProductStockServiceIntegrationTest {
         jdbcTemplate.update("""
                 INSERT INTO products (
                     category_id, name, brand, price,
-                    quantity, views, sales, created_at, updated_at
+                    quantity, sales, created_at, updated_at
                 )
-                VALUES (?, ?, '테스트 브랜드', 10000, 10, 0, 4, ?, ?)
+                VALUES (?, ?, '테스트 브랜드', 10000, 10, 4, ?, ?)
                 """, leafCategoryId, productName,
                 INITIAL_UPDATED_AT, INITIAL_UPDATED_AT);
 

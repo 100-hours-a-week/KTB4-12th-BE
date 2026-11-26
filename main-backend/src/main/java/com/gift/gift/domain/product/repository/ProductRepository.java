@@ -3,10 +3,7 @@ package com.gift.gift.domain.product.repository;
 import java.util.List;
 import java.util.Optional;
 
-import jakarta.persistence.LockModeType;
-
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,17 +16,6 @@ public interface ProductRepository
     Optional<Product> findByIdAndDeletedAtIsNull(Long productId);
 
     List<Product> findAllByIdInAndDeletedAtIsNull(List<Long> productIds);
-
-    @Lock(LockModeType.PESSIMISTIC_READ)
-    @Query("""
-            SELECT product
-            FROM Product product
-            WHERE product.id = :productId
-              AND product.deletedAt IS NULL
-            """)
-    Optional<Product> findActiveByIdForRead(
-            @Param("productId") Long productId
-    );
 
     @Modifying
     @Query(value = """
