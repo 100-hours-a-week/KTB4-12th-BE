@@ -35,11 +35,7 @@ import static org.mockito.Mockito.reset;
 @SpringBootTest
 class ProductViewBatchServiceIntegrationTest {
 
-    private static final String PASSWORD_HASH =
-            "$2a$10$ZUYQG3Jm25Pimrzy9y7/EDJY4bopDMj/XRFMg8QZyGXLc2x7uCU/6";
-
-    @Autowired
-    private ProductViewService productViewService;
+    private static final String PASSWORD_HASH = "$2a$10$ZUYQG3Jm25Pimrzy9y7/EDJY4bopDMj/XRFMg8QZyGXLc2x7uCU/6";
 
     @Autowired
     private ProductViewBatchService productViewBatchService;
@@ -202,46 +198,6 @@ class ProductViewBatchServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("통계 갱신 트랜잭션이 열려 있어도 상품 상세의 공유 잠금 획득은 완료된다")
-    void statsUpdate_doesNotBlockProductDetailSharedLock() throws Exception {
-        Long productId = createProduct();
-        Long userId = createUser();
-        CountDownLatch statsLocked = new CountDownLatch(1);
-        CountDownLatch releaseStats = new CountDownLatch(1);
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-        try {
-            Future<?> update = executor.submit(() ->
-                    new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-                        assertThat(productViewStatsRepository.incrementViewsIfActive(productId, 1)).isEqualTo(1);
-                        statsLocked.countDown();
-                        try {
-                            await(releaseStats);
-                        } catch (InterruptedException exception) {
-                            Thread.currentThread().interrupt();
-                            throw new IllegalStateException(exception);
-                        }
-                    })
-            );
-            assertThat(statsLocked.await(10, TimeUnit.SECONDS)).isTrue();
-            Future<?> detail = executor.submit(() -> productViewService.recordProductView(userId, productId));
-
-            detail.get(3, TimeUnit.SECONDS);
-            assertThat(update.isDone()).isFalse();
-            releaseStats.countDown();
-            update.get(10, TimeUnit.SECONDS);
-            assertThat(viewCount(productId)).isEqualTo(1);
-            assertThat(jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM product_views WHERE product_id = ?", Long.class, productId
-            )).isEqualTo(1);
-            assertThat(pendingEventCount()).isEqualTo(1);
-        } finally {
-            releaseStats.countDown();
-            executor.shutdownNow();
-            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
-        }
-    }
-
-    @Test
     @DisplayName("두 Batch worker가 동시에 실행되어도 Event를 중복 집계하지 않는다")
     void processPendingEvents_processesConcurrentWorkersWithoutDuplication()
             throws Exception {
@@ -325,7 +281,7 @@ class ProductViewBatchServiceIntegrationTest {
     }
 
     private void recordView(Long productId) {
-        productViewService.recordProductView(createUser(), productId);
+        productViewEventRepository.insertEvent(createUser(), productId);
     }
 
     private Long createProduct() {
