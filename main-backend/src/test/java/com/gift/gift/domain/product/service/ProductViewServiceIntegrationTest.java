@@ -26,7 +26,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import com.gift.gift.domain.product.cache.ProductCacheKeys;
 import com.gift.gift.domain.product.cache.ProductViewRedisRepository;
 import com.gift.gift.domain.product.exception.ProductException;
-import com.gift.gift.domain.product.repository.ProductViewEventRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -50,9 +49,6 @@ class ProductViewServiceIntegrationTest {
 
     @Autowired
     private ProductViewBatchService productViewBatchService;
-
-    @Autowired
-    private ProductViewEventRepository productViewEventRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -220,7 +216,10 @@ class ProductViewServiceIntegrationTest {
     @DisplayName("상품 생성·삭제·복구 시 통계 상태가 연동되고 레거시 조회수는 갱신하지 않는다")
     void productTriggers_syncStatsLifecycle() {
         assertThat(viewCount()).isZero();
-        productViewEventRepository.insertEvent(createUser(), productId);
+        jdbcTemplate.update("""
+                INSERT INTO product_view_events (product_id, user_id, created_at, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                """, productId, createUser());
         productViewBatchService.processPendingEvents();
         assertThat(viewCount()).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(

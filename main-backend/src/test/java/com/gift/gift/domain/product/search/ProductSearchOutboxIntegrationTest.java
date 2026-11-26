@@ -171,7 +171,7 @@ class ProductSearchOutboxIntegrationTest {
     @Test
     @DisplayName("Outbox 실패 시 배치 집계와 완료 처리를 롤백하고 조회 이벤트는 재처리한다")
     void outboxFailureRollsBackViewBatchAndAllowsRetry() {
-        viewEvents.insertEvent(userId, productId);
+        insertViewEvent();
         doThrow(new DataAccessResourceFailureException("Outbox 저장 실패")).when(outbox).insert(productId);
 
         assertThatThrownBy(() -> viewBatchService.processPendingEvents())
@@ -191,8 +191,8 @@ class ProductSearchOutboxIntegrationTest {
     @Test
     @DisplayName("여러 조회 이벤트를 상품별로 집계한 뒤 버전과 Outbox는 한 번만 기록한다")
     void viewBatchCreatesOneJobPerProductAndBatch() {
-        viewEvents.insertEvent(userId, productId);
-        viewEvents.insertEvent(userId, productId);
+        insertViewEvent();
+        insertViewEvent();
         assertThat(versions()).isEmpty();
 
         assertThat(viewBatchService.processPendingEvents()).isEqualTo(2);
@@ -278,6 +278,13 @@ class ProductSearchOutboxIntegrationTest {
 
     private TransactionTemplate transaction() {
         return new TransactionTemplate(transactionManager);
+    }
+
+    private void insertViewEvent() {
+        jdbc.update("""
+                INSERT INTO product_view_events (product_id, user_id, created_at, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                """, productId, userId);
     }
 
     private long value(String column) {

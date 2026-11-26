@@ -281,7 +281,10 @@ class ProductViewBatchServiceIntegrationTest {
     }
 
     private void recordView(Long productId) {
-        productViewEventRepository.insertEvent(createUser(), productId);
+        jdbcTemplate.update("""
+                INSERT INTO product_view_events (product_id, user_id, created_at, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                """, productId, createUser());
     }
 
     private Long createProduct() {
