@@ -111,6 +111,29 @@ docker compose -f compose.monitoring.yaml --profile profiling up -d
 
 `ALERTMANAGER_DISCORD_WEBHOOK_URL`은 설정 생성 시점의 환경변수다. 값 변경 후에는 `configure.py`를 다시 실행하고 Alertmanager를 재생성한다.
 
+## 상품 조회수 동기화 지표와 알림
+
+상품 조회수는 Redis에 누적한 뒤 주기적으로 `product_view_stats`에 반영한다. 반영이 멈추면 조회수가 Redis에만 쌓이므로 아래 지표로 확인한다.
+패널은 "상품 상세 캐시 분석" 대시보드 하단에 있다.
+
+| 지표 | 의미 |
+|---|---|
+| `gift_product_view_pending` | Redis에서 아직 DB에 반영하지 않은 상품 수 |
+| `gift_product_view_synced_total` | DB 통계에 반영한 상품 수 누적값 |
+| `gift_product_view_sync_seconds_*` | 반영 1회 소요 시간 |
+| `gift_product_view_sync_last_success_seconds` | 마지막 반영 성공 시각(epoch 초). 앱 시작 직후에는 0이다 |
+| `gift_product_view_increment_total{result}` | 조회 기록 결과. `incremented`, `duplicate`, `error` |
+
+`product-view-alerts.yml`은 위 RabbitMQ 알림과 같이 `PROFILING_MONITORING_ENABLED=true`일 때 평가된다.
+
+| 알림 | 조건 |
+|---|---|
+| `ProductViewSyncStalled` | 마지막 반영 후 30분 초과가 15분 지속. 반영 주기(기본 10분)를 바꾸면 임계값도 함께 바꾼다 |
+| `ProductViewIncrementErrorsHigh` | Redis 기록 실패가 전체 조회의 5% 초과로 5분 지속. 실패한 조회는 조회수에서 빠진다 |
+
+Redis는 `REDIS_MAXMEMORY`로 메모리 상한을 두고 `volatile-lru` 정책을 쓴다. 상한에 닿으면 TTL이 있는 키만 지우므로,
+TTL이 없는 조회수 누적 해시(`gift:product:view:pending`, `gift:product:view:syncing`)는 남는다.
+
 ## 환경별 연결 예시
 
 | 실행 환경 | APP_METRICS_TARGET | 관리 포트 bind | MYSQL_EXPORTER_HOST / PORT |
