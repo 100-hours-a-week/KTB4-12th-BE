@@ -24,7 +24,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
+import com.gift.gift.domain.product.cache.ProductCacheKeys;
+import com.gift.gift.domain.product.service.ProductViewSyncService;
 import com.gift.gift.domain.product.service.ProductStockService;
 import com.gift.gift.domain.product.service.ProductViewBatchService;
 import com.gift.gift.domain.product.service.ProductViewService;
@@ -47,6 +51,8 @@ class ProductSearchOutboxIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private UserRepository users;
     @Autowired private ProductViewEventRepository viewEvents;
+    @Autowired private ProductViewSyncService viewSyncService;
+    @Autowired @Qualifier("productRedisTemplate") private StringRedisTemplate redis;
     @MockitoSpyBean private ProductSearchOutboxRepository outbox;
 
     private Long rootId;
@@ -78,6 +84,14 @@ class ProductSearchOutboxIntegrationTest {
                 Long.class, categoryId);
         userId = users.saveAndFlush(new User(suffix + "@example.com",
                 "$2a$10$" + "a".repeat(53), "Outbox 테스트", LocalDate.of(1990, 1, 1))).getId();
+
+        redis.delete(List.of(
+                ProductCacheKeys.pendingViews(),
+                ProductCacheKeys.syncingViews(),
+                ProductCacheKeys.recentView(userId, productId),
+                ProductCacheKeys.recentView(userId + 1, productId),
+                ProductCacheKeys.recentView(userId + 2, productId)
+        ));
     }
 
     @AfterEach
@@ -89,6 +103,14 @@ class ProductSearchOutboxIntegrationTest {
         jdbc.update("DELETE FROM categories WHERE id = ?", categoryId);
         jdbc.update("DELETE FROM categories WHERE id = ?", rootId);
         jdbc.update("DELETE FROM users WHERE id = ?", userId);
+
+        redis.delete(List.of(
+                ProductCacheKeys.pendingViews(),
+                ProductCacheKeys.syncingViews(),
+                ProductCacheKeys.recentView(userId, productId),
+                ProductCacheKeys.recentView(userId + 1, productId),
+                ProductCacheKeys.recentView(userId + 2, productId)
+        ));
     }
 
     @Test
@@ -234,6 +256,24 @@ class ProductSearchOutboxIntegrationTest {
         assertThat(value("sales")).isEqualTo(12);
         assertThat(value("search_version")).isEqualTo(12);
         assertThat(versions()).containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L);
+    }
+
+    @Test
+    @DisplayName("Redis 조회수 반영은 상품별로 버전과 Outbox를 한 번만 기록한다")
+    void viewSyncCreatesOneOutboxJobPerProduct() {
+        viewService.recordProductView(userId, productId);
+        viewService.recordProductView(userId + 1, productId);
+        viewService.recordProductView(userId + 2, productId);
+        assertThat(versions()).isEmpty();
+        assertThat(value("views")).isZero();
+
+        assertThat(viewSyncService.sync()).isEqualTo(1);
+        assertThat(value("views")).isEqualTo(3);
+        assertThat(value("search_version")).isEqualTo(1);
+        assertThat(versions()).containsExactly(1L);
+
+        assertThat(viewSyncService.sync()).isZero();
+        assertThat(versions()).containsExactly(1L);
     }
 
     private TransactionTemplate transaction() {
